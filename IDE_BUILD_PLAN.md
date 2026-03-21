@@ -48,7 +48,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Editor table-stakes: multi-cursor (`Cmd+D`, `Cmd+Click`), code folding, indent guides, word wrap toggle, bracket auto-close (including JSX)
 - [ ] Find in files (`Cmd+Shift+F`) via bundled ripgrep, find/replace in current file (`@codemirror/search`), LSP symbol search (`workspace/symbol`)
 - [ ] Markdown preview pane (side-by-side: editor left, rendered HTML right via `marked`/`remark`)
-- [ ] LSP integration: Pyright (Python) and typescript-language-server (JS/TS) auto-started per workspace
+- [ ] LSP integration: Pyright (Python) and typescript-language-server (JS/TS) as the first two language packs — installed individually, not bundled by default
 - [ ] Fixed left sidebar for file tree with dirty file indicators and git branch display (outside Dockview — always present)
 - [ ] Theming system designed for dark + light mode from day one — Atom One Dark as default, light mode as alternative, CSS variable token system supports custom themes in future
 - [ ] Global command palette (`Cmd+Shift+P`) — cross-workspace search and global commands
@@ -60,7 +60,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Git integration UI (diff viewer, stage/unstage, commit)
 - [ ] Multi-root workspace support (monorepos with separate backend/frontend LSP roots)
 - [ ] Plugin system with npm-based distribution
-- [ ] Additional language servers (Ruby, Go, Rust)
+- [ ] Broad language support — the goal is to support all languages via individually installable language packs. Use off-the-shelf LSP servers and linters where available; only build custom integrations when necessary. No language tooling installed by default — user installs what they need
 - [ ] Chrome extension support (limited — see Known Hard Problems)
 - [ ] AI-powered inline diff review in editor
 - [ ] Agent permission system — configurable guardrails per workspace via `.agentconfig` (file access scope, shell command scope, network scope, package installation). Default: "ask before running destructive commands." Requires approval UI in agent panel that surfaces to workspace tab even when in another workspace
@@ -167,12 +167,19 @@ Main Process (Electron)
 | Terminal renderer | **xterm.js** | Battle-tested, used by VS Code; future upgrade path to libghostty-vt WASM |
 | PTY bridge | **node-pty** | Spawns real shell with PTY; required for Claude Code, vim, etc. |
 
-### Language servers
-| Language | Server | Install |
-|---|---|---|
-| Python | **pyright-langserver** | `npm install pyright` (bundles the server) |
-| JavaScript/TypeScript | **typescript-language-server** | `npm install typescript-language-server typescript` |
-| CSS/Tailwind (v2) | **tailwindcss-language-server** | `npm install @tailwindcss/language-server` |
+### Language servers (individually installable — nothing bundled by default)
+
+**Philosophy:** aIDE should eventually support all languages. Use off-the-shelf LSP servers where available. Language packs are installed individually by the user — no language tooling ships by default. If custom integrations are needed, they should be separate installable packages following the same pattern.
+
+| Language | Server | Install | Status |
+|---|---|---|---|
+| Python | **pyright-langserver** | `npm install pyright` (bundles the server) | MVP (first language pack) |
+| JavaScript/TypeScript | **typescript-language-server** | `npm install typescript-language-server typescript` | MVP (first language pack) |
+| CSS/Tailwind | **tailwindcss-language-server** | `npm install @tailwindcss/language-server` | v2 |
+| Go | **gopls** | System install via `go install` | v2+ |
+| Rust | **rust-analyzer** | System install via `rustup` | v2+ |
+| Ruby | **solargraph** or **ruby-lsp** | `gem install` | v2+ |
+| _Any LSP-compatible server_ | User-configured | Settings panel: path + args + file glob | v2+ (generic LSP slot) |
 
 ### AI integration
 | Layer | Choice | Why |
