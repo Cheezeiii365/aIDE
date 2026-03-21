@@ -1,8 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
 
 # Build output
 dist/
@@ -12,19 +9,33 @@ build/
 # Electron
 release/
 
-# Environment
+# Environment & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+*.pem
+*.key
+*.p12
+*.keystore
+credentials.json
+secrets.json
 
-# IDE / Editor
+# AI / Editor tools
+.claude/
+.cursor/
+.cursorules
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# OS artifacts
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # Logs
 *.log
@@ -32,8 +43,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Coverage
+# Coverage & Testing
 coverage/
+.nyc_output/
 
 # TypeScript
 *.tsbuildinfo
