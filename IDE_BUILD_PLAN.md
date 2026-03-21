@@ -1,7 +1,7 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 2026
-> **Status:** Pre-development / Planning
+> **Last updated:** March 21, 2026
+> **Status:** Pre-development / Planning (pressure-tested)
 
 ---
 
@@ -16,9 +16,10 @@
 7. [Phase-by-Phase Build Plan](#7-phase-by-phase-build-plan)
 8. [Data Models](#8-data-models)
 9. [Known Hard Problems](#9-known-hard-problems)
-10. [Open Questions](#10-open-questions)
-11. [Progress Tracker](#11-progress-tracker)
-12. [Reference Links](#12-reference-links)
+10. [Design Decisions (Resolved)](#10-design-decisions-resolved)
+11. [Open Questions](#11-open-questions)
+12. [Progress Tracker](#12-progress-tracker)
+13. [Reference Links](#13-reference-links)
 
 ---
 
@@ -38,15 +39,19 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 
 ### Must-have at launch (MVP)
 - [ ] Infinitely nestable/resizable tiling panes — any pane can be an editor, terminal, browser, file tree, or agent panel
-- [ ] Workspace switcher ribbon with per-workspace agent status indicators
+- [ ] Workspace switcher ribbon with per-workspace agent status indicators + global zone (settings, notifications, cost dashboard)
 - [ ] Keyboard shortcut workspace switching (`Cmd+1/2/3...`)
 - [ ] Layout persistence — each workspace restores its exact pane arrangement on switch
 - [ ] Persistent browser panes with real Google, GitHub, and Microsoft account sessions that survive workspace switches and app restarts
 - [ ] Claude Code running in terminal panes, with agent status surfaced to the workspace tab
-- [ ] CodeMirror 6 editor with syntax highlighting for Python and JavaScript/TypeScript
+- [ ] CodeMirror 6 editor with syntax highlighting for Python, JavaScript/TypeScript, and Markdown
+- [ ] Editor table-stakes: multi-cursor (`Cmd+D`, `Cmd+Click`), code folding, indent guides, word wrap toggle, bracket auto-close (including JSX)
+- [ ] Find in files (`Cmd+Shift+F`) via bundled ripgrep, find/replace in current file (`@codemirror/search`), LSP symbol search (`workspace/symbol`)
+- [ ] Markdown preview pane (side-by-side: editor left, rendered HTML right via `marked`/`remark`)
 - [ ] LSP integration: Pyright (Python) and typescript-language-server (JS/TS) auto-started per workspace
-- [ ] File tree with dirty file indicators and git branch display
-- [ ] Atom One Dark theme throughout
+- [ ] Fixed left sidebar for file tree with dirty file indicators and git branch display (outside Dockview — always present)
+- [ ] Theming system designed for dark + light mode from day one — Atom One Dark as default, light mode as alternative, CSS variable token system supports custom themes in future
+- [ ] Global command palette (`Cmd+Shift+P`) — cross-workspace search and global commands
 
 ### Nice-to-have (v2+)
 - [ ] Cursor-style agent panel UI (structured diffs, progress, pause/resume)
@@ -58,6 +63,16 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Additional language servers (Ruby, Go, Rust)
 - [ ] Chrome extension support (limited — see Known Hard Problems)
 - [ ] AI-powered inline diff review in editor
+- [ ] Agent permission system — configurable guardrails per workspace via `.agentconfig` (file access scope, shell command scope, network scope, package installation). Default: "ask before running destructive commands." Requires approval UI in agent panel that surfaces to workspace tab even when in another workspace
+- [ ] Workspace onboarding wizard — auto-detect project type, Python interpreter, `package.json` scripts, `CLAUDE.md`/`.agentconfig`, git remote, dev server command/port. Surface as a checklist of suggestions on first open
+- [ ] Agent project memory — track which files agent has seen, maintain auto-generated `project-summary.md`, surface "unseen files" in agent panel for context priming
+- [ ] Linked workspace groups — related workspaces (e.g. frontend + backend), cross-workspace terminal, shared env references
+- [ ] Custom user themes beyond light/dark defaults
+- [ ] Editor minimap (community CodeMirror extension or custom build)
+- [ ] Auto-update via `electron-updater` — notify + prompt (never silent restart). Compile-from-source only for MVP
+- [ ] React `ErrorBoundary` per pane (crash in one pane doesn't kill others), graceful error state UI, opt-in crash telemetry via `electron.crashReporter` or Sentry
+- [ ] Notifications center — aggregated view of all agent activity across all workspaces
+- [ ] API usage / cost dashboard — tokens consumed, running cost across all agents
 
 ### Explicitly out of scope
 - Web-based version (desktop-only by design)
@@ -124,6 +139,22 @@ Main Process (Electron)
 | Editor component | **CodeMirror 6** | Modular, functional state model, lighter than Monaco (~300KB vs 5–10MB), first-class extension API designed for AI integration |
 | LSP client | **@codemirror/lsp-client** | Official package by CodeMirror author, covers completions/hover/go-to-def/rename |
 | One Dark theme | **@codemirror/theme-one-dark** | Official port of Atom One Dark |
+| Search in file | **@codemirror/search** | Find/replace in current file, regex support |
+| Markdown | **@codemirror/lang-markdown** | Syntax highlighting for `.md` files |
+| Code folding | **@codemirror/language** (foldGutter) | Fold function bodies, classes, blocks |
+| Indent guides | Community extension or custom | Vertical lines showing block structure |
+
+### Search
+| Layer | Choice | Why |
+|---|---|---|
+| Find in files | **@vscode/ripgrep** (bundled `rg` binary) | Same engine VS Code uses; fast, cross-platform, respects `.gitignore` |
+| Symbol search | LSP `workspace/symbol` | Find function/class across codebase via language server |
+
+### Markdown preview
+| Layer | Choice | Why |
+|---|---|---|
+| Renderer | **marked** or **remark** | Parse markdown to HTML for preview pane |
+| Preview pane | React component in Dockview | Side-by-side with editor, live-updating on keystroke |
 
 ### Layout
 | Layer | Choice | Why |
@@ -168,12 +199,27 @@ Main Process (Electron)
 
 ## 5. Design System
 
-### Atom One Dark color tokens (CSS variables)
+### Theming architecture
 
-Define these in `:root` and reference throughout. These are lifted directly from Atom's official `one-dark-ui` theme variables.
+**Decision:** Support dark + light mode from day one. Design the CSS variable token system to support custom themes in the future.
+
+All colors are referenced via semantic CSS variables. Theme files define the concrete values. The app loads one theme at a time by setting a `data-theme` attribute on `<html>`. CodeMirror themes must be swapped in parallel (CodeMirror uses its own theming system via extensions, not CSS variables — so each app theme bundles a matching CodeMirror theme extension).
+
+```
+themes/
+├── atom-one-dark.css    ← default
+├── atom-one-light.css   ← built-in alternative
+└── custom/              ← user-installed themes (v2+)
+```
+
+**Theme switching:** `document.documentElement.setAttribute('data-theme', 'one-dark')` — all components re-render with new token values. CodeMirror `EditorView.reconfigure()` swaps the theme extension.
+
+### Color tokens — Atom One Dark (default)
+
+Define these in `[data-theme="one-dark"]` and reference throughout. Lifted from Atom's official `one-dark-ui` theme variables.
 
 ```css
-:root {
+[data-theme="one-dark"] {
   /* Backgrounds */
   --bg-base:        #282c34;   /* editor background */
   --bg-elevated:    #21252b;   /* app shell, sidebar */
@@ -211,6 +257,50 @@ Define these in `:root` and reference throughout. These are lifted directly from
   --syntax-comment: #5c6370;   /* gray: comments */
   --syntax-tag:     #e06c75;   /* red: JSX tags */
   --syntax-attr:    #528bff;   /* blue: JSX attributes */
+}
+```
+
+### Color tokens — Atom One Light (built-in alternative)
+
+```css
+[data-theme="one-light"] {
+  /* Backgrounds */
+  --bg-base:        #fafafa;
+  --bg-elevated:    #eaeaeb;
+  --bg-sunken:      #f0f0f0;
+  --bg-overlay:     #e5e5e6;
+  --bg-active-tab:  #fafafa;
+  --bg-inactive-tab:#eaeaeb;
+  --bg-hover:       #e0e0e1;
+  --bg-selection:   rgba(56, 113, 220, 0.12);
+
+  /* Text */
+  --text-primary:   #383a42;
+  --text-secondary: #696c77;
+  --text-muted:     #a0a1a7;
+  --text-selected:  #000000;
+
+  /* Semantic text */
+  --text-info:      hsl(220, 100%, 45%);  /* #0064d6 */
+  --text-success:   hsl(119, 34%, 40%);   /* #50a14f */
+  --text-warning:   hsl(35, 84%, 44%);    /* #c18401 */
+  --text-error:     hsl(5, 74%, 50%);     /* #e45649 */
+
+  /* Borders */
+  --border-base:    #d0d0d0;
+  --border-subtle:  #e0e0e0;
+
+  /* Accent */
+  --accent:         #4078f2;
+
+  /* Syntax */
+  --syntax-keyword: #a626a4;   /* purple */
+  --syntax-fn:      #4078f2;   /* blue */
+  --syntax-string:  #50a14f;   /* green */
+  --syntax-number:  #986801;   /* orange */
+  --syntax-comment: #a0a1a7;   /* gray */
+  --syntax-tag:     #e45649;   /* red */
+  --syntax-attr:    #986801;   /* orange */
 }
 ```
 
@@ -478,6 +568,8 @@ This enables the structured agent panel UI: file-by-file progress, diff previews
 
 ### 6.7 File Tree
 
+**Architecture decision: Fixed left sidebar** (outside Dockview, always present). The file tree is special — it's the navigation root. This avoids the problem of users accidentally closing it with no obvious way to get it back, and simplifies `WebContentsView` overlay positioning (overlays can never overlap the sidebar).
+
 **Features:**
 - Virtual list (TanStack Virtual) for large directories without DOM bloat
 - Directory expand/collapse with chevron icons
@@ -486,6 +578,7 @@ This enables the structured agent panel UI: file-by-file progress, diff previews
 - Right-click context menu: New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder
 - Drag files between directories
 - Search/filter within the tree (`Cmd+P`-style quick open for files is a separate global shortcut)
+- Toggle visibility with `Cmd+B` (sidebar can be hidden but returns to fixed position)
 
 **Git status integration:**
 ```typescript
@@ -497,7 +590,58 @@ const status = await git.status();
 // status.modified, status.staged, status.not_added, etc.
 ```
 
-### 6.8 Plugin System (v2)
+### 6.8 Search
+
+**Find in files (`Cmd+Shift+F`):**
+One of the most-used IDE features — especially critical for the AI workflow where you want to search for what the agent just wrote. Uses bundled ripgrep (`@vscode/ripgrep`) for speed and `.gitignore` awareness.
+
+```typescript
+import { rgPath } from '@vscode/ripgrep';
+import { spawn } from 'child_process';
+
+function searchFiles(query: string, rootPath: string, options?: SearchOptions) {
+  const args = [
+    '--json',              // structured output for parsing
+    '--max-count', '100',  // limit results per file
+    '--smart-case',        // case-insensitive unless query has uppercase
+  ];
+  if (options?.regex) args.push('--pcre2');
+  if (options?.glob) args.push('--glob', options.glob);
+  args.push(query, rootPath);
+
+  return spawn(rgPath, args);
+}
+```
+
+**Search results UI:** A results panel (Dockview pane type) showing file-grouped results with line previews. Click a result → jump to that line in the editor. Support replace-all across files.
+
+**Find/replace in current file:** `@codemirror/search` extension — `Cmd+F` for find, `Cmd+H` for replace. Regex support built-in.
+
+**Symbol search:** LSP `workspace/symbol` request via `Cmd+T` — find functions, classes, types across the codebase. Results ranked by relevance from the language server.
+
+### 6.9 Markdown Preview
+
+**Side-by-side rendering:** Editor pane on the left, live-updating rendered preview on the right. The preview is a React component in a Dockview pane, not a `WebContentsView` overlay (simpler, no overlay positioning needed).
+
+Uses `marked` for parsing and `DOMPurify` for sanitization (markdown content can contain arbitrary HTML — must sanitize before rendering to prevent XSS).
+
+**Styling:** The preview pane uses a CSS stylesheet that matches the current app theme (dark or light). Code blocks in the preview use the same syntax highlighting colors as the editor.
+
+**Auto-open:** When a `.md` file is opened, offer to open a preview pane alongside it (small toast notification, not forced). `Cmd+Shift+V` toggles the preview for the current markdown file.
+
+### 6.10 Workspace Ribbon Global Zone
+
+The workspace ribbon has two zones:
+- **Left:** Per-workspace tabs (as described in 6.1)
+- **Right:** Global controls that are workspace-independent
+
+**Global zone contents:**
+- **Settings icon** (`Cmd+,`) — opens app settings panel
+- **Notifications bell** — aggregated view of agent activity across all workspaces. Badge count shows unread events. Click to expand dropdown: "Workspace A: agent completed task", "Workspace B: agent waiting for input", etc.
+- **API cost indicator** — compact display showing today's token usage / estimated cost. Click to expand detailed cost dashboard (tokens per workspace, per hour, running total). This is a differentiating feature for AI-first IDEs
+- **Theme toggle** — quick switch between dark/light mode
+
+### 6.11 Plugin System (v2)
 
 **Design principles:**
 - Plugins are npm packages with a naming convention: `{appname}-plugin-{name}`
@@ -542,66 +686,97 @@ interface PluginAPI {
   - Set up IPC channel scaffolding (`ipcMain` / `ipcRenderer` bridge with typed channels)
   - Configure `safeStorage` for API key storage
 
-- [ ] **1.3** React renderer with Atom One Dark
-  - Define all CSS variables from Section 5 in `:root`
-  - Build `AppShell` layout: workspace ribbon (top) + sidebar + main content + status bar
-  - Hardcode 2 panes (left: editor placeholder, right: terminal placeholder)
-  - Implement workspace ribbon with 2 dummy workspaces and status dots
+- [ ] **1.3** Theming system + React renderer
+  - Build `data-theme` attribute-based theming system (see Section 5)
+  - Define all CSS variables in `[data-theme="one-dark"]` and `[data-theme="one-light"]` selectors
+  - Implement theme toggle (stored in app settings)
+  - Build `AppShell` layout: workspace ribbon (top) + fixed left sidebar (file tree placeholder) + Dockview main content + status bar
+  - Implement workspace ribbon with 2 dummy workspaces + status dots + global zone (right side: settings, notifications, cost, theme toggle)
   - Implement status bar with placeholder content
 
 - [ ] **1.4** Dockview integration
-  - Install `dockview` and replace hardcoded 2-pane layout with `DockviewReact`
-  - Configure Dockview theme to match Atom One Dark (override CSS variables)
+  - Install `dockview` and wire into main content area (sidebar is outside Dockview)
+  - Configure Dockview theme to match both dark and light modes (override CSS variables based on `data-theme`)
   - Implement `buildDefaultLayout(api)` — default editor + terminal arrangement
   - Verify drag-and-drop pane rearrangement works
   - Verify layout serialization round-trip: `toJSON()` → `fromJSON()`
 
 #### Deliverable
-An Electron window with the correct visual chrome, Atom One Dark colors, two resizable panes, and a workspace ribbon that looks right even though nothing is functional yet.
+An Electron window with the correct visual chrome, dark + light theme toggle working, fixed sidebar, Dockview panes, and a workspace ribbon with global zone — even though nothing is functional yet.
 
 ---
 
-### Phase 2: Core IDE Features (Weeks 4–6)
+### Phase 2: Core IDE Features (Weeks 4–7)
 
-**Goal:** A usable editor with file tree, working terminal, and keyboard shortcuts. This phase is the "does it feel like an IDE" phase.
+**Goal:** A usable editor with file tree, working terminal, search, markdown preview, and keyboard shortcuts. This phase is the "does it feel like an IDE" phase.
 
 #### Milestones
-- [ ] **2.1** File tree
+- [ ] **2.1** File tree (fixed sidebar)
   - Implement `WorkspaceStore` with `electron-store` (Section 8 data model)
-  - Build file tree component with TanStack Virtual
+  - Build file tree component with TanStack Virtual in the fixed left sidebar
   - Connect `chokidar` watcher to file tree (add/remove/rename react in real-time)
   - Implement expand/collapse, right-click context menu
   - Add `simple-git` status polling (dirty file indicators: M/A/U/D badges)
   - Display current git branch in status bar
+  - Implement `Cmd+B` sidebar toggle
 
 - [ ] **2.2** CodeMirror 6 editor
-  - Install `codemirror`, `@codemirror/lang-python`, `@codemirror/lang-javascript`, `@codemirror/theme-one-dark`
+  - Install `codemirror`, `@codemirror/lang-python`, `@codemirror/lang-javascript`, `@codemirror/lang-markdown`, `@codemirror/theme-one-dark`, `@codemirror/search`
   - Build `EditorPane` component that renders `EditorView`
   - Implement multi-file tab bar within the editor pane
   - Handle file open from file tree click (read file → create EditorState → display)
   - Handle file save (`Cmd+S` → write to disk)
   - Preserve cursor position, scroll, and fold state per file tab
   - Show dirty indicator (`•`) on unsaved tabs
+  - Configure table-stakes editor features:
+    - Multi-cursor editing (`Cmd+D` select next occurrence, `Cmd+Click` place cursor)
+    - Code folding with fold gutters (`@codemirror/language` foldGutter)
+    - Indent guides (vertical block structure lines)
+    - Word wrap toggle
+    - Bracket matching and auto-close (verify JSX angle brackets work correctly)
+    - Find/replace in file (`@codemirror/search`) — `Cmd+F` find, `Cmd+H` replace
+  - Wire CodeMirror theme to follow app theme (swap extension on theme toggle)
 
 - [ ] **2.3** Terminal (xterm.js + node-pty)
   - Install `xterm`, `xterm-addon-fit`, `node-pty`
   - Build `TerminalPane` component
   - Spawn PTY shell on pane creation (use user's default shell from `process.env.SHELL`)
   - Implement fit-to-pane resizing via `FitAddon`
-  - Configure Atom One Dark color scheme for xterm
+  - Configure terminal color scheme to follow app theme (dark + light)
   - Implement multiple terminal tabs within one terminal pane
 
-- [ ] **2.4** Keyboard shortcut system
+- [ ] **2.4** Find in files + symbol search
+  - Bundle ripgrep via `@vscode/ripgrep`
+  - Build search panel (Dockview pane type) with file-grouped results and line previews
+  - Implement `Cmd+Shift+F` to open/focus search panel
+  - Click result → jump to line in editor
+  - Support regex toggle, case sensitivity toggle, file glob filter
+  - Replace across files (with confirmation)
+  - LSP symbol search via `Cmd+T` (wired after LSP is available in Phase 3)
+
+- [ ] **2.5** Markdown preview
+  - Build `MarkdownPreviewPane` React component in Dockview
+  - Use `marked` for parsing + `DOMPurify` for XSS sanitization
+  - Live-update preview on editor keystroke
+  - Style preview to match current app theme (dark/light)
+  - `Cmd+Shift+V` toggles preview for current markdown file
+  - Toast suggestion to open preview when `.md` file is opened
+
+- [ ] **2.6** Keyboard shortcut system
   - Build `ShortcutManager` singleton with a focus context stack
   - Implement `Cmd+1–9` for workspace switching
   - Implement `Cmd+\` / `Cmd+Shift+\` for pane splitting
   - Implement `Cmd+W` for closing current tab (not pane)
   - Implement `Cmd+S` for save
   - Implement `Cmd+P` for quick file open (fuzzy search in workspace root)
+  - Implement `Cmd+Shift+P` for global command palette
   - Implement `Cmd+Shift+[` / `Cmd+Shift+]` for workspace cycling
+  - Implement `Cmd+Shift+F` for find in files
+  - Implement `Cmd+T` for symbol search
+  - Implement `Cmd+B` for sidebar toggle
 
 #### Deliverable
-You can open a folder, see the file tree, click a Python or JS/TS file to open it in the editor with syntax highlighting, and run commands in the terminal. It feels like a real IDE.
+You can open a folder, see the file tree, click a Python or JS/TS file to open it with syntax highlighting, multi-cursor, code folding, and find/replace. Search across all files. Preview markdown side-by-side. Run commands in the terminal. Toggle dark/light theme. It feels like a real IDE.
 
 ---
 
@@ -824,7 +999,7 @@ interface AppSettings {
   fontFamily: string;                       // default: 'JetBrains Mono'
   tabSize: number;                          // default: 2
   apiKeyEncrypted?: string;                 // safeStorage encrypted
-  theme: 'atom-one-dark';                   // more themes in future
+  theme: 'one-dark' | 'one-light';           // custom themes in v2+
   shortcuts: Record<string, string>;        // command id → key combo
 }
 ```
@@ -895,43 +1070,61 @@ Additionally: version-stamp all saved layouts (`version: 1`) and write a migrati
 
 ---
 
-## 10. Open Questions
+## 10. Design Decisions (Resolved)
+
+| # | Decision | Answer | Impact |
+|---|---|---|---|
+| D1 | Light mode support? | **Yes** — design token system for dark + light from day one. Custom themes in v2+ | Phase 1 |
+| D2 | File tree: fixed sidebar or Dockview pane? | **Fixed sidebar** — always present, outside Dockview. Toggle with `Cmd+B` | Phase 1 |
+| D3 | Minimap in editor? | **Skip v1** — add community CodeMirror extension later | Phase 2 |
+| D4 | Markdown preview: side-by-side or inline? | **Side-by-side** Dockview pane in v1 | Phase 2 |
+| D5 | Agent permission defaults? | **Ask before destructive ops** — configurable via `.agentconfig` per workspace (v2) | Phase 5 |
+| D6 | Update mechanism: silent or prompt? | **Prompt always** — compile-from-source only for MVP, `electron-updater` in v2 | Phase 6 |
+| D7 | Crash telemetry: opt-in or none? | **Opt-in with explicit consent** | Phase 6 |
+| D8 | macOS only to start? | **Yes** — macOS first, Linux second, Windows third | Phase 1 |
+
+---
+
+## 11. Open Questions
 
 These need a decision before or during the relevant phase.
 
 | # | Question | Phase | Notes |
 |---|---|---|---|
-| Q1 | **macOS only to start, or cross-platform from day 1?** | 1 | node-pty on Windows has extra complexity; Linux is simpler. Recommend: macOS first, Linux second, Windows third. |
-| Q2 | **Auto-start LSP servers on workspace open, or lazy (on first file open)?** | 3 | Lazy is better UX — don't start Pyright until a .py file is opened |
-| Q3 | **How to handle workspaces without a git repo?** | 4 | Hide git branch display, disable dirty indicators, show warning in file tree |
-| Q4 | **Multiple browser panes per workspace?** | 3 | Dockview supports multiple panes of the same type — probably yes, each with own URL/session |
-| Q5 | **Should the agent use the workspace's `persist:auth` session for GitHub API calls?** | 5 | Security consideration — the agent shouldn't have access to the user's GitHub token unless explicitly granted |
-| Q6 | **Font bundling?** Include JetBrains Mono in the app bundle or rely on system fonts? | 2 | Bundling ensures consistent look on clean systems; adds ~2MB to app size |
-| Q7 | **How to handle `.env` files in agent context?** | 5 | The agent shouldn't be able to read/exfiltrate `.env` files. Consider a file access allowlist/denylist in agent configuration |
+| Q1 | **Auto-start LSP servers on workspace open, or lazy (on first file open)?** | 3 | Lazy is better UX — don't start Pyright until a .py file is opened |
+| Q2 | **How to handle workspaces without a git repo?** | 4 | Hide git branch display, disable dirty indicators, show warning in file tree |
+| Q3 | **Multiple browser panes per workspace?** | 3 | Dockview supports multiple panes of the same type — probably yes, each with own URL/session |
+| Q4 | **Should the agent use the workspace's `persist:auth` session for GitHub API calls?** | 5 | Security consideration — the agent shouldn't have access to the user's GitHub token unless explicitly granted |
+| Q5 | **Font bundling?** Include JetBrains Mono in the app bundle or rely on system fonts? | 2 | Bundling ensures consistent look on clean systems; adds ~2MB to app size |
+| Q6 | **How to handle `.env` files in agent context?** | 5 | The agent shouldn't be able to read/exfiltrate `.env` files. Part of the broader agent permission system (v2 `.agentconfig`) |
+| Q7 | **Linked workspace groups?** | v2+ | Related workspaces (frontend + backend) that share context: cross-workspace terminal, shared env references. Interesting concept — needs design |
+| Q8 | **Agent project memory / context generation?** | v2+ | Auto-generate `project-summary.md`, track agent-seen files, surface unseen files for context priming. Design data model in v1 to not block this |
 
 ---
 
-## 11. Progress Tracker
+## 12. Progress Tracker
 
 Track milestone completion here. Update as you go.
 
-### Phase 1: Skeleton
+### Phase 1: Skeleton (Weeks 1–3)
 | Milestone | Status | Notes |
 |---|---|---|
 | 1.1 Project scaffolding | ⬜ Not started | |
 | 1.2 Electron shell | ⬜ Not started | |
-| 1.3 React renderer + Atom One Dark | ⬜ Not started | |
-| 1.4 Dockview integration | ⬜ Not started | |
+| 1.3 Theming system + React renderer | ⬜ Not started | Dark + light from day one |
+| 1.4 Dockview integration | ⬜ Not started | Sidebar outside Dockview |
 
-### Phase 2: Core IDE Features
+### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
 |---|---|---|
-| 2.1 File tree | ⬜ Not started | |
-| 2.2 CodeMirror 6 editor | ⬜ Not started | |
+| 2.1 File tree (fixed sidebar) | ⬜ Not started | |
+| 2.2 CodeMirror 6 editor | ⬜ Not started | Includes multi-cursor, folding, indent guides, word wrap |
 | 2.3 Terminal (xterm.js + node-pty) | ⬜ Not started | |
-| 2.4 Keyboard shortcut system | ⬜ Not started | |
+| 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
+| 2.5 Markdown preview | ⬜ Not started | Side-by-side pane |
+| 2.6 Keyboard shortcut system | ⬜ Not started | |
 
-### Phase 3: LSP + Browser Pane
+### Phase 3: LSP + Browser Pane (Weeks 8–10)
 | Milestone | Status | Notes |
 |---|---|---|
 | 3.1 LSP infrastructure | ⬜ Not started | |
@@ -940,7 +1133,7 @@ Track milestone completion here. Update as you go.
 | 3.4 Browser pane — auth sessions | ⬜ Not started | |
 | 3.5 Browser pane — dev server preview | ⬜ Not started | |
 
-### Phase 4: Workspace System
+### Phase 4: Workspace System (Weeks 11–13)
 | Milestone | Status | Notes |
 |---|---|---|
 | 4.1 Workspace creation flow | ⬜ Not started | |
@@ -948,7 +1141,7 @@ Track milestone completion here. Update as you go.
 | 4.3 Agent status in ribbon | ⬜ Not started | |
 | 4.4 Workspace management UI | ⬜ Not started | |
 
-### Phase 5: Agent Integration
+### Phase 5: Agent Integration (Weeks 14–17)
 | Milestone | Status | Notes |
 |---|---|---|
 | 5.1 Agent panel pane type | ⬜ Not started | |
@@ -957,11 +1150,11 @@ Track milestone completion here. Update as you go.
 | 5.4 Agent edit highlighting in editor | ⬜ Not started | |
 | 5.5 Crash recovery | ⬜ Not started | |
 
-### Phase 6: Polish + Open Source Release
+### Phase 6: Polish + Open Source Release (Weeks 18–21)
 | Milestone | Status | Notes |
 |---|---|---|
 | 6.1 Settings system | ⬜ Not started | |
-| 6.2 Quick open (`Cmd+P`) | ⬜ Not started | |
+| 6.2 Quick open (`Cmd+P`) + command palette | ⬜ Not started | |
 | 6.3 GitHub repository + CI | ⬜ Not started | |
 | 6.4 Plugin system foundation | ⬜ Not started | |
 
@@ -969,7 +1162,7 @@ Track milestone completion here. Update as you go.
 
 ---
 
-## 12. Reference Links
+## 13. Reference Links
 
 ### Architecture research
 - [Is Forking VS Code a Good Idea? — EclipseSource](https://eclipsesource.com/blogs/2024/12/17/is-it-a-good-idea-to-fork-vs-code/)
