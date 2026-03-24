@@ -1,6 +1,6 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 21, 2026
+> **Last updated:** March 24, 2026
 > **Status:** Pre-development / Planning (pressure-tested)
 
 ---
@@ -142,7 +142,7 @@ Main Process (Electron)
 | Search in file | **@codemirror/search** | Find/replace in current file, regex support |
 | Markdown | **@codemirror/lang-markdown** | Syntax highlighting for `.md` files |
 | Code folding | **@codemirror/language** (foldGutter) | Fold function bodies, classes, blocks |
-| Indent guides | Community extension or custom | Vertical lines showing block structure |
+| Indent guides | **@replit/codemirror-indentation-markers** | Vertical lines showing block structure — handles mixed tabs/spaces and empty-line inheritance |
 
 ### Search
 | Layer | Choice | Why |
@@ -727,21 +727,22 @@ An Electron window with the correct visual chrome, dark + light theme toggle wor
   - Display current git branch in status bar
   - Implement `Cmd+B` sidebar toggle
 
-- [ ] **2.2** CodeMirror 6 editor
-  - Install `codemirror`, `@codemirror/lang-python`, `@codemirror/lang-javascript`, `@codemirror/lang-markdown`, `@codemirror/theme-one-dark`, `@codemirror/search`
+- [x] **2.2** CodeMirror 6 editor
+  - Install `codemirror`, `@codemirror/lang-python`, `@codemirror/lang-javascript`, `@codemirror/lang-markdown`, `@codemirror/theme-one-dark`, `@replit/codemirror-indentation-markers`
   - Build `EditorPane` component that renders `EditorView`
   - Implement multi-file tab bar within the editor pane
   - Handle file open from file tree click (read file → create EditorState → display)
-  - Handle file save (`Cmd+S` → write to disk)
+  - Handle file save (`Cmd+S` → write to disk via writeFile IPC)
   - Preserve cursor position, scroll, and fold state per file tab
-  - Show dirty indicator (`•`) on unsaved tabs
+  - Show dirty indicator (`•`) on unsaved tabs (module-level dirty state + onDirtyChange listeners)
+  - Confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride)
   - Configure table-stakes editor features:
-    - Multi-cursor editing (`Cmd+D` select next occurrence, `Cmd+Click` place cursor)
-    - Code folding with fold gutters (`@codemirror/language` foldGutter)
-    - Indent guides (vertical block structure lines)
-    - Word wrap toggle
-    - Bracket matching and auto-close (verify JSX angle brackets work correctly)
-    - Find/replace in file (`@codemirror/search`) — `Cmd+F` find, `Cmd+H` replace
+    - Multi-cursor editing (`Cmd+D` select next occurrence, `Cmd+Click` place cursor) — via basicSetup
+    - Code folding with fold gutters (`@codemirror/language` foldGutter) — via basicSetup
+    - Indent guides (vertical block structure lines) — via @replit/codemirror-indentation-markers
+    - Word wrap toggle (`Cmd+Alt+W`) — via Compartment
+    - Bracket matching and auto-close — via basicSetup
+    - Find/replace in file (`Cmd+F` find, `Cmd+H` replace) — via basicSetup
   - Wire CodeMirror theme to follow app theme (swap extension on theme toggle)
 
 - [ ] **2.3** Terminal (xterm.js + node-pty)
@@ -1116,17 +1117,17 @@ Track milestone completion here. Update as you go.
 ### Phase 1: Skeleton (Weeks 1–3)
 | Milestone | Status | Notes |
 |---|---|---|
-| 1.1 Project scaffolding | ⬜ Not started | |
-| 1.2 Electron shell | ⬜ Not started | |
-| 1.3 Theming system + React renderer | ⬜ Not started | Dark + light from day one |
-| 1.4 Dockview integration | ⬜ Not started | Sidebar outside Dockview |
+| 1.1 Project scaffolding | ✅ Complete | electron-vite + React 19 + TS, pnpm workspaces (main/renderer/shared), ESLint + Prettier + TS strict, electron-builder for macOS |
+| 1.2 Electron shell | ✅ Complete | BaseWindow (frameless, hiddenInset), custom drag region, typed IPC channels, app menu with zoom/clipboard/fullscreen. safeStorage for API keys deferred to Phase 6.1 |
+| 1.3 Theming system + React renderer | ✅ Complete | data-theme CSS variable system, one-dark + one-light themes, theme toggle persisted via electron-store, ThemeProvider + useTheme hook, AppShell layout (ribbon/sidebar/status bar), fullscreen-aware ribbon padding |
+| 1.4 Dockview integration | ✅ Complete | Dockview 5.x wired into main content area (sidebar outside Dockview), theme CSS vars mapped to dockview tokens, default 3-pane layout (Editor/Terminal/Agent placeholders), compact tab styling with close button overrides |
 
 ### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
 |---|---|---|
-| 2.1 File tree (fixed sidebar) | ⬜ Not started | |
-| 2.2 CodeMirror 6 editor | ⬜ Not started | Includes multi-cursor, folding, indent guides, word wrap |
-| 2.3 Terminal (xterm.js + node-pty) | ⬜ Not started | |
+| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. Deferred to 2.1b: chokidar watcher, git badges. Deferred to 2.1c: context menu, rename/delete, virtualization |
+| 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. Deferred to 2.2c: minimap, breadcrumb nav |
+| 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
 | 2.5 Markdown preview | ⬜ Not started | Side-by-side pane |
 | 2.6 Keyboard shortcut system | ⬜ Not started | |

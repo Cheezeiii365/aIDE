@@ -1,0 +1,256 @@
+/* ─── AppShell grid ─────────────────────────────── */
+.app-shell {
+  display: grid;
+  grid-template-rows: 34px 1fr 22px;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ─── Workspace Ribbon ─────────────────────────── */
+.workspace-ribbon {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 70px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-base);
+  user-select: none;
+  transition: padding-left 200ms ease;
+}
+
+.workspace-ribbon--fullscreen {
+  padding-left: 10px;
+}
+
+.workspace-ribbon__tabs {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.workspace-tab {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.workspace-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.workspace-tab--active {
+  background: var(--bg-active-tab);
+  color: var(--text-primary);
+}
+
+.workspace-ribbon__actions {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspace-ribbon__cost {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px;
+  opacity: 0.7;
+}
+
+.workspace-ribbon__separator {
+  width: 1px;
+  height: 14px;
+  background: var(--border-subtle);
+  margin: 0 4px;
+  opacity: 0.5;
+}
+
+/* ─── Agent Status Dot ─────────────────────────── */
+.agent-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-status-dot--pulse {
+  animation: agent-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes agent-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ─── Ribbon Icon Button ───────────────────────── */
+.ribbon-icon-btn {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.ribbon-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ribbon-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ─── Middle Area ──────────────────────────────── */
+.app-middle {
+  display: flex;
+  overflow: hidden;
+}
+
+/* ─── Sidebar ──────────────────────────────────── */
+.sidebar {
+  position: relative;
+  display: flex;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border-base);
+  flex-shrink: 0;
+}
+
+.sidebar__content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.sidebar__header {
+  padding: 6px 12px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.sidebar__placeholder {
+  padding: 4px 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.sidebar__resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background 150ms ease;
+}
+
+.sidebar__resize-handle:hover,
+.sidebar__resize-handle:active {
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+/* ─── Dockview Wrapper ─────────────────────────── */
+.dockview-wrapper {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ─── Status Bar ───────────────────────────────── */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--border-base);
+  font-size: 10px;
+  color: var(--text-muted);
+  user-select: none;
+  letter-spacing: 0.01em;
+}
+
+.status-bar__left,
+.status-bar__right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.status-bar__item {
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 2px;
+  transition: background 100ms ease, color 100ms ease;
+  cursor: default;
+}
+
+.status-bar__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.status-bar__item--branch {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.status-bar__item--branch svg {
+  width: 11px;
+  height: 11px;
+  opacity: 0.7;
+}
+
+.status-bar__separator {
+  width: 1px;
+  height: 10px;
+  background: var(--border-subtle);
+  opacity: 0.4;
+  margin: 0 2px;
+}
+
+/* ─── Placeholder Panes ────────────────────────── */
+.placeholder-pane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.placeholder-pane__title {
+  opacity: 0.35;
+  font-weight: 450;
+}

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 aIDE is a custom IDE built for multi-agent workflows, built with Electron from scratch (not a VS Code/Pulsar fork). See `IDE_BUILD_PLAN.md` for the full architecture, feature specs, and phased build plan.
 
+At this point, the project is being written in this editor. Any bug reports come from user experience.
+
 ## Tech Stack
 
 - **Desktop shell**: Electron 41+ (BaseWindow + WebContentsView)
@@ -30,3 +32,19 @@ aIDE is a custom IDE built for multi-agent workflows, built with Electron from s
 
 - GitHub: https://github.com/Cheezeiii365/aIDE
 - Branch: `main`
+
+### Commiting conventions
+
+- Always check against the .gitignore file when committing for security and performance reasons.
+- Always update IDE_BUILD_PLAN.md when making changes to the codebase.
+
+- Use `feat:` for new features
+- Use `fix:` for bug fixes
+- Use `refactor:` for code refactoring
+- Use `test:` for testing
+- Use `docs:` for documentation
+- Use `chore:` for chores
+- Use `style:` for styling
+- Use `perf:` for performance improvements
+- Use `build:` for build system changes
+- Use `ci:` for CI configuration changes

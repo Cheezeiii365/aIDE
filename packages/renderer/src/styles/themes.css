@@ -1,0 +1,81 @@
+/* Atom One Dark — default theme */
+[data-theme="one-dark"] {
+  /* Backgrounds */
+  --bg-base: #282c34;
+  --bg-elevated: #21252b;
+  --bg-sunken: #1b1e24;
+  --bg-overlay: #1d2026;
+  --bg-active-tab: #282c34;
+  --bg-inactive-tab: #24282f;
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-selection: rgba(82, 139, 255, 0.15);
+
+  /* Text */
+  --text-primary: #abb2bf;
+  --text-secondary: #7f8694;
+  --text-muted: #565c68;
+  --text-selected: #ffffff;
+
+  /* Semantic text */
+  --text-info: hsl(219, 79%, 66%);
+  --text-success: hsl(140, 44%, 62%);
+  --text-warning: hsl(36, 60%, 72%);
+  --text-error: hsl(9, 100%, 64%);
+
+  /* Borders */
+  --border-base: #181a1f;
+  --border-subtle: #2e333b;
+
+  /* Accent */
+  --accent: #528bff;
+
+  /* Syntax */
+  --syntax-keyword: #c678dd;
+  --syntax-fn: #61afef;
+  --syntax-string: #98c379;
+  --syntax-number: #d19a66;
+  --syntax-comment: #5c6370;
+  --syntax-tag: #e06c75;
+  --syntax-attr: #528bff;
+}
+
+/* Atom One Light — built-in alternative */
+[data-theme="one-light"] {
+  /* Backgrounds */
+  --bg-base: #fafafa;
+  --bg-elevated: #f0f0f1;
+  --bg-sunken: #e8e8e9;
+  --bg-overlay: #e5e5e6;
+  --bg-active-tab: #fafafa;
+  --bg-inactive-tab: #eeeeef;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-selection: rgba(56, 113, 220, 0.12);
+
+  /* Text */
+  --text-primary: #383a42;
+  --text-secondary: #696c77;
+  --text-muted: #a0a1a7;
+  --text-selected: #000000;
+
+  /* Semantic text */
+  --text-info: hsl(220, 100%, 45%);
+  --text-success: hsl(119, 34%, 40%);
+  --text-warning: hsl(35, 84%, 44%);
+  --text-error: hsl(5, 74%, 50%);
+
+  /* Borders */
+  --border-base: #d4d4d5;
+  --border-subtle: #e0e0e1;
+
+  /* Accent */
+  --accent: #4078f2;
+
+  /* Syntax */
+  --syntax-keyword: #a626a4;
+  --syntax-fn: #4078f2;
+  --syntax-string: #50a14f;
+  --syntax-number: #986801;
+  --syntax-comment: #a0a1a7;
+  --syntax-tag: #e45649;
+  --syntax-attr: #986801;
+}

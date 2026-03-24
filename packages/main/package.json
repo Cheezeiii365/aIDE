@@ -1,0 +1,11 @@
+{
+  "name": "@aide/main",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "dependencies": {
+    "@aide/shared": "workspace:*",
+    "electron-store": "^6.0.1",
+    "node-pty": "^1.1.0"
+  }
+}
