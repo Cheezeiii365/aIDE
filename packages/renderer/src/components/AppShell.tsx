@@ -35,6 +35,7 @@ export function AppShell() {
     api.addPanel({
       id: filePath,
       component: 'editorPane',
+      tabComponent: 'editorTab',
       title: name,
       params: { filePath },
       position,

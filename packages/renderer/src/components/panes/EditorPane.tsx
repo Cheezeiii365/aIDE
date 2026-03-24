@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
 import { EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { EditorView, keymap } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
+import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { getLanguageExtension, getLanguageName } from '../../lib/languageExtension'
 import { themeCompartment, getThemeExtension } from '../../lib/editorTheme'
+import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editorWrap'
 import { getCachedState, setCachedState } from '../../lib/editorStateCache'
+import { setDirty, onDirtyChange } from '../../lib/editorDirtyState'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 
 interface EditorPaneParams {
   filePath: string
 }
+
+// Tracks the "clean" (last-saved) content per file so we know the baseline
+const cleanContentMap = new Map<string, string>()
 
 export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -40,6 +46,9 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         return
       }
 
+      // Store clean content baseline
+      cleanContentMap.set(filePath, result.content)
+
       const cached = getCachedState(filePath)
       const languageName = getLanguageName(filePath)
 
@@ -50,6 +59,8 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         const extensions = [
           basicSetup,
           themeCompartment.of(getThemeExtension(theme)),
+          wrapCompartment.of(getWrapExtension(false)),
+          indentationMarkers(),
           EditorView.updateListener.of((update) => {
             if (update.selectionSet || update.docChanged) {
               const pos = update.state.selection.main.head
@@ -60,7 +71,35 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
                 language: languageName,
               })
             }
+            if (update.docChanged) {
+              setDirty(filePath, true)
+            }
           }),
+          keymap.of([
+            {
+              key: 'Mod-s',
+              run: (view) => {
+                const content = view.state.doc.toString()
+                window.api.writeFile(filePath, content).then((res) => {
+                  if ('success' in res) {
+                    cleanContentMap.set(filePath, content)
+                    setDirty(filePath, false)
+                  }
+                })
+                return true
+              },
+            },
+            {
+              key: 'Mod-Alt-w',
+              run: (view) => {
+                const enabled = toggleWrap()
+                view.dispatch({
+                  effects: wrapCompartment.reconfigure(getWrapExtension(enabled)),
+                })
+                return true
+              },
+            },
+          ]),
         ]
 
         const langExt = getLanguageExtension(filePath)
@@ -101,6 +140,8 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         viewRef.current.destroy()
         viewRef.current = null
       }
+      setDirty(filePath, false)
+      cleanContentMap.delete(filePath)
     }
   }, [filePath]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -111,6 +152,16 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       effects: themeCompartment.reconfigure(getThemeExtension(theme)),
     })
   }, [theme])
+
+  // Update Dockview tab title when dirty state changes
+  useEffect(() => {
+    const name = filePath.split('/').pop() ?? filePath
+    const unsub = onDirtyChange((changedPath, dirty) => {
+      if (changedPath !== filePath) return
+      api.setTitle(dirty ? '• ' + name : name)
+    })
+    return unsub
+  }, [filePath, api])
 
   // Push cursor status when this panel becomes active
   useEffect(() => {

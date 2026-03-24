@@ -35,6 +35,7 @@ const api: WindowApi = {
   // Filesystem
   readDir: (dirPath: string) => ipcRenderer.invoke(IpcChannels.FS_READ_DIR, dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke(IpcChannels.FS_READ_FILE, filePath),
+  writeFile: (filePath: string, content: string) => ipcRenderer.invoke(IpcChannels.FS_WRITE_FILE, filePath, content),
 
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,

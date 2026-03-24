@@ -1,6 +1,6 @@
 import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog } from 'electron'
 import { join, basename } from 'path'
-import { readdir, readFile, stat } from 'fs/promises'
+import { readdir, readFile, writeFile as fsWriteFile, stat } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
@@ -205,6 +205,17 @@ ipcMain.handle(IpcChannels.FS_READ_FILE, async (_event, filePath: string): Promi
     return { content }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error reading file'
+    return { error: message }
+  }
+})
+
+// Write file IPC handler
+ipcMain.handle(IpcChannels.FS_WRITE_FILE, async (_event, filePath: string, content: string): Promise<{ success: true } | { error: string }> => {
+  try {
+    await fsWriteFile(filePath, content, 'utf-8')
+    return { success: true }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error writing file'
     return { error: message }
   }
 })

@@ -31,3 +31,9 @@
 .editor-pane__cm-host .cm-editor {
   height: 100%;
 }
+
+/* Indent guide markers */
+.cm-editor .cm-indent-markers::before {
+  border-color: var(--border-base);
+  opacity: 0.3;
+}

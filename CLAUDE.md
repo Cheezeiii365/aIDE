@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 aIDE is a custom IDE built for multi-agent workflows, built with Electron from scratch (not a VS Code/Pulsar fork). See `IDE_BUILD_PLAN.md` for the full architecture, feature specs, and phased build plan.
 
+At this point, the project is being written in this editor. Any bug reports come from user experience.
+
 ## Tech Stack
 
 - **Desktop shell**: Electron 41+ (BaseWindow + WebContentsView)

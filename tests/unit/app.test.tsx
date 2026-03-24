@@ -21,6 +21,7 @@ const mockApi: WindowApi = {
   getWorkspaceRoot: vi.fn().mockResolvedValue(null),
   readDir: vi.fn().mockResolvedValue([]),
   readFile: vi.fn().mockResolvedValue({ content: '' }),
+  writeFile: vi.fn().mockResolvedValue({ success: true }),
   platform: 'darwin',
 }
 
