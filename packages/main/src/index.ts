@@ -1,4 +1,4 @@
-import { app, BaseWindow, WebContentsView, ipcMain } from 'electron'
+import { app, BaseWindow, WebContentsView, ipcMain, Menu } from 'electron'
 import { join } from 'path'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
@@ -8,6 +8,64 @@ const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
+
+function buildAppMenu(): void {
+  const isMac = process.platform === 'darwin'
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { role: 'resetZoom' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        { role: 'toggleDevTools' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac
+          ? [{ type: 'separator' as const }, { role: 'front' as const }]
+          : [{ role: 'close' as const }]),
+      ],
+    },
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
 
 function createWindow(): void {
   mainWindow = new BaseWindow({
@@ -50,6 +108,14 @@ function createWindow(): void {
     )
   }
 
+  // Forward fullscreen state to renderer
+  mainWindow.on('enter-full-screen', () => {
+    contentView?.webContents.send(IpcChannels.FULLSCREEN_CHANGED, true)
+  })
+  mainWindow.on('leave-full-screen', () => {
+    contentView?.webContents.send(IpcChannels.FULLSCREEN_CHANGED, false)
+  })
+
   // BaseWindow doesn't fire 'ready-to-show' — listen on the
   // WebContentsView's webContents instead.
   contentView.webContents.once('did-finish-load', () => {
@@ -76,7 +142,10 @@ ipcMain.handle(IpcChannels.THEME_SET, (_event, theme: ThemeName) => {
   contentView?.webContents.send(IpcChannels.THEME_CHANGED, theme)
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  buildAppMenu()
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

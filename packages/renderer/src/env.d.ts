@@ -11,6 +11,7 @@ declare global {
       getTheme: () => Promise<ThemeName>
       setTheme: (theme: ThemeName) => Promise<void>
       onThemeChanged: (callback: (theme: ThemeName) => void) => () => void
+      onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void
       platform: NodeJS.Platform
     }
   }

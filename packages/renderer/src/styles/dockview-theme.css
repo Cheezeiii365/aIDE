@@ -7,11 +7,62 @@
   --dv-activegroup-hiddenpanel-tab-background-color: var(--bg-inactive-tab);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-inactive-tab);
   --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg-inactive-tab);
-  --dv-tab-divider-color: var(--border-base);
+  --dv-tab-divider-color: transparent;
   --dv-activegroup-visiblepanel-tab-color: var(--text-primary);
-  --dv-activegroup-hiddenpanel-tab-color: var(--text-secondary);
+  --dv-activegroup-hiddenpanel-tab-color: var(--text-muted);
   --dv-inactivegroup-visiblepanel-tab-color: var(--text-secondary);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--text-muted);
   --dv-separator-border: var(--border-base);
   --dv-group-view-background-color: var(--bg-base);
+}
+
+/* Tighter tab bar */
+.dockview-theme-aide .tabs-container {
+  height: 30px !important;
+}
+
+.dockview-theme-aide .tab {
+  font-size: 11px !important;
+  padding: 0 10px !important;
+  min-width: 0 !important;
+}
+
+/* Subtler active tab indicator */
+.dockview-theme-aide .dv-tab.dv-active-tab {
+  font-weight: 450;
+}
+
+/* ─── Close button overrides ───────────────────── */
+.dockview-theme-aide .dv-default-tab-action {
+  padding: 2px !important;
+  border-radius: 3px !important;
+}
+
+.dockview-theme-aide .dv-default-tab-action svg {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+.dockview-theme-aide .dv-default-tab-action:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+/* Tighter tab content spacing */
+.dockview-theme-aide .dv-default-tab-content {
+  margin-right: 2px !important;
+}
+
+/* Icon hover color mapped to theme */
+.dockview-theme-aide {
+  --dv-icon-hover-background-color: var(--bg-hover);
+}
+
+/* Separator sash — thinner and subtler */
+.dockview-theme-aide .sash-container .sash {
+  transition: background 150ms ease;
+}
+
+.dockview-theme-aide .sash-container .sash:hover {
+  background: var(--accent) !important;
+  opacity: 0.5;
 }

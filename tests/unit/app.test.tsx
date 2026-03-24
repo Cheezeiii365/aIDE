@@ -13,6 +13,7 @@ beforeEach(() => {
       getTheme: vi.fn().mockResolvedValue('one-dark'),
       setTheme: vi.fn().mockResolvedValue(undefined),
       onThemeChanged: vi.fn().mockReturnValue(() => {}),
+      onFullscreenChanged: vi.fn().mockReturnValue(() => {}),
       platform: 'darwin',
     },
     writable: true,

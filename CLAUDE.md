@@ -35,13 +35,13 @@ aIDE is a custom IDE built for multi-agent workflows, built with Electron from s
 
 - Always check against the .gitignore file when committing for security and performance reasons.
 
-- Use `feat/` for new features
-- Use `fix/` for bug fixes
-- Use `refactor/` for code refactoring
-- Use `test/` for testing
-- Use `docs/` for documentation
-- Use `chore/` for chores
-- Use `style/` for styling
-- Use `perf/` for performance improvements
-- Use `build/` for build system changes
-- Use `ci/` for CI configuration changes
+- Use `feat:` for new features
+- Use `fix:` for bug fixes
+- Use `refactor:` for code refactoring
+- Use `test:` for testing
+- Use `docs:` for documentation
+- Use `chore:` for chores
+- Use `style:` for styling
+- Use `perf:` for performance improvements
+- Use `build:` for build system changes
+- Use `ci:` for CI configuration changes

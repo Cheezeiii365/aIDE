@@ -15,6 +15,9 @@ export const IpcChannels = {
   THEME_GET: 'theme:get',
   THEME_SET: 'theme:set',
   THEME_CHANGED: 'theme:changed',
+
+  // Fullscreen
+  FULLSCREEN_CHANGED: 'fullscreen:changed',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'

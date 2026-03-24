@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener(IpcChannels.THEME_CHANGED, handler)
   },
 
+  // Fullscreen
+  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, isFullscreen: boolean) => callback(isFullscreen)
+    ipcRenderer.on(IpcChannels.FULLSCREEN_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.FULLSCREEN_CHANGED, handler)
+  },
+
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,
 })

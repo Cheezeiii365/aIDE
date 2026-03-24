@@ -1,9 +1,16 @@
+import { useState, useEffect } from 'react'
 import { ThemeToggle } from './ThemeToggle'
 import { AgentStatusDot } from './AgentStatusDot'
 
 export function WorkspaceRibbon() {
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    return window.api.onFullscreenChanged(setIsFullscreen)
+  }, [])
+
   return (
-    <header className="workspace-ribbon">
+    <header className={`workspace-ribbon${isFullscreen ? ' workspace-ribbon--fullscreen' : ''}`}>
       <div className="workspace-ribbon__tabs">
         <button className="workspace-tab workspace-tab--active">
           <AgentStatusDot status="running" />
@@ -16,6 +23,7 @@ export function WorkspaceRibbon() {
       </div>
       <div className="workspace-ribbon__actions">
         <span className="workspace-ribbon__cost">$0.00</span>
+        <div className="workspace-ribbon__separator" />
         <ThemeToggle />
       </div>
     </header>
