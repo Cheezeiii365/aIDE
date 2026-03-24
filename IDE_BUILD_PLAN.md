@@ -1163,7 +1163,7 @@ Track milestone completion here. Update as you go.
 |---|---|---|
 | 6.1 Settings system | ⬜ Not started | |
 | 6.2 Quick open (`Cmd+P`) + command palette | ⬜ Not started | |
-| 6.3 GitHub repository + CI | ⬜ Not started | |
+| 6.3 GitHub repository + CI | 🟡 In progress | electron-builder.yml configured for macOS (dmg+zip arm64+x64), Linux (AppImage+deb), Windows (nsis+zip). pnpm dist scripts added. GitHub Releases publish via `--publish always`. First alpha release: v0.1.0-alpha.1 |
 | 6.4 Plugin system foundation | ⬜ Not started | |
 
 **Status key:** ⬜ Not started · 🔵 In progress · ✅ Complete · ⏸ Blocked
