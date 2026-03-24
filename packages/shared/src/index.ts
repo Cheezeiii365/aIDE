@@ -18,16 +18,65 @@ export const IpcChannels = {
 
   // Fullscreen
   FULLSCREEN_CHANGED: 'fullscreen:changed',
+
+  // Sidebar width persistence
+  SIDEBAR_WIDTH_GET: 'sidebar-width:get',
+  SIDEBAR_WIDTH_SET: 'sidebar-width:set',
+
+  // Workspace
+  FS_OPEN_WORKSPACE: 'fs:open-workspace',
+  WORKSPACE_ROOT_GET: 'workspace-root:get',
+
+  // Filesystem
+  FS_READ_DIR: 'fs:read-dir',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
 
+export interface DirEntry {
+  name: string
+  path: string
+  isDirectory: boolean
+}
+
 export interface AppSettings {
   theme: ThemeName
   sidebarWidth: number
+  workspaceRoot: string | null
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'one-dark',
   sidebarWidth: 220,
+  workspaceRoot: null,
+}
+
+/** Single source of truth for the preload bridge API shape. */
+export interface WindowApi {
+  // Window controls
+  minimizeWindow: () => void
+  maximizeWindow: () => void
+  closeWindow: () => void
+
+  // Theme
+  getTheme: () => Promise<ThemeName>
+  setTheme: (theme: ThemeName) => Promise<void>
+  onThemeChanged: (callback: (theme: ThemeName) => void) => () => void
+
+  // Fullscreen
+  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void
+
+  // Sidebar width
+  getSidebarWidth: () => Promise<number>
+  setSidebarWidth: (width: number) => Promise<void>
+
+  // Workspace
+  openWorkspaceDialog: () => Promise<string | null>
+  getWorkspaceRoot: () => Promise<string | null>
+
+  // Filesystem
+  readDir: (dirPath: string) => Promise<DirEntry[]>
+
+  // Platform info
+  platform: NodeJS.Platform
 }

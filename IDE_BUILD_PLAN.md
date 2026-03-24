@@ -1,6 +1,6 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 21, 2026
+> **Last updated:** March 24, 2026
 > **Status:** Pre-development / Planning (pressure-tested)
 
 ---
@@ -1124,7 +1124,7 @@ Track milestone completion here. Update as you go.
 ### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
 |---|---|---|
-| 2.1 File tree (fixed sidebar) | ⬜ Not started | |
+| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. Deferred to 2.1b: chokidar watcher, git badges. Deferred to 2.1c: context menu, rename/delete, virtualization |
 | 2.2 CodeMirror 6 editor | ⬜ Not started | Includes multi-cursor, folding, indent guides, word wrap |
 | 2.3 Terminal (xterm.js + node-pty) | ⬜ Not started | |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |

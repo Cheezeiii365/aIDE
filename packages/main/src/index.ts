@@ -1,8 +1,9 @@
-import { app, BaseWindow, WebContentsView, ipcMain, Menu } from 'electron'
-import { join } from 'path'
+import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog } from 'electron'
+import { join, basename } from 'path'
+import { readdir } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
-import type { AppSettings, ThemeName } from '@aide/shared'
+import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
@@ -140,6 +141,50 @@ ipcMain.handle(IpcChannels.THEME_GET, () => store.get('theme'))
 ipcMain.handle(IpcChannels.THEME_SET, (_event, theme: ThemeName) => {
   store.set('theme', theme)
   contentView?.webContents.send(IpcChannels.THEME_CHANGED, theme)
+})
+
+// Sidebar width IPC handlers
+ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_GET, () => store.get('sidebarWidth'))
+ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_SET, (_event, width: number) => {
+  store.set('sidebarWidth', width)
+})
+
+// Workspace IPC handlers
+ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  const selected = result.filePaths[0]
+  store.set('workspaceRoot', selected)
+  return selected
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, () => store.get('workspaceRoot'))
+
+// Filesystem IPC handlers
+const HIDDEN_FILES = new Set(['.DS_Store', 'Thumbs.db'])
+
+ipcMain.handle(IpcChannels.FS_READ_DIR, async (_event, dirPath: string): Promise<DirEntry[] | { error: string }> => {
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true })
+    const mapped: DirEntry[] = entries
+      .filter((e) => !HIDDEN_FILES.has(e.name))
+      .map((e) => ({
+        name: e.name,
+        path: join(dirPath, e.name),
+        isDirectory: e.isDirectory(),
+      }))
+    // Sort: directories first, then alphabetical (case-insensitive)
+    mapped.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
+    return mapped
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error reading directory'
+    return { error: message }
+  }
 })
 
 app.whenReady().then(() => {

@@ -5,6 +5,7 @@ import { App } from './App'
 import './styles/global.css'
 import './styles/themes.css'
 import './styles/app-shell.css'
+import './styles/file-tree.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

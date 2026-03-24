@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName } from '@aide/shared'
+import type { ThemeName, WindowApi } from '@aide/shared'
 
-contextBridge.exposeInMainWorld('api', {
+const api: WindowApi = {
   // Window controls (frameless window needs these)
   minimizeWindow: () => ipcRenderer.send(IpcChannels.WINDOW_MINIMIZE),
   maximizeWindow: () => ipcRenderer.send(IpcChannels.WINDOW_MAXIMIZE),
@@ -24,6 +24,19 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener(IpcChannels.FULLSCREEN_CHANGED, handler)
   },
 
+  // Sidebar width
+  getSidebarWidth: () => ipcRenderer.invoke(IpcChannels.SIDEBAR_WIDTH_GET),
+  setSidebarWidth: (width: number) => ipcRenderer.invoke(IpcChannels.SIDEBAR_WIDTH_SET, width),
+
+  // Workspace
+  openWorkspaceDialog: () => ipcRenderer.invoke(IpcChannels.FS_OPEN_WORKSPACE),
+  getWorkspaceRoot: () => ipcRenderer.invoke(IpcChannels.WORKSPACE_ROOT_GET),
+
+  // Filesystem
+  readDir: (dirPath: string) => ipcRenderer.invoke(IpcChannels.FS_READ_DIR, dirPath),
+
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,
-})
+}
+
+contextBridge.exposeInMainWorld('api', api)

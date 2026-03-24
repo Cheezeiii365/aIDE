@@ -2,20 +2,29 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ThemeProvider } from '@renderer/hooks/useTheme'
 import { App } from '@renderer/App'
+import type { WindowApi } from '@aide/shared'
 
-// Mock window.api for tests
+// Mock window.api for tests — derives from WindowApi so it breaks at
+// compile time if the contract changes.
+const mockApi: WindowApi = {
+  minimizeWindow: vi.fn(),
+  maximizeWindow: vi.fn(),
+  closeWindow: vi.fn(),
+  getTheme: vi.fn().mockResolvedValue('one-dark'),
+  setTheme: vi.fn().mockResolvedValue(undefined),
+  onThemeChanged: vi.fn().mockReturnValue(() => {}),
+  onFullscreenChanged: vi.fn().mockReturnValue(() => {}),
+  getSidebarWidth: vi.fn().mockResolvedValue(220),
+  setSidebarWidth: vi.fn().mockResolvedValue(undefined),
+  openWorkspaceDialog: vi.fn().mockResolvedValue(null),
+  getWorkspaceRoot: vi.fn().mockResolvedValue(null),
+  readDir: vi.fn().mockResolvedValue([]),
+  platform: 'darwin',
+}
+
 beforeEach(() => {
   Object.defineProperty(window, 'api', {
-    value: {
-      minimizeWindow: vi.fn(),
-      maximizeWindow: vi.fn(),
-      closeWindow: vi.fn(),
-      getTheme: vi.fn().mockResolvedValue('one-dark'),
-      setTheme: vi.fn().mockResolvedValue(undefined),
-      onThemeChanged: vi.fn().mockReturnValue(() => {}),
-      onFullscreenChanged: vi.fn().mockReturnValue(() => {}),
-      platform: 'darwin',
-    },
+    value: mockApi,
     writable: true,
   })
 })
