@@ -34,6 +34,7 @@ aIDE is a custom IDE built for multi-agent workflows, built with Electron from s
 ### Commiting conventions
 
 - Always check against the .gitignore file when committing for security and performance reasons.
+- Always update IDE_BUILD_PLAN.md when making changes to the codebase.
 
 - Use `feat:` for new features
 - Use `fix:` for bug fixes

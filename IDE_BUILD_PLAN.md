@@ -1116,10 +1116,10 @@ Track milestone completion here. Update as you go.
 ### Phase 1: Skeleton (Weeks 1–3)
 | Milestone | Status | Notes |
 |---|---|---|
-| 1.1 Project scaffolding | ⬜ Not started | |
-| 1.2 Electron shell | ⬜ Not started | |
-| 1.3 Theming system + React renderer | ⬜ Not started | Dark + light from day one |
-| 1.4 Dockview integration | ⬜ Not started | Sidebar outside Dockview |
+| 1.1 Project scaffolding | ✅ Complete | electron-vite + React 19 + TS, pnpm workspaces (main/renderer/shared), ESLint + Prettier + TS strict, electron-builder for macOS |
+| 1.2 Electron shell | ✅ Complete | BaseWindow (frameless, hiddenInset), custom drag region, typed IPC channels, app menu with zoom/clipboard/fullscreen. safeStorage for API keys deferred to Phase 6.1 |
+| 1.3 Theming system + React renderer | ✅ Complete | data-theme CSS variable system, one-dark + one-light themes, theme toggle persisted via electron-store, ThemeProvider + useTheme hook, AppShell layout (ribbon/sidebar/status bar), fullscreen-aware ribbon padding |
+| 1.4 Dockview integration | ✅ Complete | Dockview 5.x wired into main content area (sidebar outside Dockview), theme CSS vars mapped to dockview tokens, default 3-pane layout (Editor/Terminal/Agent placeholders), compact tab styling with close button overrides |
 
 ### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
