@@ -4,6 +4,8 @@
   "private": true,
   "dependencies": {
     "@aide/shared": "workspace:*",
+    "dockview": "^5.1.0",
+    "dockview-react": "^5.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

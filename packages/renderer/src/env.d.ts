@@ -1,10 +1,17 @@
 /// <reference types="vite/client" />
 
-interface Window {
-  api: {
-    minimizeWindow: () => void
-    maximizeWindow: () => void
-    closeWindow: () => void
-    platform: NodeJS.Platform
+import type { ThemeName } from '@aide/shared'
+
+declare global {
+  interface Window {
+    api: {
+      minimizeWindow: () => void
+      maximizeWindow: () => void
+      closeWindow: () => void
+      getTheme: () => Promise<ThemeName>
+      setTheme: (theme: ThemeName) => Promise<void>
+      onThemeChanged: (callback: (theme: ThemeName) => void) => () => void
+      platform: NodeJS.Platform
+    }
   }
 }

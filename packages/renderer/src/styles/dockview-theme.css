@@ -1,0 +1,17 @@
+/* Map Dockview CSS variables to our theme tokens */
+.dockview-theme-aide {
+  --dv-background-color: var(--bg-base);
+  --dv-paneview-header-border-color: var(--border-base);
+  --dv-tabs-and-actions-container-background-color: var(--bg-elevated);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg-active-tab);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg-inactive-tab);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-inactive-tab);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg-inactive-tab);
+  --dv-tab-divider-color: var(--border-base);
+  --dv-activegroup-visiblepanel-tab-color: var(--text-primary);
+  --dv-activegroup-hiddenpanel-tab-color: var(--text-secondary);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text-secondary);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-muted);
+  --dv-separator-border: var(--border-base);
+  --dv-group-view-background-color: var(--bg-base);
+}

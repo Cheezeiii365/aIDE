@@ -1,6 +1,10 @@
 import { app, BaseWindow, WebContentsView, ipcMain } from 'electron'
 import { join } from 'path'
-import { IpcChannels } from '@aide/shared'
+import Store from 'electron-store'
+import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
+import type { AppSettings, ThemeName } from '@aide/shared'
+
+const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -64,6 +68,13 @@ ipcMain.on(IpcChannels.WINDOW_MAXIMIZE, () => {
   }
 })
 ipcMain.on(IpcChannels.WINDOW_CLOSE, () => mainWindow?.close())
+
+// Theme IPC handlers
+ipcMain.handle(IpcChannels.THEME_GET, () => store.get('theme'))
+ipcMain.handle(IpcChannels.THEME_SET, (_event, theme: ThemeName) => {
+  store.set('theme', theme)
+  contentView?.webContents.send(IpcChannels.THEME_CHANGED, theme)
+})
 
 app.whenReady().then(createWindow)
 

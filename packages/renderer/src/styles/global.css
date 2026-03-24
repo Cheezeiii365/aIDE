@@ -23,37 +23,4 @@ body,
   color: var(--text-selected);
 }
 
-/* Frameless window: drag region for macOS traffic lights */
-.titlebar-drag-region {
-  -webkit-app-region: drag;
-  height: 38px;
-  width: 100%;
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 100;
-  pointer-events: none;
-}
-
-.app-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.app-content {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 8px;
-  color: var(--text-secondary);
-}
-
-.app-content h1 {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.5px;
-}
+/* App-specific layout styles are now in app-shell.css */

@@ -18,3 +18,13 @@ export const IpcChannels = {
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
+
+export interface AppSettings {
+  theme: ThemeName
+  sidebarWidth: number
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'one-dark',
+  sidebarWidth: 220,
+}
