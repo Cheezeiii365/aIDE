@@ -14,9 +14,10 @@ interface FileTreeNode {
 
 interface Props {
   rootPath: string
+  onFileOpen: (filePath: string) => void
 }
 
-export function FileTree({ rootPath }: Props) {
+export function FileTree({ rootPath, onFileOpen }: Props) {
   const [nodes, setNodes] = useState<Map<string, FileTreeNode>>(new Map())
 
   // Load root children on mount or when rootPath changes
@@ -144,6 +145,7 @@ export function FileTree({ rootPath }: Props) {
           key={node.path}
           node={node}
           onToggle={toggleExpand}
+          onFileOpen={onFileOpen}
         />
       ))}
     </div>

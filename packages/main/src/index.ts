@@ -1,6 +1,6 @@
 import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog } from 'electron'
 import { join, basename } from 'path'
-import { readdir } from 'fs/promises'
+import { readdir, readFile, stat } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
@@ -183,6 +183,28 @@ ipcMain.handle(IpcChannels.FS_READ_DIR, async (_event, dirPath: string): Promise
     return mapped
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error reading directory'
+    return { error: message }
+  }
+})
+
+// Read file IPC handler — enforces 10 MB limit, rejects binary files
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+
+ipcMain.handle(IpcChannels.FS_READ_FILE, async (_event, filePath: string): Promise<{ content: string } | { error: string }> => {
+  try {
+    const info = await stat(filePath)
+    if (!info.isFile()) return { error: 'Not a file' }
+    if (info.size > MAX_FILE_SIZE) return { error: `File too large (${(info.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.` }
+
+    const content = await readFile(filePath, 'utf-8')
+
+    // Check for binary content (null bytes in first 8 KB)
+    const sample = content.slice(0, 8192)
+    if (sample.includes('\0')) return { error: 'Binary file — cannot display' }
+
+    return { content }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error reading file'
     return { error: message }
   }
 })

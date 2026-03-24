@@ -11,6 +11,7 @@ interface FileTreeNode {
 interface Props {
   node: FileTreeNode
   onToggle: (path: string) => void
+  onFileOpen: (filePath: string) => void
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -47,12 +48,14 @@ function FileIcon() {
   )
 }
 
-export function FileTreeItem({ node, onToggle }: Props) {
+export function FileTreeItem({ node, onToggle, onFileOpen }: Props) {
   const handleClick = useCallback(() => {
     if (node.isDirectory) {
       onToggle(node.path)
+    } else {
+      onFileOpen(node.path)
     }
-  }, [node.path, node.isDirectory, onToggle])
+  }, [node.path, node.isDirectory, onToggle, onFileOpen])
 
   const indent = node.depth * 16 + 8
 

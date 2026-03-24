@@ -4,7 +4,11 @@ import { FileTree } from './FileTree/FileTree'
 const MIN_WIDTH = 180
 const MAX_WIDTH = 500
 
-export function Sidebar() {
+interface Props {
+  onFileOpen: (filePath: string) => void
+}
+
+export function Sidebar({ onFileOpen }: Props) {
   const [width, setWidth] = useState(220) // fallback until loaded
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const dragging = useRef(false)
@@ -55,7 +59,7 @@ export function Sidebar() {
       <div className="sidebar__content">
         <div className="sidebar__header">Explorer</div>
         {workspaceRoot ? (
-          <FileTree rootPath={workspaceRoot} />
+          <FileTree rootPath={workspaceRoot} onFileOpen={onFileOpen} />
         ) : (
           <div className="sidebar__empty">
             <button className="sidebar__open-btn" onClick={handleOpenFolder}>

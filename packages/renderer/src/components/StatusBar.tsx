@@ -1,3 +1,5 @@
+import { useEditorStatus } from '../hooks/useEditorStatus'
+
 function GitBranchIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -10,6 +12,8 @@ function GitBranchIcon() {
 }
 
 export function StatusBar() {
+  const { status } = useEditorStatus()
+
   return (
     <footer className="status-bar">
       <div className="status-bar__left">
@@ -18,12 +22,12 @@ export function StatusBar() {
           main
         </span>
         <div className="status-bar__separator" />
-        <span className="status-bar__item">Ln 1, Col 1</span>
+        <span className="status-bar__item">Ln {status.line}, Col {status.col}</span>
       </div>
       <div className="status-bar__right">
         <span className="status-bar__item">UTF-8</span>
         <div className="status-bar__separator" />
-        <span className="status-bar__item">TypeScript</span>
+        <span className="status-bar__item">{status.language}</span>
       </div>
     </footer>
   )

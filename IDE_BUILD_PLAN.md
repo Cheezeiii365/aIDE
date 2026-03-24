@@ -1125,7 +1125,7 @@ Track milestone completion here. Update as you go.
 | Milestone | Status | Notes |
 |---|---|---|
 | 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. Deferred to 2.1b: chokidar watcher, git badges. Deferred to 2.1c: context menu, rename/delete, virtualization |
-| 2.2 CodeMirror 6 editor | ⬜ Not started | Includes multi-cursor, folding, indent guides, word wrap |
+| 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. Deferred to 2.2b: writeFile + Cmd+S save + dirty indicator, @codemirror/search (Cmd+F/H), code folding, indent guides, word wrap toggle, bracket auto-close, confirm-before-close for unsaved tabs |
 | 2.3 Terminal (xterm.js + node-pty) | ⬜ Not started | |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
 | 2.5 Markdown preview | ⬜ Not started | Side-by-side pane |

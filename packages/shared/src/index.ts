@@ -29,6 +29,7 @@ export const IpcChannels = {
 
   // Filesystem
   FS_READ_DIR: 'fs:read-dir',
+  FS_READ_FILE: 'fs:read-file',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -76,6 +77,7 @@ export interface WindowApi {
 
   // Filesystem
   readDir: (dirPath: string) => Promise<DirEntry[]>
+  readFile: (filePath: string) => Promise<{ content: string } | { error: string }>
 
   // Platform info
   platform: NodeJS.Platform

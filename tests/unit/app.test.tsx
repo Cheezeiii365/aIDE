@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ThemeProvider } from '@renderer/hooks/useTheme'
+import { EditorStatusProvider } from '@renderer/hooks/useEditorStatus'
 import { App } from '@renderer/App'
 import type { WindowApi } from '@aide/shared'
 
@@ -19,6 +20,7 @@ const mockApi: WindowApi = {
   openWorkspaceDialog: vi.fn().mockResolvedValue(null),
   getWorkspaceRoot: vi.fn().mockResolvedValue(null),
   readDir: vi.fn().mockResolvedValue([]),
+  readFile: vi.fn().mockResolvedValue({ content: '' }),
   platform: 'darwin',
 }
 
@@ -32,7 +34,9 @@ beforeEach(() => {
 function renderApp() {
   return render(
     <ThemeProvider>
-      <App />
+      <EditorStatusProvider>
+        <App />
+      </EditorStatusProvider>
     </ThemeProvider>,
   )
 }
