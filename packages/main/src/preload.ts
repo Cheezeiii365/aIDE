@@ -37,6 +37,28 @@ const api: WindowApi = {
   readFile: (filePath: string) => ipcRenderer.invoke(IpcChannels.FS_READ_FILE, filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke(IpcChannels.FS_WRITE_FILE, filePath, content),
 
+  // Terminal
+  ptyCreate: (opts?: { cwd?: string; shell?: string }) =>
+    ipcRenderer.invoke(IpcChannels.PTY_CREATE, opts),
+  ptyWrite: (id: string, data: string) =>
+    ipcRenderer.send(IpcChannels.PTY_DATA_IN, id, data),
+  ptyResize: (id: string, cols: number, rows: number) =>
+    ipcRenderer.send(IpcChannels.PTY_RESIZE, id, cols, rows),
+  ptyKill: (id: string) =>
+    ipcRenderer.send(IpcChannels.PTY_KILL, id),
+  onPtyData: (callback: (id: string, data: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, id: string, data: string) =>
+      callback(id, data)
+    ipcRenderer.on(IpcChannels.PTY_DATA_OUT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.PTY_DATA_OUT, handler)
+  },
+  onPtyExit: (callback: (id: string, exitCode: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, id: string, exitCode: number) =>
+      callback(id, exitCode)
+    ipcRenderer.on(IpcChannels.PTY_EXIT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.PTY_EXIT, handler)
+  },
+
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,
 }

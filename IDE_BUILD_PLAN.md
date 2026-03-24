@@ -142,7 +142,7 @@ Main Process (Electron)
 | Search in file | **@codemirror/search** | Find/replace in current file, regex support |
 | Markdown | **@codemirror/lang-markdown** | Syntax highlighting for `.md` files |
 | Code folding | **@codemirror/language** (foldGutter) | Fold function bodies, classes, blocks |
-| Indent guides | Community extension or custom | Vertical lines showing block structure |
+| Indent guides | **@replit/codemirror-indentation-markers** | Vertical lines showing block structure — handles mixed tabs/spaces and empty-line inheritance |
 
 ### Search
 | Layer | Choice | Why |
@@ -1127,7 +1127,7 @@ Track milestone completion here. Update as you go.
 |---|---|---|
 | 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. Deferred to 2.1b: chokidar watcher, git badges. Deferred to 2.1c: context menu, rename/delete, virtualization |
 | 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. Deferred to 2.2c: minimap, breadcrumb nav |
-| 2.3 Terminal (xterm.js + node-pty) | ⬜ Not started | |
+| 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
 | 2.5 Markdown preview | ⬜ Not started | Side-by-side pane |
 | 2.6 Keyboard shortcut system | ⬜ Not started | |

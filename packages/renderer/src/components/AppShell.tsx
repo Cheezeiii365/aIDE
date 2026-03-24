@@ -1,15 +1,53 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import type { DockviewApi } from 'dockview-react'
 import { WorkspaceRibbon } from './WorkspaceRibbon'
 import { Sidebar } from './Sidebar'
 import { DockviewContainer } from './DockviewContainer'
 import { StatusBar } from './StatusBar'
+import { registerAppActions } from '../lib/appActions'
 
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
+  }, [])
+
+  // Register app-wide action dispatch layer
+  useEffect(() => {
+    registerAppActions({
+      openFile: (filePath: string) => onFileOpen(filePath),
+      openUrl: (url: string) => window.open(url),
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cmd+Shift+T to open a new terminal tab
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'T') {
+        e.preventDefault()
+        const api = dockviewApiRef.current
+        if (!api) return
+
+        const id = `terminal-${Date.now()}`
+        const existingTerminal = api.panels.find(
+          (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
+        )
+        const position = existingTerminal
+          ? { referencePanel: existingTerminal }
+          : undefined
+
+        api.addPanel({
+          id,
+          component: 'terminalPane',
+          title: 'Terminal',
+          position,
+        })
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   const onFileOpen = useCallback((filePath: string) => {

@@ -31,6 +31,14 @@ export const IpcChannels = {
   FS_READ_DIR: 'fs:read-dir',
   FS_READ_FILE: 'fs:read-file',
   FS_WRITE_FILE: 'fs:write-file',
+
+  // Terminal / PTY
+  PTY_CREATE: 'pty:create',
+  PTY_DATA_IN: 'pty:data-in',
+  PTY_DATA_OUT: 'pty:data-out',
+  PTY_RESIZE: 'pty:resize',
+  PTY_KILL: 'pty:kill',
+  PTY_EXIT: 'pty:exit',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -80,6 +88,14 @@ export interface WindowApi {
   readDir: (dirPath: string) => Promise<DirEntry[]>
   readFile: (filePath: string) => Promise<{ content: string } | { error: string }>
   writeFile: (filePath: string, content: string) => Promise<{ success: true } | { error: string }>
+
+  // Terminal
+  ptyCreate: (opts?: { cwd?: string; shell?: string }) => Promise<{ id: string }>
+  ptyWrite: (id: string, data: string) => void
+  ptyResize: (id: string, cols: number, rows: number) => void
+  ptyKill: (id: string) => void
+  onPtyData: (callback: (id: string, data: string) => void) => () => void
+  onPtyExit: (callback: (id: string, exitCode: number) => void) => () => void
 
   // Platform info
   platform: NodeJS.Platform

@@ -4,6 +4,7 @@ import { readdir, readFile, writeFile as fsWriteFile, stat } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
+import { registerPtyHandlers, killAllPtys } from './ptyManager'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
@@ -223,7 +224,10 @@ ipcMain.handle(IpcChannels.FS_WRITE_FILE, async (_event, filePath: string, conte
 app.whenReady().then(() => {
   buildAppMenu()
   createWindow()
+  registerPtyHandlers(() => contentView?.webContents ?? null, store)
 })
+
+app.on('before-quit', killAllPtys)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

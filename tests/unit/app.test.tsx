@@ -22,6 +22,12 @@ const mockApi: WindowApi = {
   readDir: vi.fn().mockResolvedValue([]),
   readFile: vi.fn().mockResolvedValue({ content: '' }),
   writeFile: vi.fn().mockResolvedValue({ success: true }),
+  ptyCreate: vi.fn().mockResolvedValue({ id: 'mock-pty-id' }),
+  ptyWrite: vi.fn(),
+  ptyResize: vi.fn(),
+  ptyKill: vi.fn(),
+  onPtyData: vi.fn().mockReturnValue(() => {}),
+  onPtyExit: vi.fn().mockReturnValue(() => {}),
   platform: 'darwin',
 }
 

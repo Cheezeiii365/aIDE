@@ -3,12 +3,14 @@ import { DockviewReact, type DockviewReadyEvent, type DockviewApi } from 'dockvi
 import { PlaceholderPane } from './panes/PlaceholderPane'
 import { EditorPane } from './panes/EditorPane'
 import { EditorTab } from './panes/EditorTab'
+import { TerminalPane } from './panes/TerminalPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
 const components = {
   placeholder: PlaceholderPane,
   editorPane: EditorPane,
+  terminalPane: TerminalPane,
 }
 
 const tabComponents = {
@@ -32,8 +34,8 @@ export function DockviewContainer({ onApiReady }: Props) {
 
       api.addPanel({
         id: 'terminal',
-        component: 'placeholder',
-        params: { title: 'Terminal' },
+        component: 'terminalPane',
+        title: 'Terminal',
         position: { referencePanel: editorPanel, direction: 'below' },
         initialHeight: 200,
       })
