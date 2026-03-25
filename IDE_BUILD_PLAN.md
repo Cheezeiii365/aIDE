@@ -408,6 +408,15 @@ webContentsView.setBounds({
 ```
 When a browser pane is hidden (workspace switch or minimized), call `webContentsView.setVisible(false)` — this preserves the session and page state without destroying the view.
 
+**Tile action buttons (v2+):**
+Each Dockview panel header should have a row of icon buttons on the right side (inspired by cmux). Actions include:
+- **New terminal** — opens a new terminal tab in that tile
+- **New browser** — opens a new browser tab in that tile
+- **Split vertical** — splits the tile vertically
+- **Split horizontal** — splits the tile horizontally
+
+These buttons provide quick, discoverable access to tile operations without needing keyboard shortcuts or right-click context menus.
+
 **Layout serialization:**
 ```typescript
 // Save
