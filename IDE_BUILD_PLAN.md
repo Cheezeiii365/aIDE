@@ -408,6 +408,15 @@ webContentsView.setBounds({
 ```
 When a browser pane is hidden (workspace switch or minimized), call `webContentsView.setVisible(false)` — this preserves the session and page state without destroying the view.
 
+**Tile action buttons (v2+):**
+Each Dockview panel header should have a row of icon buttons on the right side (inspired by cmux). Actions include:
+- **New terminal** — opens a new terminal tab in that tile
+- **New browser** — opens a new browser tab in that tile
+- **Split vertical** — splits the tile vertically
+- **Split horizontal** — splits the tile horizontally
+
+These buttons provide quick, discoverable access to tile operations without needing keyboard shortcuts or right-click context menus.
+
 **Layout serialization:**
 ```typescript
 // Save
@@ -1125,12 +1134,12 @@ Track milestone completion here. Update as you go.
 ### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
 |---|---|---|
-| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. Deferred to 2.1b: chokidar watcher, git badges. Deferred to 2.1c: context menu, rename/delete, virtualization |
+| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. 2.1b complete: @parcel/watcher (native C++ FSEvents, not chokidar) with debounced incremental tree updates, native ignore patterns (node_modules/.git/dist/build), error recovery with exponential backoff. File operations: createFile, createDir, delete, rename IPC handlers. Right-click context menu (New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder). Inline rename input with validation. Cmd+B sidebar toggle via ShortcutManager. Deferred to 2.1c: @tanstack/react-virtual virtualization, git status badges (simple-git) |
 | 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. Deferred to 2.2c: minimap, breadcrumb nav |
 | 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
 | 2.5 Markdown preview | ⬜ Not started | Side-by-side pane |
-| 2.6 Keyboard shortcut system | ⬜ Not started | |
+| 2.6 Keyboard shortcut system | 🟡 In progress | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. Shortcuts wired: Cmd+Shift+T (new terminal), Cmd+B (sidebar toggle), Cmd+W (close active panel). Deferred: Cmd+P quick open, Cmd+Shift+P command palette, Cmd+Shift+F find in files |
 
 ### Phase 3: LSP + Browser Pane (Weeks 8–10)
 | Milestone | Status | Notes |

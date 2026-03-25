@@ -1,13 +1,15 @@
-import { useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import type { DockviewApi } from 'dockview-react'
 import { WorkspaceRibbon } from './WorkspaceRibbon'
 import { Sidebar } from './Sidebar'
 import { DockviewContainer } from './DockviewContainer'
 import { StatusBar } from './StatusBar'
 import { registerAppActions } from '../lib/appActions'
+import { useShortcut } from '../lib/ShortcutManager'
 
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
@@ -21,34 +23,41 @@ export function AppShell() {
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cmd+Shift+T to open a new terminal tab
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'T') {
-        e.preventDefault()
-        const api = dockviewApiRef.current
-        if (!api) return
+  // Cmd+Shift+T — open a new terminal tab
+  useShortcut('new-terminal', 'Cmd+Shift+T', () => {
+    const api = dockviewApiRef.current
+    if (!api) return
 
-        const id = `terminal-${Date.now()}`
-        const existingTerminal = api.panels.find(
-          (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
-        )
-        const position = existingTerminal
-          ? { referencePanel: existingTerminal }
-          : undefined
+    const id = `terminal-${Date.now()}`
+    const existingTerminal = api.panels.find(
+      (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
+    )
+    const position = existingTerminal
+      ? { referencePanel: existingTerminal }
+      : undefined
 
-        api.addPanel({
-          id,
-          component: 'terminalPane',
-          title: 'Terminal',
-          position,
-        })
-      }
+    api.addPanel({
+      id,
+      component: 'terminalPane',
+      title: 'Terminal',
+      position,
+    })
+  })
+
+  // Cmd+B — toggle sidebar
+  useShortcut('toggle-sidebar', 'Cmd+B', () => {
+    setSidebarCollapsed((prev) => !prev)
+  })
+
+  // Cmd+W — close active panel
+  useShortcut('close-panel', 'Cmd+W', () => {
+    const api = dockviewApiRef.current
+    if (!api) return
+    const active = api.activePanel
+    if (active) {
+      active.api.close()
     }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  })
 
   const onFileOpen = useCallback((filePath: string) => {
     const api = dockviewApiRef.current
@@ -84,7 +93,7 @@ export function AppShell() {
     <div className="app-shell">
       <WorkspaceRibbon />
       <div className="app-middle">
-        <Sidebar onFileOpen={onFileOpen} />
+        <Sidebar onFileOpen={onFileOpen} collapsed={sidebarCollapsed} />
         <div className="dockview-wrapper">
           <DockviewContainer onApiReady={onApiReady} />
         </div>

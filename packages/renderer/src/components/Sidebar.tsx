@@ -6,9 +6,10 @@ const MAX_WIDTH = 500
 
 interface Props {
   onFileOpen: (filePath: string) => void
+  collapsed?: boolean
 }
 
-export function Sidebar({ onFileOpen }: Props) {
+export function Sidebar({ onFileOpen, collapsed = false }: Props) {
   const [width, setWidth] = useState(220) // fallback until loaded
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const dragging = useRef(false)
@@ -53,6 +54,10 @@ export function Sidebar({ onFileOpen }: Props) {
     const selected = await window.api.openWorkspaceDialog()
     if (selected) setWorkspaceRoot(selected)
   }, [])
+
+  if (collapsed) {
+    return null
+  }
 
   return (
     <aside className="sidebar" style={{ width }}>

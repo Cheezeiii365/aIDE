@@ -28,6 +28,9 @@ At this point, the project is being written in this editor. Any bug reports come
 - **Agent isolation**: One `UtilityProcess` per workspace for agent processes
 - **LSP per workspace**: Separate language server processes, SIGSTOP/SIGCONT on workspace switch
 
+## Building
+- Do not build into a dmg unless told to explicitly. 
+
 ## Repository
 
 - GitHub: https://github.com/Cheezeiii365/aIDE
