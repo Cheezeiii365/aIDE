@@ -1,5 +1,6 @@
 import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell, session } from 'electron'
 import { join, dirname } from 'path'
+import { existsSync } from 'fs'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
@@ -326,13 +327,17 @@ app.whenReady().then(async () => {
 
   // Auto-start watcher if we have a persisted workspace
   const savedRoot = store.get('workspaceRoot')
-  if (savedRoot) {
+  if (savedRoot && existsSync(savedRoot)) {
     // Use active worktree root for file watcher and git polling if set
     const activeWorktree = store.get('activeWorktree')
-    const effectiveRoot = activeWorktree || savedRoot
+    const effectiveRoot = activeWorktree && existsSync(activeWorktree) ? activeWorktree : savedRoot
     await startWatcher(effectiveRoot)
     await startGitPolling(effectiveRoot, getWebContents)
     await startWorktreePolling(savedRoot, getWebContents, store)
+  } else if (savedRoot) {
+    console.warn(`[startup] Persisted workspace root no longer exists: ${savedRoot}`)
+    store.set('workspaceRoot', '')
+    store.set('activeWorktree', '')
   }
 })
 
