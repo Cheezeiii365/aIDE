@@ -9,6 +9,10 @@
   z-index: 2000;
 }
 
+.modal-overlay--animate {
+  animation: modal-fade-in 120ms ease;
+}
+
 .modal {
   background: var(--bg-elevated);
   border: 1px solid var(--border-base);
@@ -16,6 +20,10 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   min-width: 360px;
   max-width: 480px;
+}
+
+.modal--animate {
+  animation: modal-slide-in 150ms ease;
 }
 
 .modal__header {
@@ -69,17 +77,49 @@
   cursor: pointer;
 }
 
-.modal__checkbox {
+/* ─── Segmented Toggle ───────────────────────── */
+.modal__toggle-group {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-.modal__checkbox input {
-  accent-color: var(--accent);
+.modal__toggle-btn {
+  flex: 1;
+  padding: 5px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.modal__toggle-btn:first-child {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.modal__toggle-btn--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.modal__toggle-btn:not(.modal__toggle-btn--active):hover {
+  background: var(--bg-hover);
+}
+
+/* ─── Field Group Animation ──────────────────── */
+.modal__field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal__field-group--animate {
+  animation: modal-field-in 150ms ease;
 }
 
 .modal__error {
@@ -93,11 +133,15 @@
 .modal__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   padding-top: 4px;
 }
 
 .modal__btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 14px;
   border-radius: 4px;
   font-size: 12px;
@@ -129,4 +173,58 @@
 .modal__btn--primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ─── Spinner ────────────────────────────────── */
+.modal__spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: modal-spin 600ms linear infinite;
+}
+
+/* ─── Success Flash ──────────────────────────── */
+.modal__success {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-success, #98c379);
+  animation: modal-field-in 150ms ease;
+}
+
+/* ─── Keyframes ──────────────────────────────── */
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modal-field-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modal-spin {
+  to { transform: rotate(360deg); }
 }

@@ -4,12 +4,14 @@ interface Props {
   worktree: WorktreeInfo
   onClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
+  onOpenTerminal: (path: string) => void
+  onMoreActions: (e: React.MouseEvent, worktree: WorktreeInfo) => void
 }
 
-export function WorktreeItem({ worktree, onClick, onContextMenu }: Props) {
+export function WorktreeItem({ worktree, onClick, onContextMenu, onOpenTerminal, onMoreActions }: Props) {
   return (
     <div
-      className={`worktree-item ${worktree.isCurrent ? 'worktree-item--active' : ''}`}
+      className={`worktree-item${worktree.isCurrent ? ' worktree-item--active' : ''}${worktree.isMain ? ' worktree-item--main' : ''}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
     >
@@ -18,7 +20,38 @@ export function WorktreeItem({ worktree, onClick, onContextMenu }: Props) {
       </svg>
       <span className="worktree-item__branch">{worktree.branch}</span>
       {worktree.isMain && <span className="worktree-item__badge worktree-item__badge--main">main</span>}
-      {worktree.isDirty && <span className="worktree-item__dirty" title="Uncommitted changes" />}
+      {worktree.isDirty && <span className="worktree-item__dirty" title="Uncommitted changes">M</span>}
+
+      <div className="worktree-item__actions">
+        {/* Terminal button */}
+        <button
+          className="worktree-item__action-btn"
+          title="Open in Terminal"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenTerminal(worktree.path)
+          }}
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <path d="M0 3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3zm1.5 0v10a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5H2a.5.5 0 0 0-.5.5zm2.22 2.72a.75.75 0 0 1 1.06 0l2 2a.75.75 0 0 1 0 1.06l-2 2a.75.75 0 0 1-1.06-1.06L5.44 8 3.72 6.28a.75.75 0 0 1 0-1.06zM8 11a.75.75 0 0 1 0-1.5h2.5a.75.75 0 0 1 0 1.5H8z" />
+          </svg>
+        </button>
+        {/* More actions button */}
+        <button
+          className="worktree-item__action-btn"
+          title="More actions"
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoreActions(e, worktree)
+          }}
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <circle cx="8" cy="3" r="1.5" />
+            <circle cx="8" cy="8" r="1.5" />
+            <circle cx="8" cy="13" r="1.5" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }
