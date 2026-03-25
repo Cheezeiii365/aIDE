@@ -51,3 +51,6 @@ playwright-report/
 
 # TypeScript
 *.tsbuildinfo
+
+# Temp Files
+*.mjs
