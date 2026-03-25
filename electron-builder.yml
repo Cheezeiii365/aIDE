@@ -1,0 +1,53 @@
+appId: com.cheezeiii365.aide
+productName: aIDE
+copyright: Copyright © 2026 Cheezeiii365
+
+directories:
+  output: release
+
+files:
+  - packages/main/dist/**/*
+  - packages/renderer/dist/**/*
+  - package.json
+  - node_modules/**/*
+
+extraMetadata:
+  main: packages/main/dist/index.js
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+
+win:
+  target:
+    - nsis
+    - zip
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+publish:
+  provider: github
+  owner: Cheezeiii365
+  repo: aIDE
+  releaseType: prerelease
