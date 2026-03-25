@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
 import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -12,6 +12,7 @@ import json from 'highlight.js/lib/languages/json'
 import bash from 'highlight.js/lib/languages/bash'
 import markdown from 'highlight.js/lib/languages/markdown'
 import { getContent, subscribeContent } from '../../lib/editorContentBus'
+import { getAppActions } from '../../lib/appActions'
 import '../../styles/markdown-preview.css'
 
 // Register highlight.js languages
@@ -93,12 +94,24 @@ export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPrev
     return () => clearTimeout(timer)
   }, [content, marked])
 
+  const handleLinkClick = useCallback((e: React.MouseEvent) => {
+    const anchor = (e.target as HTMLElement).closest('a')
+    if (!anchor) return
+    e.preventDefault()
+    const href = anchor.getAttribute('href')
+    if (href && /^https?:\/\//.test(href)) {
+      getAppActions()?.openUrl(href)
+    }
+  }, [])
+
   return (
     <div className="markdown-preview" ref={scrollRef}>
       {/* Safe: all HTML is sanitized through DOMPurify above */}
+      {/* Links are intercepted via handleLinkClick and routed through openUrl */}
       <div
         className="markdown-preview__body"
-        dangerouslySetInnerHTML={{ __html: html }}
+        onClick={handleLinkClick}
+        dangerouslySetInnerHTML={{ __html: html }}  // eslint-disable-line -- content is DOMPurify-sanitized (line 91)
       />
     </div>
   )
