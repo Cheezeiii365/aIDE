@@ -53,9 +53,13 @@ export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPrev
   // Fall back to reading from disk if no editor content available
   useEffect(() => {
     if (getContent(filePath) !== undefined) return
+    let cancelled = false
     window.api.readFile(filePath).then((res) => {
-      if ('content' in res) setContent(res.content)
+      if (!cancelled && getContent(filePath) === undefined && 'content' in res) {
+        setContent(res.content)
+      }
     })
+    return () => { cancelled = true }
   }, [filePath])
 
   // Configure marked instance with highlight.js for code blocks
