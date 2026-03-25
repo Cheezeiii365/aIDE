@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { DirEntry, FsWatchEvent } from '@aide/shared'
 import { FileTreeItem } from './FileTreeItem'
 import type { FileTreeNode } from './FileTreeItem'
@@ -46,6 +46,7 @@ interface Props {
 
 export function FileTree({ rootPath, onFileOpen }: Props) {
   const [nodes, setNodes] = useState<Map<string, FileTreeNode>>(new Map())
+  const loadingPaths = useRef<Set<string>>(new Set())
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -170,32 +171,42 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
     return unsub
   }, [])
 
-  const toggleExpand = useCallback(
-    async (path: string) => {
-      setNodes((prev) => {
-        const node = prev.get(path)
-        if (!node || !node.isDirectory) return prev
+  const toggleExpand = useCallback(async (path: string) => {
+    // Determine action synchronously using the functional updater
+    let needsLoad = false
+    let nodeDepth = 0
 
-        if (node.isExpanded) {
-          const next = new Map(prev)
-          next.set(path, { ...node, isExpanded: false })
-          return next
-        }
+    setNodes((prev) => {
+      const node = prev.get(path)
+      if (!node || !node.isDirectory) return prev
 
-        if (node.isLoaded) {
-          const next = new Map(prev)
-          next.set(path, { ...node, isExpanded: true })
-          return next
-        }
+      if (node.isExpanded) {
+        const next = new Map(prev)
+        next.set(path, { ...node, isExpanded: false })
+        return next
+      }
 
-        return prev
-      })
+      if (node.isLoaded) {
+        const next = new Map(prev)
+        next.set(path, { ...node, isExpanded: true })
+        return next
+      }
 
-      const node = nodes.get(path)
-      if (!node || !node.isDirectory) return
-      if (node.isExpanded) return
-      if (node.isLoaded) return
+      // Not yet loaded — guard against concurrent loads via ref
+      if (loadingPaths.current.has(path)) return prev
+      loadingPaths.current.add(path)
+      needsLoad = true
+      nodeDepth = node.depth
 
+      // Mark expanded synchronously so a second click collapses instead of double-loading
+      const next = new Map(prev)
+      next.set(path, { ...node, isExpanded: true })
+      return next
+    })
+
+    if (!needsLoad) return
+
+    try {
       const entries = await window.api.readDir(path)
       if ('error' in entries) return
 
@@ -210,7 +221,7 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
               path: entry.path,
               name: entry.name,
               isDirectory: entry.isDirectory,
-              depth: node.depth + 1,
+              depth: nodeDepth + 1,
               isExpanded: false,
               isLoaded: false,
               children: [],
@@ -220,12 +231,13 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
 
         const current = next.get(path)
         if (!current) return prev
-        next.set(path, { ...current, isExpanded: true, isLoaded: true, children: childPaths })
+        next.set(path, { ...current, isLoaded: true, children: childPaths })
         return next
       })
-    },
-    [nodes],
-  )
+    } finally {
+      loadingPaths.current.delete(path)
+    }
+  }, [])
 
   // ── Context menu handlers ──────────────────────
 
