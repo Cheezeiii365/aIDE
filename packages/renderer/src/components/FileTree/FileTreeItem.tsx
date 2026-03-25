@@ -1,4 +1,5 @@
 import { useCallback, useRef, useEffect } from 'react'
+import type { GitFileStatus } from '@aide/shared'
 
 export interface FileTreeNode {
   path: string
@@ -18,6 +19,7 @@ interface Props {
   isRenaming: boolean
   onRenameSubmit: (oldPath: string, newName: string) => void
   onRenameCancel: () => void
+  gitStatus?: GitFileStatus
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -101,6 +103,13 @@ function RenameInput({
   )
 }
 
+const GIT_STATUS_LABELS: Record<GitFileStatus, string> = {
+  M: 'M',
+  A: 'A',
+  '?': 'U',
+  D: 'D',
+}
+
 export function FileTreeItem({
   node,
   onToggle,
@@ -109,6 +118,7 @@ export function FileTreeItem({
   isRenaming,
   onRenameSubmit,
   onRenameCancel,
+  gitStatus,
 }: Props) {
   const handleClick = useCallback(() => {
     if (node.isDirectory) {
@@ -128,9 +138,11 @@ export function FileTreeItem({
 
   const indent = node.depth * 16 + 8
 
+  const statusClass = gitStatus ? ` file-tree__row--git-${gitStatus === '?' ? 'untracked' : gitStatus.toLowerCase()}` : ''
+
   return (
     <div
-      className={`file-tree__row${node.isDirectory ? ' file-tree__row--dir' : ''}`}
+      className={`file-tree__row${node.isDirectory ? ' file-tree__row--dir' : ''}${statusClass}`}
       style={{ paddingLeft: indent }}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
@@ -149,6 +161,11 @@ export function FileTreeItem({
         />
       ) : (
         <span className="file-tree__name">{node.name}</span>
+      )}
+      {gitStatus && !isRenaming && (
+        <span className={`file-tree__git-badge file-tree__git-badge--${gitStatus === '?' ? 'untracked' : gitStatus.toLowerCase()}`}>
+          {node.isDirectory ? '\u2022' : GIT_STATUS_LABELS[gitStatus]}
+        </span>
       )}
     </div>
   )

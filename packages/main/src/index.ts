@@ -6,6 +6,7 @@ import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
 import { registerFileWatcherHandlers, startWatcher, stopWatcher } from './fileWatcher'
+import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
@@ -174,6 +175,7 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   const selected = result.filePaths[0]
   store.set('workspaceRoot', selected)
   await startWatcher(selected)
+  await startGitPolling(selected, () => contentView?.webContents ?? null)
   return selected
 })
 
@@ -308,15 +310,20 @@ app.whenReady().then(async () => {
   registerPtyHandlers(() => contentView?.webContents ?? null, store)
   registerFileWatcherHandlers(() => contentView?.webContents ?? null)
 
+  const getWebContents = () => contentView?.webContents ?? null
+  registerGitStatusHandlers(getWebContents)
+
   // Auto-start watcher if we have a persisted workspace
   const savedRoot = store.get('workspaceRoot')
   if (savedRoot) {
     await startWatcher(savedRoot)
+    await startGitPolling(savedRoot, getWebContents)
   }
 })
 
 app.on('before-quit', async () => {
   killAllPtys()
+  stopGitPolling()
   await stopWatcher()
 })
 

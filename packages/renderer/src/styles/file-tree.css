@@ -49,6 +49,50 @@
   color: var(--text-primary);
 }
 
+/* ─── Git status badges ───────────────────────── */
+.file-tree__git-badge {
+  margin-left: auto;
+  padding-right: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.file-tree__git-badge--m { color: var(--text-warning); }
+.file-tree__git-badge--a { color: var(--text-success); }
+.file-tree__git-badge--untracked { color: var(--text-muted); }
+.file-tree__git-badge--d { color: var(--text-error); }
+
+/* Tint filename color to match git status */
+.file-tree__row--git-m > .file-tree__name { color: var(--text-warning); }
+.file-tree__row--git-a > .file-tree__name { color: var(--text-success); }
+.file-tree__row--git-untracked > .file-tree__name { color: var(--text-muted); }
+.file-tree__row--git-d > .file-tree__name { color: var(--text-error); text-decoration: line-through; }
+
+/* ─── Sidebar Filter Input ────────────────────── */
+.sidebar__filter-input {
+  display: block;
+  width: calc(100% - 16px);
+  height: 24px;
+  margin: 4px 8px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+}
+
+.sidebar__filter-input:focus {
+  border-color: var(--accent);
+}
+
+.sidebar__filter-input::placeholder {
+  color: var(--text-muted);
+}
+
 /* ─── Sidebar Open Folder ─────────────────────── */
 .sidebar__empty {
   display: flex;

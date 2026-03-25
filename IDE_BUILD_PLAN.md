@@ -426,6 +426,9 @@ Each Dockview panel header should have a row of icon buttons on the right side (
 
 These buttons provide quick, discoverable access to tile operations without needing keyboard shortcuts or right-click context menus.
 
+**Double-click tab to maximize pane (v2+):**
+Double-clicking a Dockview panel tab should expand that pane to fill the entire workspace area, hiding all other panes. Double-clicking again restores the previous layout. Same behavior as VS Code's editor tab maximize. Dockview exposes `maximizeGroup()` / `exitMaximizedGroup()` on the API — toggle based on `isMaximized` state.
+
 **Layout serialization:**
 ```typescript
 // Save

@@ -40,6 +40,11 @@ export const IpcChannels = {
   // File watcher
   FS_WATCH_EVENT: 'fs:watch-event',
 
+  // Git
+  GIT_STATUS: 'git:status',
+  GIT_STATUS_CHANGED: 'git:status-changed',
+  GIT_BRANCH_CHANGED: 'git:branch-changed',
+
   // Terminal / PTY
   PTY_CREATE: 'pty:create',
   PTY_DATA_IN: 'pty:data-in',
@@ -63,6 +68,13 @@ export interface FsWatchEvent {
   type: FsEventType
   path: string
   isDirectory: boolean
+}
+
+export type GitFileStatus = 'M' | 'A' | '?' | 'D'
+
+export interface GitStatusResult {
+  files: Record<string, GitFileStatus>
+  branch: string
 }
 
 export interface AppSettings {
@@ -112,6 +124,11 @@ export interface WindowApi {
 
   // File watcher
   onFsWatchEvent: (callback: (events: FsWatchEvent[]) => void) => () => void
+
+  // Git
+  getGitStatus: () => Promise<GitStatusResult | null>
+  onGitStatusChanged: (callback: (status: GitStatusResult) => void) => () => void
+  onGitBranchChanged: (callback: (branch: string) => void) => () => void
 
   // Terminal
   ptyCreate: (opts?: { cwd?: string; shell?: string }) => Promise<{ id: string }>

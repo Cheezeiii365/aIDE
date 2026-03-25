@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, WindowApi } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WindowApi } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -47,6 +47,19 @@ const api: WindowApi = {
     const handler = (_event: Electron.IpcRendererEvent, events: FsWatchEvent[]) => callback(events)
     ipcRenderer.on(IpcChannels.FS_WATCH_EVENT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.FS_WATCH_EVENT, handler)
+  },
+
+  // Git
+  getGitStatus: () => ipcRenderer.invoke(IpcChannels.GIT_STATUS),
+  onGitStatusChanged: (callback: (status: GitStatusResult) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: GitStatusResult) => callback(status)
+    ipcRenderer.on(IpcChannels.GIT_STATUS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.GIT_STATUS_CHANGED, handler)
+  },
+  onGitBranchChanged: (callback: (branch: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, branch: string) => callback(branch)
+    ipcRenderer.on(IpcChannels.GIT_BRANCH_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.GIT_BRANCH_CHANGED, handler)
   },
 
   // Terminal

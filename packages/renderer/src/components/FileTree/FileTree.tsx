@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import type { DirEntry, FsWatchEvent } from '@aide/shared'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import type { DirEntry, FsWatchEvent, GitFileStatus } from '@aide/shared'
 import { FileTreeItem } from './FileTreeItem'
 import type { FileTreeNode } from './FileTreeItem'
 import { ContextMenu } from './ContextMenu'
@@ -42,10 +42,12 @@ function insertSorted(
 interface Props {
   rootPath: string
   onFileOpen: (filePath: string) => void
+  filter?: string
 }
 
-export function FileTree({ rootPath, onFileOpen }: Props) {
+export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   const [nodes, setNodes] = useState<Map<string, FileTreeNode>>(new Map())
+  const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
   const loadingPaths = useRef<Set<string>>(new Set())
   const [contextMenu, setContextMenu] = useState<{
     x: number
@@ -161,7 +163,6 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
             changed = true
           }
           // 'update' events are no-ops for the tree (content changed, not structure)
-          // TODO: trigger git status badge refresh when implemented
         }
 
         return changed ? next : prev
@@ -170,6 +171,17 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
 
     return unsub
   }, [])
+
+  // Subscribe to git status updates
+  useEffect(() => {
+    window.api.getGitStatus().then((result) => {
+      if (result) setGitStatus(result.files)
+    })
+    const unsub = window.api.onGitStatusChanged((result) => {
+      setGitStatus(result.files)
+    })
+    return unsub
+  }, [rootPath])
 
   const toggleExpand = useCallback(async (path: string) => {
     // Determine action synchronously using the functional updater
@@ -318,7 +330,51 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
     }
   }, [])
 
+  // ── Compute directory git status (has any dirty descendant) ──
+  const dirGitStatus = useMemo(() => {
+    const dirStatus = new Map<string, GitFileStatus>()
+    for (const filePath of Object.keys(gitStatus)) {
+      // Walk up the path to mark all ancestor directories
+      let dir = filePath
+      while (true) {
+        const parts = dir.split('/')
+        parts.pop()
+        dir = parts.join('/') || '/'
+        if (dir.length < rootPath.length) break
+        if (!dirStatus.has(dir)) {
+          dirStatus.set(dir, 'M') // any dirty child → dot indicator
+        }
+      }
+    }
+    return dirStatus
+  }, [gitStatus, rootPath])
+
   // ── Compute visible nodes via DFS ────────────
+
+  const filterLower = filter.toLowerCase()
+
+  // When filtering, pre-compute which paths match and their ancestors
+  const filterMatchSet = useMemo(() => {
+    if (!filterLower) return null
+    const matched = new Set<string>()
+    // Walk all loaded nodes to find matches
+    for (const [path, node] of nodes) {
+      if (path === rootPath) continue
+      if (node.name.toLowerCase().includes(filterLower)) {
+        matched.add(path)
+        // Add all ancestors
+        let dir = path
+        while (true) {
+          const parts = dir.split('/')
+          parts.pop()
+          dir = parts.join('/') || '/'
+          if (dir.length < rootPath.length) break
+          matched.add(dir)
+        }
+      }
+    }
+    return matched
+  }, [filterLower, nodes, rootPath])
 
   const visibleNodes: FileTreeNode[] = []
   const rootNode = nodes.get(rootPath)
@@ -329,10 +385,18 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
       if (!p) continue
       const node = nodes.get(p)
       if (!node) continue
+
+      // Skip nodes that don't match filter
+      if (filterMatchSet && !filterMatchSet.has(p)) continue
+
       visibleNodes.push(node)
-      if (node.isDirectory && node.isExpanded && node.children.length > 0) {
-        for (let i = node.children.length - 1; i >= 0; i--) {
-          stack.push(node.children[i])
+      if (node.isDirectory && node.children.length > 0) {
+        // When filtering, always show children of matched directories
+        const shouldShowChildren = filterMatchSet ? true : node.isExpanded
+        if (shouldShowChildren) {
+          for (let i = node.children.length - 1; i >= 0; i--) {
+            stack.push(node.children[i])
+          }
         }
       }
     }
@@ -404,6 +468,7 @@ export function FileTree({ rootPath, onFileOpen }: Props) {
             isRenaming={renamingPath === node.path}
             onRenameSubmit={handleRenameSubmit}
             onRenameCancel={handleRenameCancel}
+            gitStatus={gitStatus[node.path] ?? dirGitStatus.get(node.path)}
           />,
         )
 

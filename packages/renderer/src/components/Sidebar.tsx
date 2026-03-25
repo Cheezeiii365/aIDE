@@ -12,6 +12,7 @@ interface Props {
 export function Sidebar({ onFileOpen, collapsed = false }: Props) {
   const [width, setWidth] = useState(220) // fallback until loaded
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
+  const [filter, setFilter] = useState('')
   const dragging = useRef(false)
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -63,8 +64,20 @@ export function Sidebar({ onFileOpen, collapsed = false }: Props) {
     <aside className="sidebar" style={{ width }}>
       <div className="sidebar__content">
         <div className="sidebar__header">Explorer</div>
+        {workspaceRoot && (
+          <input
+            className="sidebar__filter-input"
+            type="text"
+            placeholder="Filter files..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setFilter('')
+            }}
+          />
+        )}
         {workspaceRoot ? (
-          <FileTree rootPath={workspaceRoot} onFileOpen={onFileOpen} />
+          <FileTree rootPath={workspaceRoot} onFileOpen={onFileOpen} filter={filter} />
         ) : (
           <div className="sidebar__empty">
             <button className="sidebar__open-btn" onClick={handleOpenFolder}>
