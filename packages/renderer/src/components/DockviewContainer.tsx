@@ -4,6 +4,7 @@ import { PlaceholderPane } from './panes/PlaceholderPane'
 import { EditorPane } from './panes/EditorPane'
 import { EditorTab } from './panes/EditorTab'
 import { TerminalPane } from './panes/TerminalPane'
+import { MarkdownPreviewPane } from './panes/MarkdownPreviewPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
@@ -11,6 +12,7 @@ const components = {
   placeholder: PlaceholderPane,
   editorPane: EditorPane,
   terminalPane: TerminalPane,
+  markdownPreview: MarkdownPreviewPane,
 }
 
 const tabComponents = {

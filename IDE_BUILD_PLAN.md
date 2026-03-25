@@ -73,6 +73,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] React `ErrorBoundary` per pane (crash in one pane doesn't kill others), graceful error state UI, opt-in crash telemetry via `electron.crashReporter` or Sentry
 - [ ] Notifications center — aggregated view of all agent activity across all workspaces
 - [ ] API usage / cost dashboard — tokens consumed, running cost across all agents
+- [ ] `.aide` project settings folder — per-project configuration directory (like `.vscode`/`.cursor`) for workspace settings, recommended extensions, debug configs, and app preferences. Committed to version control so collaborators share the same IDE setup
 
 ### Explicitly out of scope
 - Web-based version (desktop-only by design)
@@ -166,6 +167,14 @@ Main Process (Electron)
 |---|---|---|
 | Terminal renderer | **xterm.js** | Battle-tested, used by VS Code; future upgrade path to libghostty-vt WASM |
 | PTY bridge | **node-pty** | Spawns real shell with PTY; required for Claude Code, vim, etc. |
+
+> **Future exploration: Ghostty WASM terminal upgrade (v2+)**
+>
+> Ghostty (MIT licensed, written in Zig) offers GPU-accelerated rendering, superior VT escape sequence parsing, full OpenType ligature support, and significantly faster throughput than xterm.js. Its parser is already separated as `libghostty-vt` within the repo, and Zig supports `wasm32-freestanding` as a compile target.
+>
+> **DIY WASM build is theoretically possible but non-trivial:** system API dependencies (memory, I/O) need stubs for WASM, a JS bridge between the WASM module and xterm.js's rendering pipeline would need to be built, Zig-to-WASM tooling is less mature than Rust's `wasm-pack` ecosystem, and maintaining a fork against upstream changes is ongoing work.
+>
+> **Recommendation:** Park this unless xterm.js parsing becomes a real pain point. If the Ghostty team ships an official WASM build of `libghostty-vt`, adopt it then for free.
 
 ### Language servers (individually installable — nothing bundled by default)
 
@@ -771,13 +780,15 @@ An Electron window with the correct visual chrome, dark + light theme toggle wor
   - Replace across files (with confirmation)
   - LSP symbol search via `Cmd+T` (wired after LSP is available in Phase 3)
 
-- [ ] **2.5** Markdown preview
+- [x] **2.5** Markdown preview
   - Build `MarkdownPreviewPane` React component in Dockview
   - Use `marked` for parsing + `DOMPurify` for XSS sanitization
-  - Live-update preview on editor keystroke
-  - Style preview to match current app theme (dark/light)
+  - Live-update preview on editor keystroke via `editorContentBus` pub/sub
+  - Style preview to match current app theme (dark/light) using CSS variable tokens
+  - Code block syntax highlighting via `highlight.js` (regex-based, 190+ languages). May switch to Shiki (TextMate grammars) in future for VS Code-grade accuracy. Does not interact with LSP — code blocks are static snippets
   - `Cmd+Shift+V` toggles preview for current markdown file
-  - Toast suggestion to open preview when `.md` file is opened
+  - Toast notification system with "Open Preview" action when `.md` file is opened
+  - Preview auto-closes when source editor tab is closed
 
 - [ ] **2.6** Keyboard shortcut system
   - Build `ShortcutManager` singleton with a focus context stack
@@ -1095,6 +1106,7 @@ Additionally: version-stamp all saved layouts (`version: 1`) and write a migrati
 | D2 | File tree: fixed sidebar or Dockview pane? | **Fixed sidebar** — always present, outside Dockview. Toggle with `Cmd+B` | Phase 1 |
 | D3 | Minimap in editor? | **Skip v1** — add community CodeMirror extension later | Phase 2 |
 | D4 | Markdown preview: side-by-side or inline? | **Side-by-side** Dockview pane in v1 | Phase 2 |
+| D4b | Markdown code block highlighting? | **highlight.js** (regex-based, 190+ langs, lightweight) for v1. May switch to **Shiki** (TextMate grammars, VS Code-grade accuracy) in v2+. No LSP interaction — code blocks are static snippets | Phase 2 |
 | D5 | Agent permission defaults? | **Ask before destructive ops** — configurable via `.agentconfig` per workspace (v2) | Phase 5 |
 | D6 | Update mechanism: silent or prompt? | **Prompt always** — compile-from-source only for MVP, `electron-updater` in v2 | Phase 6 |
 | D7 | Crash telemetry: opt-in or none? | **Opt-in with explicit consent** | Phase 6 |
@@ -1116,6 +1128,7 @@ These need a decision before or during the relevant phase.
 | Q6 | **How to handle `.env` files in agent context?** | 5 | The agent shouldn't be able to read/exfiltrate `.env` files. Part of the broader agent permission system (v2 `.agentconfig`) |
 | Q7 | **Linked workspace groups?** | v2+ | Related workspaces (frontend + backend) that share context: cross-workspace terminal, shared env references. Interesting concept — needs design |
 | Q8 | **Agent project memory / context generation?** | v2+ | Auto-generate `project-summary.md`, track agent-seen files, surface unseen files for context priming. Design data model in v1 to not block this |
+| Q9 | **Ghostty libghostty-vt WASM as xterm.js parser replacement?** | v2+ | Ghostty is open source (MIT/Zig). DIY WASM build is possible but heavy — needs system API stubs, JS bridge to xterm.js renderer, and ongoing fork maintenance. Wait for official WASM build unless xterm.js parsing causes real issues. See Terminal section notes |
 
 ---
 
@@ -1138,7 +1151,7 @@ Track milestone completion here. Update as you go.
 | 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. Deferred to 2.2c: minimap, breadcrumb nav |
 | 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
-| 2.5 Markdown preview | ⬜ Not started | Side-by-side pane |
+| 2.5 Markdown preview | ✅ Complete | MarkdownPreviewPane in Dockview, marked v17 + DOMPurify + highlight.js (may switch to Shiki TextMate in future). Live preview via editorContentBus pub/sub. Cmd+Shift+V toggle. Toast notification on .md open. Auto-close on editor close. Theme-aware CSS with syntax token mapping |
 | 2.6 Keyboard shortcut system | 🟡 In progress | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. Shortcuts wired: Cmd+Shift+T (new terminal), Cmd+B (sidebar toggle), Cmd+W (close active panel). Deferred: Cmd+P quick open, Cmd+Shift+P command palette, Cmd+Shift+F find in files |
 
 ### Phase 3: LSP + Browser Pane (Weeks 8–10)

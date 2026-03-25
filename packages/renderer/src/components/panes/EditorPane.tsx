@@ -9,6 +9,7 @@ import { themeCompartment, getThemeExtension } from '../../lib/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editorWrap'
 import { getCachedState, setCachedState } from '../../lib/editorStateCache'
 import { setDirty, onDirtyChange } from '../../lib/editorDirtyState'
+import { publishContent, clearContent } from '../../lib/editorContentBus'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 
@@ -73,6 +74,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
             }
             if (update.docChanged) {
               setDirty(filePath, true)
+              publishContent(filePath, update.state.doc.toString())
             }
           }),
           keymap.of([
@@ -119,6 +121,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       })
 
       viewRef.current = view
+      publishContent(filePath, state.doc.toString())
       setLoading(false)
 
       // Push initial cursor position
@@ -141,6 +144,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         viewRef.current = null
       }
       setDirty(filePath, false)
+      clearContent(filePath)
       cleanContentMap.delete(filePath)
     }
   }, [filePath]) // eslint-disable-line react-hooks/exhaustive-deps

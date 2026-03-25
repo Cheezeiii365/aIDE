@@ -6,6 +6,7 @@ import { DockviewContainer } from './DockviewContainer'
 import { StatusBar } from './StatusBar'
 import { registerAppActions } from '../lib/appActions'
 import { useShortcut } from '../lib/ShortcutManager'
+import { ToastContainer, showToast } from './Toast'
 
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
@@ -13,6 +14,13 @@ export function AppShell() {
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
+
+    // Auto-close preview pane when its source editor is closed
+    api.onDidRemovePanel((event) => {
+      const previewId = `preview:${event.id}`
+      const preview = api.panels.find((p) => p.id === previewId)
+      if (preview) preview.api.close()
+    })
   }, [])
 
   // Register app-wide action dispatch layer
@@ -59,6 +67,43 @@ export function AppShell() {
     }
   })
 
+  // Open or toggle markdown preview for a file
+  const openMarkdownPreview = useCallback((filePath: string) => {
+    const api = dockviewApiRef.current
+    if (!api) return
+
+    const previewId = `preview:${filePath}`
+    const existing = api.panels.find((p) => p.id === previewId)
+    if (existing) {
+      existing.api.close()
+      return
+    }
+
+    const editorPanel = api.panels.find((p) => p.id === filePath)
+    const name = filePath.split('/').pop() ?? filePath
+
+    api.addPanel({
+      id: previewId,
+      component: 'markdownPreview',
+      title: `Preview: ${name}`,
+      params: { filePath },
+      position: editorPanel
+        ? { referencePanel: editorPanel, direction: 'right' }
+        : undefined,
+    })
+  }, [])
+
+  // Cmd+Shift+V — toggle markdown preview for active .md file
+  useShortcut('toggle-md-preview', 'Cmd+Shift+V', () => {
+    const api = dockviewApiRef.current
+    if (!api) return
+    const active = api.activePanel
+    if (!active) return
+    const filePath = (active.params as Record<string, unknown>)?.filePath as string | undefined
+    if (!filePath || !filePath.endsWith('.md')) return
+    openMarkdownPreview(filePath)
+  })
+
   const onFileOpen = useCallback((filePath: string) => {
     const api = dockviewApiRef.current
     if (!api) return
@@ -87,7 +132,15 @@ export function AppShell() {
       params: { filePath },
       position,
     })
-  }, [])
+
+    // Suggest preview for markdown files
+    if (filePath.endsWith('.md')) {
+      showToast('Markdown file detected', {
+        label: 'Open Preview',
+        onClick: () => openMarkdownPreview(filePath),
+      })
+    }
+  }, [openMarkdownPreview])
 
   return (
     <div className="app-shell">
@@ -99,6 +152,7 @@ export function AppShell() {
         </div>
       </div>
       <StatusBar />
+      <ToastContainer />
     </div>
   )
 }
