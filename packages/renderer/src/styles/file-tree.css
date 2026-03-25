@@ -65,12 +65,14 @@
 .file-tree__git-badge--a { color: var(--text-success); }
 .file-tree__git-badge--untracked { color: var(--text-muted); }
 .file-tree__git-badge--d { color: var(--text-error); }
+.file-tree__git-badge--c { color: var(--text-error); }
 
 /* Tint filename color to match git status */
 .file-tree__row--git-m > .file-tree__name { color: var(--text-warning); }
 .file-tree__row--git-a > .file-tree__name { color: var(--text-success); }
 .file-tree__row--git-untracked > .file-tree__name { color: var(--text-muted); }
 .file-tree__row--git-d > .file-tree__name { color: var(--text-error); text-decoration: line-through; }
+.file-tree__row--git-c > .file-tree__name { color: var(--text-error); }
 
 /* ─── Gitignored files ───────────────────────── */
 .file-tree__row--ignored {

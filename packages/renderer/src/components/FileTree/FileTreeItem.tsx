@@ -94,6 +94,7 @@ const GIT_STATUS_LABELS: Record<GitFileStatus, string> = {
   A: 'A',
   '?': 'U',
   D: 'D',
+  C: 'C',
 }
 
 export function FileTreeItem({

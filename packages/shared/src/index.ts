@@ -79,7 +79,7 @@ export interface FsWatchEvent {
   isDirectory: boolean
 }
 
-export type GitFileStatus = 'M' | 'A' | '?' | 'D'
+export type GitFileStatus = 'M' | 'A' | '?' | 'D' | 'C'
 
 export interface GitStatusResult {
   files: Record<string, GitFileStatus>

@@ -32,9 +32,8 @@ async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null>
     for (const f of status.modified) {
       files[`${rootPath}/${f}`] = 'M'
     }
-    // Staged but also modified in working tree — show as modified
     for (const f of status.conflicted) {
-      files[`${rootPath}/${f}`] = 'M'
+      files[`${rootPath}/${f}`] = 'C'
     }
 
     // Fetch gitignored paths (directories listed as single entries via --directory)
