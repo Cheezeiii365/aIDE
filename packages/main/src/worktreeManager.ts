@@ -16,10 +16,23 @@ let currentRepoRoot: string | null = null
 
 type GetWebContents = () => Electron.WebContents | null
 
+/**
+ * Produce a filesystem-safe branch name by replacing path separators and removing invalid characters.
+ *
+ * @param branch - The original branch name
+ * @returns The sanitized branch name where `/` and `\` are replaced with `-` and only `a-z`, `A-Z`, `0-9`, `.`, `_`, and `-` remain
+ */
 function sanitizeBranchName(branch: string): string {
   return branch.replace(/[/\\]/g, '-').replace(/[^a-zA-Z0-9._-]/g, '')
 }
 
+/**
+ * Parse the stdout of `git worktree list --porcelain` into an array of worktree descriptors.
+ *
+ * @param output - Raw `--porcelain` output from `git worktree list`
+ * @param activeWorktree - Absolute path of the active worktree to mark as current, or `null`
+ * @returns An array of `WorktreeInfo` objects where each entry includes `path`, `branch` (branch name or `'HEAD'`), `isMain` (first non-bare entry), `isDirty` (initialized to `false`), and `isCurrent` (`true` when `path` equals `activeWorktree`)
+ */
 function parseWorktreeListPorcelain(output: string, activeWorktree: string | null): WorktreeInfo[] {
   const worktrees: WorktreeInfo[] = []
   const blocks = output.trim().split('\n\n')
@@ -64,6 +77,11 @@ function parseWorktreeListPorcelain(output: string, activeWorktree: string | nul
   return worktrees
 }
 
+/**
+ * Updates each worktree's `isDirty` property by checking the Git status at the worktree path.
+ *
+ * @param worktrees - Array of worktree entries whose `isDirty` property will be set to `true` when the worktree has uncommitted changes, or `false` when clean or if the status check fails.
+ */
 async function checkDirtyStatus(worktrees: WorktreeInfo[]): Promise<void> {
   for (const wt of worktrees) {
     try {
@@ -76,6 +94,17 @@ async function checkDirtyStatus(worktrees: WorktreeInfo[]): Promise<void> {
   }
 }
 
+/**
+ * Retrieve and augment the list of Git worktrees for a repository root.
+ *
+ * Fetches `git worktree list --porcelain`, parses the output into `WorktreeInfo`
+ * entries, marks the entry matching `activeWorktree` as current, and updates each
+ * entry's `isDirty` by checking the worktree status.
+ *
+ * @param repoRoot - Filesystem path to the repository root to query
+ * @param activeWorktree - Path of the currently active worktree, or `null` if none
+ * @returns An array of `WorktreeInfo` objects for the repository; returns an empty array if `repoRoot` is not a Git repository or if an error occurs
+ */
 async function fetchWorktreeList(
   repoRoot: string,
   activeWorktree: string | null,
@@ -94,10 +123,24 @@ async function fetchWorktreeList(
   }
 }
 
+/**
+ * Compute the directory used to store worktrees for a repository.
+ *
+ * @param repoRoot - Path to the repository root
+ * @returns The path to the worktree storage directory (resolved as `../.aide-worktrees` relative to `repoRoot`)
+ */
 function getWorktreeDir(repoRoot: string): string {
   return resolve(repoRoot, '..', '.aide-worktrees')
 }
 
+/**
+ * Register Electron IPC handlers for managing Git worktrees and keep internal cache and renderer synced.
+ *
+ * Registers handlers for listing worktrees, creating and removing worktrees, setting/getting the active
+ * worktree, and listing branches. Handlers update the module's cached worktree list, emit
+ * WORKTREE_LIST_CHANGED to the renderer when the list changes, and coordinate watcher/polling lifecycle
+ * when the active worktree changes.
+ */
 export function registerWorktreeHandlers(
   getWebContents: GetWebContents,
   store: Store<AppSettings>,
@@ -213,6 +256,17 @@ export function registerWorktreeHandlers(
   })
 }
 
+/**
+ * Start polling the repository's worktrees and emit updates when the list changes.
+ *
+ * Stops any existing poller, sets the polling root, performs an initial fetch of the worktree list,
+ * and then periodically refreshes the list (every 5000ms). When the serialized list differs from the
+ * previous snapshot, broadcasts IpcChannels.WORKTREE_LIST_CHANGED with the new list and updates module-level cache.
+ *
+ * @param repoRoot - Filesystem path to the repository to poll
+ * @param getWebContents - Function that returns the current Electron WebContents used to send IPC updates
+ * @param store - Application settings store (used to read the active worktree)
+ */
 export async function startWorktreePolling(
   repoRoot: string,
   getWebContents: GetWebContents,
@@ -240,6 +294,11 @@ export async function startWorktreePolling(
   }, 5000)
 }
 
+/**
+ * Stop the periodic worktree polling, clear its timer, and reset cached worktree state.
+ *
+ * Clears the polling interval (if running) and resets `currentRepoRoot`, `lastJson`, and `cachedList`.
+ */
 export function stopWorktreePolling(): void {
   if (pollTimer) {
     clearInterval(pollTimer)

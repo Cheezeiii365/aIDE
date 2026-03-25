@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { WorktreeInfo } from '@aide/shared'
 
+/**
+ * Manage and expose the repository worktrees and the currently selected worktree.
+ *
+ * @param workspaceRoot - The workspace root path used as the effective root when no worktree is active; pass `null` to clear worktree state.
+ * @returns An object with:
+ *  - `worktrees`: the list of known `WorktreeInfo` entries,
+ *  - `activeWorktree`: the path of the currently active worktree or `null`,
+ *  - `activeRoot`: `activeWorktree` if set, otherwise `workspaceRoot`,
+ *  - `switchWorktree`: a function that sets the active worktree to the given path (use `null` to clear the active worktree).
+ */
 export function useWorktrees(workspaceRoot: string | null) {
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
   const [activeWorktree, setActiveWorktreeState] = useState<string | null>(null)

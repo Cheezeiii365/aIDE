@@ -48,7 +48,12 @@ const ICON_COLORS: Record<string, string> = {
   file: '#4d5a5e',
 }
 
-// ── SVG icon paths ──────────────────────────────
+/**
+ * Provide the SVG JSX fragment for the specified icon identifier.
+ *
+ * @param iconId - The icon identifier (for example: `ts`, `js`, `json`, `image`, `folder`, etc.) used to select which SVG content to render.
+ * @returns A JSX.Element containing the SVG nodes for the requested icon; returns a generic document-shaped SVG when `iconId` is not recognized.
+ */
 
 function iconPath(iconId: string): JSX.Element {
   switch (iconId) {
@@ -246,7 +251,12 @@ function iconPath(iconId: string): JSX.Element {
   }
 }
 
-// ── Exported components ─────────────────────────
+/**
+ * Render a 16×16 SVG icon that represents a file, chosen from its filename.
+ *
+ * @param name - The file name (or path) used to derive the icon identifier
+ * @returns An SVG JSX element sized 16×16, containing the icon path for the file type and styled with the corresponding Seti-themed color
+ */
 
 export function FileTypeIcon({ name }: { name: string }) {
   const iconId = getFileIconId(name)
@@ -265,6 +275,13 @@ export function FileTypeIcon({ name }: { name: string }) {
   )
 }
 
+/**
+ * Render a 16×16 SVG folder icon for a given folder name.
+ *
+ * @param name - Folder name used to determine the icon variant (e.g., special folders like `src`, `test`, `images`)
+ * @param expanded - When true, render the "open/expanded" folder silhouette; otherwise render the "closed" silhouette
+ * @returns An SVG React element representing the folder icon; special folder variants are tinted with a predefined color
+ */
 export function FolderTypeIcon({ name, expanded }: { name: string; expanded: boolean }) {
   const iconId = getFolderIconId(name)
   const isSpecial = iconId !== 'folder'

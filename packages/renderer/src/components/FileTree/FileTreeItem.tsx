@@ -28,6 +28,12 @@ interface Props {
   isIgnored?: boolean
 }
 
+/**
+ * Renders a chevron SVG used to indicate a node's expanded/collapsed state.
+ *
+ * @param expanded - If `true`, the chevron is rendered with the expanded styling class.
+ * @returns An SVG element for the chevron; when `expanded` is `true` the element includes the `file-tree__chevron--expanded` class.
+ */
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
     <svg
@@ -42,6 +48,23 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   )
 }
 
+/**
+ * Editable input used to rename a file or folder; autofocuses and pre-selects the name portion.
+ *
+ * The input focuses when mounted or when `initialName` changes. If `initialName` contains a `.` after
+ * the first character, the text selection excludes the trailing extension (selects from start to the
+ * last dot); otherwise the entire name is selected.
+ *
+ * Keyboard and interaction behavior:
+ * - Enter: trims the input value; if the resulting value is non-empty and does not contain `/`, calls `onSubmit` with the value.
+ * - Escape: calls `onCancel`.
+ * - Blur: calls `onCancel`.
+ * - Click: stops propagation to prevent parent row handlers from firing.
+ *
+ * @param initialName - The current name to display in the input.
+ * @param onSubmit - Called with the new name when the user confirms a valid rename.
+ * @param onCancel - Called when the rename is cancelled (Escape or blur).
+ */
 function RenameInput({
   initialName,
   onSubmit,
@@ -97,6 +120,25 @@ const GIT_STATUS_LABELS: Record<GitFileStatus, string> = {
   C: 'C',
 }
 
+/**
+ * Renders a single row in the file tree, including icons, indentation, rename input, and optional Git/ignored badges.
+ *
+ * The row toggles directory expansion when clicked or opens a file when clicked; it prevents the default context
+ * menu and forwards the event via `onContextMenu`. When `isRenaming` is true, a rename input is shown that calls
+ * `onRenameSubmit` or `onRenameCancel`. If `gitStatus` is provided, a status badge is displayed; `isIgnored` applies
+ * ignored styling.
+ *
+ * @param node - The file or directory node to render (path, name, depth, isDirectory, isExpanded, etc.).
+ * @param onToggle - Called with the node path to toggle directory expansion.
+ * @param onFileOpen - Called with the node path to open a file.
+ * @param onContextMenu - Called with the mouse event, node path, and whether the node is a directory when the row is right-clicked.
+ * @param isRenaming - When true, shows the rename input instead of the static name.
+ * @param onRenameSubmit - Called with (path, newName) when a rename is submitted.
+ * @param onRenameCancel - Called to cancel an in-progress rename.
+ * @param gitStatus - Optional Git file status code; when present a badge is shown (uses `GIT_STATUS_LABELS` mapping).
+ * @param isIgnored - When true, applies ignored styling to the row.
+ * @returns A JSX element representing the rendered file tree row.
+ */
 export function FileTreeItem({
   node,
   onToggle,

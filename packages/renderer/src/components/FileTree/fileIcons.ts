@@ -147,6 +147,12 @@ const SPECIAL_FOLDERS: Record<string, string> = {
   packages: 'folder-packages',
 }
 
+/**
+ * Map a filename to a Seti-style icon identifier.
+ *
+ * @param filename - The filename or path segment to map (matching is case-insensitive)
+ * @returns An icon identifier string corresponding to a known special filename or file extension (for example `npm`, `js`, `image`); returns `'file'` when no mapping is found
+ */
 export function getFileIconId(filename: string): string {
   const lower = filename.toLowerCase()
   if (SPECIAL_FILES[lower]) return SPECIAL_FILES[lower]
@@ -155,6 +161,12 @@ export function getFileIconId(filename: string): string {
   return 'file'
 }
 
+/**
+ * Maps a folder name to its Seti-style icon identifier.
+ *
+ * @param folderName - The folder name to map (case-insensitive)
+ * @returns The icon identifier for the folder, or `'folder'` if no special icon is defined
+ */
 export function getFolderIconId(folderName: string): string {
   const lower = folderName.toLowerCase()
   return SPECIAL_FOLDERS[lower] ?? 'folder'

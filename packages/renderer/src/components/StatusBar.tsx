@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useEditorStatus } from '../hooks/useEditorStatus'
 
+/**
+ * Render an inline SVG icon representing a Git branch.
+ *
+ * The icon uses `currentColor` for its strokes, has a `0 0 16 16` viewBox, and is composed of three circles connected by a path to depict a branch.
+ *
+ * @returns A React element containing the SVG for the Git branch icon.
+ */
 function GitBranchIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -12,6 +19,13 @@ function GitBranchIcon() {
   )
 }
 
+/**
+ * Displays editor and git status in a footer-oriented status bar.
+ *
+ * Performs an initial fetch of the current Git branch and subscribes to branch updates while mounted; the subscription is removed on unmount.
+ *
+ * @returns The footer JSX element showing the Git branch (with icon), current line and column, file encoding, and language.
+ */
 export function StatusBar() {
   const { status } = useEditorStatus()
   const [branch, setBranch] = useState('main')

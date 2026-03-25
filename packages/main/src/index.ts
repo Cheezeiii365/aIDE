@@ -15,6 +15,13 @@ const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
 
+/**
+ * Builds and installs the application's native menu with platform-appropriate entries.
+ *
+ * Includes standard Edit, View, and Window menus. On macOS an application menu with
+ * About/Hide/Quit items is added. The View menu contains a "Toggle Developer Tools"
+ * item that toggles the renderer devtools (accelerator: Cmd+Option+I on macOS, Ctrl+Shift+I otherwise).
+ */
 function buildAppMenu(): void {
   const isMac = process.platform === 'darwin'
   const template: Electron.MenuItemConstructorOptions[] = [

@@ -20,6 +20,19 @@ interface ContextMenuState {
   y: number
 }
 
+/**
+ * Render a terminal pane that hosts an xterm instance connected to a PTY and provides a context menu to switch worktrees.
+ *
+ * The component creates and manages an xterm.js Terminal and a corresponding PTY: it initializes the PTY (optionally with
+ * an initial working directory), pipes input/output between the terminal and PTY, keeps terminal size synchronized with
+ * container/layout changes, focuses the terminal when the panel becomes active, and updates xterm theming when the app
+ * theme changes. A right-click context menu loads available worktrees and, when a worktree is selected, issues `cd <path>`
+ * to the active PTY.
+ *
+ * @param params - Optional panel parameters.
+ * @param params.worktreePath - If provided, used as the PTY's initial working directory.
+ * @returns The React element representing the terminal pane.
+ */
 export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)

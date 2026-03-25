@@ -11,6 +11,16 @@ import { useShortcut } from '../lib/ShortcutManager'
 import { useWorktrees } from '../hooks/useWorktrees'
 import { ToastContainer, showToast } from './Toast'
 
+/**
+ * Top-level application shell that manages workspace state, dockview panels, shortcuts, and the main UI layout.
+ *
+ * Manages a persisted workspace root and worktrees, registers application actions, wires keyboard shortcuts for
+ * terminal, sidebar toggle, panel closing, and markdown previewing, and provides handlers for opening files,
+ * folders, terminals, and markdown previews. Renders the workspace ribbon, sidebar (including an optional Worktrees
+ * section), the dockview container, status bar, and toast container.
+ *
+ * @returns The React element that composes the application's shell and primary UI regions.
+ */
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
