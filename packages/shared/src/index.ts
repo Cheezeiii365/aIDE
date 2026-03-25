@@ -75,6 +75,7 @@ export type GitFileStatus = 'M' | 'A' | '?' | 'D'
 export interface GitStatusResult {
   files: Record<string, GitFileStatus>
   branch: string
+  ignoredPaths?: string[]
 }
 
 export interface AppSettings {

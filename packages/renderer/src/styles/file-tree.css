@@ -1,6 +1,9 @@
 /* ─── File Tree ────────────────────────────────── */
 .file-tree {
   user-select: none;
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
 }
 
 .file-tree__row {
@@ -68,6 +71,15 @@
 .file-tree__row--git-a > .file-tree__name { color: var(--text-success); }
 .file-tree__row--git-untracked > .file-tree__name { color: var(--text-muted); }
 .file-tree__row--git-d > .file-tree__name { color: var(--text-error); text-decoration: line-through; }
+
+/* ─── Gitignored files ───────────────────────── */
+.file-tree__row--ignored {
+  opacity: 0.4;
+}
+.file-tree__row--ignored > .file-tree__name {
+  color: var(--text-muted);
+  font-style: italic;
+}
 
 /* ─── Sidebar Filter Input ────────────────────── */
 .sidebar__filter-input {

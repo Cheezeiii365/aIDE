@@ -7,6 +7,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let currentRoot: string | null = null
 let lastJson = ''
 let lastBranch = ''
+let lastIgnoredJson = ''
 
 type GetWebContents = () => Electron.WebContents | null
 
@@ -36,7 +37,21 @@ async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null>
       files[`${rootPath}/${f}`] = 'M'
     }
 
-    return { files, branch: status.current ?? 'HEAD' }
+    // Fetch gitignored paths (directories listed as single entries via --directory)
+    let ignoredPaths: string[] = []
+    try {
+      const ignoredRaw = await git.raw([
+        'ls-files', '--others', '--ignored', '--exclude-standard', '--directory',
+      ])
+      ignoredPaths = ignoredRaw
+        .split('\n')
+        .filter(Boolean)
+        .map((f) => `${rootPath}/${f.replace(/\/$/, '')}`)
+    } catch {
+      // Non-fatal: ignored paths are a nice-to-have
+    }
+
+    return { files, branch: status.current ?? 'HEAD', ignoredPaths }
   } catch {
     return null
   }
@@ -57,12 +72,14 @@ export async function startGitPolling(
   currentRoot = rootPath
   lastJson = ''
   lastBranch = ''
+  lastIgnoredJson = ''
 
   // Initial fetch
   const initial = await fetchGitStatus(rootPath)
   if (initial) {
     lastJson = JSON.stringify(initial.files)
     lastBranch = initial.branch
+    lastIgnoredJson = JSON.stringify(initial.ignoredPaths)
   }
 
   pollTimer = setInterval(async () => {
@@ -73,8 +90,10 @@ export async function startGitPolling(
     if (!wc) return
 
     const json = JSON.stringify(result.files)
-    if (json !== lastJson) {
+    const ignoredJson = JSON.stringify(result.ignoredPaths)
+    if (json !== lastJson || ignoredJson !== lastIgnoredJson) {
       lastJson = json
+      lastIgnoredJson = ignoredJson
       wc.send(IpcChannels.GIT_STATUS_CHANGED, result)
     }
 
@@ -93,4 +112,5 @@ export function stopGitPolling(): void {
   currentRoot = null
   lastJson = ''
   lastBranch = ''
+  lastIgnoredJson = ''
 }

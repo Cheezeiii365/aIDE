@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DirEntry, FsWatchEvent, GitFileStatus } from '@aide/shared'
 import { FileTreeItem } from './FileTreeItem'
-import type { FileTreeNode } from './FileTreeItem'
+import type { FileTreeNode, VirtualRow } from './FileTreeItem'
 import { ContextMenu } from './ContextMenu'
 
 // ── Helpers ────────────────────────────────────
@@ -37,6 +38,21 @@ function insertSorted(
   return result
 }
 
+/** Check if a path is gitignored (directly or via an ignored ancestor). */
+function isGitIgnored(path: string, ignored: Set<string>, rootPath: string): boolean {
+  if (ignored.has(path)) return true
+  // Check if any ancestor directory is ignored
+  let dir = path
+  while (true) {
+    const parts = dir.split('/')
+    parts.pop()
+    dir = parts.join('/') || '/'
+    if (dir.length <= rootPath.length) break
+    if (ignored.has(dir)) return true
+  }
+  return false
+}
+
 // ── Component ──────────────────────────────────
 
 interface Props {
@@ -48,6 +64,7 @@ interface Props {
 export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   const [nodes, setNodes] = useState<Map<string, FileTreeNode>>(new Map())
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
+  const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(new Set())
   const loadingPaths = useRef<Set<string>>(new Set())
   const [contextMenu, setContextMenu] = useState<{
     x: number
@@ -175,10 +192,14 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   // Subscribe to git status updates
   useEffect(() => {
     window.api.getGitStatus().then((result) => {
-      if (result) setGitStatus(result.files)
+      if (result) {
+        setGitStatus(result.files)
+        if (result.ignoredPaths) setIgnoredPaths(new Set(result.ignoredPaths))
+      }
     })
     const unsub = window.api.onGitStatusChanged((result) => {
       setGitStatus(result.files)
+      if (result.ignoredPaths) setIgnoredPaths(new Set(result.ignoredPaths))
     })
     return unsub
   }, [rootPath])
@@ -349,7 +370,7 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     return dirStatus
   }, [gitStatus, rootPath])
 
-  // ── Compute visible nodes via DFS ────────────
+  // ── Compute visible rows via DFS ─────────────
 
   const filterLower = filter.toLowerCase()
 
@@ -357,12 +378,10 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   const filterMatchSet = useMemo(() => {
     if (!filterLower) return null
     const matched = new Set<string>()
-    // Walk all loaded nodes to find matches
     for (const [path, node] of nodes) {
       if (path === rootPath) continue
       if (node.name.toLowerCase().includes(filterLower)) {
         matched.add(path)
-        // Add all ancestors
         let dir = path
         while (true) {
           const parts = dir.split('/')
@@ -376,9 +395,12 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     return matched
   }, [filterLower, nodes, rootPath])
 
-  const visibleNodes: FileTreeNode[] = []
-  const rootNode = nodes.get(rootPath)
-  if (rootNode) {
+  // Build flat VirtualRow[] with create-input rows merged in
+  const virtualRows = useMemo<VirtualRow[]>(() => {
+    const rows: VirtualRow[] = []
+    const rootNode = nodes.get(rootPath)
+    if (!rootNode) return rows
+
     const stack = [...rootNode.children].reverse()
     while (stack.length > 0) {
       const p = stack.pop()
@@ -386,119 +408,135 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
       const node = nodes.get(p)
       if (!node) continue
 
-      // Skip nodes that don't match filter
       if (filterMatchSet && !filterMatchSet.has(p)) continue
 
-      visibleNodes.push(node)
-      if (node.isDirectory && node.children.length > 0) {
-        // When filtering, always show children of matched directories
+      rows.push({ type: 'node', node })
+
+      if (node.isDirectory) {
         const shouldShowChildren = filterMatchSet ? true : node.isExpanded
         if (shouldShowChildren) {
+          // Insert create-input row right after the expanded directory (before its children)
+          if (creatingIn && creatingIn.parentDir === node.path) {
+            const parentNode = nodes.get(creatingIn.parentDir)
+            if (parentNode) {
+              rows.push({
+                type: 'create-input',
+                parentDir: creatingIn.parentDir,
+                depth: parentNode.depth + 1,
+                inputType: creatingIn.type,
+              })
+            }
+          }
           for (let i = node.children.length - 1; i >= 0; i--) {
             stack.push(node.children[i])
           }
         }
       }
     }
-  }
+
+    // Create-input at root level
+    if (creatingIn && creatingIn.parentDir === rootPath) {
+      const parentNode = nodes.get(rootPath)
+      if (parentNode) {
+        rows.push({
+          type: 'create-input',
+          parentDir: rootPath,
+          depth: parentNode.depth + 1,
+          inputType: creatingIn.type,
+        })
+      }
+    }
+
+    return rows
+  }, [nodes, rootPath, filterMatchSet, creatingIn])
+
+  // ── Virtualizer ─────────────────────────────
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: virtualRows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 22,
+    overscan: 15,
+    getItemKey: (index) => {
+      const row = virtualRows[index]
+      return row.type === 'node' ? row.node.path : `__create__${row.parentDir}`
+    },
+  })
+
+  // Scroll to create-input row when it appears
+  useEffect(() => {
+    if (!creatingIn) return
+    const idx = virtualRows.findIndex(
+      (r) => r.type === 'create-input' && r.parentDir === creatingIn.parentDir,
+    )
+    if (idx >= 0) {
+      virtualizer.scrollToIndex(idx, { align: 'auto' })
+    }
+  }, [creatingIn, virtualRows, virtualizer])
 
   // ── Render ───────────────────────────────────
 
-  // Build the creation input row if creating a new file/folder
-  const createInputRow = creatingIn
-    ? (() => {
-        const parentNode = nodes.get(creatingIn.parentDir)
-        if (!parentNode) return null
-        const depth = parentNode.depth + 1
-        const indent = depth * 16 + 8
-        return {
-          parentDir: creatingIn.parentDir,
-          depth,
-          indent,
-          type: creatingIn.type,
-        }
-      })()
-    : null
-
   return (
-    <div className="file-tree">
-      {visibleNodes.map((node) => {
-        const elements: React.ReactNode[] = []
-
-        // If we're creating inside this directory, render the input at the top of its children
-        if (
-          createInputRow &&
-          createInputRow.parentDir === node.path &&
-          node.isDirectory &&
-          node.isExpanded
-        ) {
-          elements.push(
+    <div ref={scrollRef} className="file-tree">
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const row = virtualRows[virtualItem.index]
+          return (
             <div
-              key="__creating__"
-              className="file-tree__row"
-              style={{ paddingLeft: createInputRow.indent }}
-              onClick={(e) => e.stopPropagation()}
+              key={virtualItem.key}
+              style={{
+                position: 'absolute',
+                top: virtualItem.start,
+                left: 0,
+                width: '100%',
+                height: 22,
+              }}
             >
-              <span className="file-tree__chevron-spacer" />
-              <input
-                className="file-tree__rename-input"
-                autoFocus
-                placeholder={createInputRow.type === 'file' ? 'filename' : 'folder name'}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const value = (e.target as HTMLInputElement).value.trim()
-                    if (value && !value.includes('/')) handleCreateSubmit(value)
-                  } else if (e.key === 'Escape') {
-                    setCreatingIn(null)
+              {row.type === 'node' ? (
+                <FileTreeItem
+                  node={row.node}
+                  onToggle={toggleExpand}
+                  onFileOpen={onFileOpen}
+                  onContextMenu={handleContextMenu}
+                  isRenaming={renamingPath === row.node.path}
+                  onRenameSubmit={handleRenameSubmit}
+                  onRenameCancel={handleRenameCancel}
+                  gitStatus={
+                    isGitIgnored(row.node.path, ignoredPaths, rootPath)
+                      ? undefined
+                      : (gitStatus[row.node.path] ?? dirGitStatus.get(row.node.path))
                   }
-                }}
-                onBlur={() => setCreatingIn(null)}
-              />
-            </div>,
+                  isIgnored={isGitIgnored(row.node.path, ignoredPaths, rootPath)}
+                />
+              ) : (
+                <div
+                  className="file-tree__row"
+                  style={{ paddingLeft: row.depth * 16 + 8 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="file-tree__chevron-spacer" />
+                  <input
+                    className="file-tree__rename-input"
+                    autoFocus
+                    placeholder={row.inputType === 'file' ? 'filename' : 'folder name'}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const value = (e.target as HTMLInputElement).value.trim()
+                        if (value && !value.includes('/')) handleCreateSubmit(value)
+                      } else if (e.key === 'Escape') {
+                        setCreatingIn(null)
+                      }
+                    }}
+                    onBlur={() => setCreatingIn(null)}
+                  />
+                </div>
+              )}
+            </div>
           )
-        }
-
-        elements.push(
-          <FileTreeItem
-            key={node.path}
-            node={node}
-            onToggle={toggleExpand}
-            onFileOpen={onFileOpen}
-            onContextMenu={handleContextMenu}
-            isRenaming={renamingPath === node.path}
-            onRenameSubmit={handleRenameSubmit}
-            onRenameCancel={handleRenameCancel}
-            gitStatus={gitStatus[node.path] ?? dirGitStatus.get(node.path)}
-          />,
-        )
-
-        return elements
-      })}
-
-      {/* Render creation input at root level if creating at root */}
-      {createInputRow && createInputRow.parentDir === rootPath && (
-        <div
-          className="file-tree__row"
-          style={{ paddingLeft: createInputRow.indent }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span className="file-tree__chevron-spacer" />
-          <input
-            className="file-tree__rename-input"
-            autoFocus
-            placeholder={createInputRow.type === 'file' ? 'filename' : 'folder name'}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const value = (e.target as HTMLInputElement).value.trim()
-                if (value && !value.includes('/')) handleCreateSubmit(value)
-              } else if (e.key === 'Escape') {
-                setCreatingIn(null)
-              }
-            }}
-            onBlur={() => setCreatingIn(null)}
-          />
-        </div>
-      )}
+        })}
+      </div>
 
       {contextMenu && (
         <ContextMenu

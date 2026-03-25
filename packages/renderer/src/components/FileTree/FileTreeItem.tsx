@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react'
 import type { GitFileStatus } from '@aide/shared'
+import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
 
 export interface FileTreeNode {
   path: string
@@ -11,6 +12,10 @@ export interface FileTreeNode {
   children: string[]
 }
 
+export type VirtualRow =
+  | { type: 'node'; node: FileTreeNode }
+  | { type: 'create-input'; parentDir: string; depth: number; inputType: 'file' | 'folder' }
+
 interface Props {
   node: FileTreeNode
   onToggle: (path: string) => void
@@ -20,6 +25,7 @@ interface Props {
   onRenameSubmit: (oldPath: string, newName: string) => void
   onRenameCancel: () => void
   gitStatus?: GitFileStatus
+  isIgnored?: boolean
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -32,26 +38,6 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
       fill="currentColor"
     >
       <path d="M6 4l4 4-4 4" />
-    </svg>
-  )
-}
-
-function FolderIcon() {
-  return (
-    <svg className="file-tree__icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M1.5 2A1.5 1.5 0 003 3.5h3.379a.5.5 0 01.354.146L7.854 4.77a.5.5 0 00.353.146H13A1.5 1.5 0 0114.5 6.5v6A1.5 1.5 0 0113 14H3a1.5 1.5 0 01-1.5-1.5v-10z"
-        opacity="0.7"
-      />
-    </svg>
-  )
-}
-
-function FileIcon() {
-  return (
-    <svg className="file-tree__icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M3 1.5A1.5 1.5 0 014.5 0h4.879a1.5 1.5 0 011.06.44l2.122 2.12A1.5 1.5 0 0113 3.622V14.5A1.5 1.5 0 0111.5 16h-7A1.5 1.5 0 013 14.5v-13z"
-        opacity="0.5"
-      />
     </svg>
   )
 }
@@ -119,6 +105,7 @@ export function FileTreeItem({
   onRenameSubmit,
   onRenameCancel,
   gitStatus,
+  isIgnored,
 }: Props) {
   const handleClick = useCallback(() => {
     if (node.isDirectory) {
@@ -139,10 +126,11 @@ export function FileTreeItem({
   const indent = node.depth * 16 + 8
 
   const statusClass = gitStatus ? ` file-tree__row--git-${gitStatus === '?' ? 'untracked' : gitStatus.toLowerCase()}` : ''
+  const ignoredClass = isIgnored ? ' file-tree__row--ignored' : ''
 
   return (
     <div
-      className={`file-tree__row${node.isDirectory ? ' file-tree__row--dir' : ''}${statusClass}`}
+      className={`file-tree__row${node.isDirectory ? ' file-tree__row--dir' : ''}${statusClass}${ignoredClass}`}
       style={{ paddingLeft: indent }}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
@@ -152,7 +140,7 @@ export function FileTreeItem({
       ) : (
         <span className="file-tree__chevron-spacer" />
       )}
-      {node.isDirectory ? <FolderIcon /> : <FileIcon />}
+      {node.isDirectory ? <FolderTypeIcon name={node.name} expanded={node.isExpanded} /> : <FileTypeIcon name={node.name} />}
       {isRenaming ? (
         <RenameInput
           initialName={node.name}
