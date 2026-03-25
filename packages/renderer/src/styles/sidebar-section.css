@@ -1,0 +1,62 @@
+/* ─── Sidebar Section ─────────────────────────── */
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-section--expanded {
+  flex: 1;
+}
+
+.sidebar-section__header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px 4px;
+  cursor: pointer;
+  user-select: none;
+  gap: 4px;
+}
+
+.sidebar-section__header:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-section__chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  transition: transform 120ms ease;
+  opacity: 0.5;
+}
+
+.sidebar-section__chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+.sidebar-section__title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.sidebar-section__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.sidebar-section__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar-section--collapsed .sidebar-section__body {
+  display: none;
+}

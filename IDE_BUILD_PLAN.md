@@ -1,7 +1,7 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 24, 2026
-> **Status:** Pre-development / Planning (pressure-tested)
+> **Last updated:** March 25, 2026
+> **Status:** Active development (Phase 2 in progress)
 
 ---
 
@@ -38,25 +38,26 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 ## 2. Core Requirements
 
 ### Must-have at launch (MVP)
-- [ ] Infinitely nestable/resizable tiling panes — any pane can be an editor, terminal, browser, file tree, or agent panel
-- [ ] Workspace switcher ribbon with per-workspace agent status indicators + global zone (settings, notifications, cost dashboard)
+- [x] Infinitely nestable/resizable tiling panes — any pane can be an editor, terminal, browser, file tree, or agent panel
+- [x] Workspace switcher ribbon with per-workspace agent status indicators + global zone (settings, notifications, cost dashboard)
 - [ ] Keyboard shortcut workspace switching (`Cmd+1/2/3...`)
 - [ ] Layout persistence — each workspace restores its exact pane arrangement on switch
 - [ ] Persistent browser panes with real Google, GitHub, and Microsoft account sessions that survive workspace switches and app restarts
 - [ ] Claude Code running in terminal panes, with agent status surfaced to the workspace tab
-- [ ] CodeMirror 6 editor with syntax highlighting for Python, JavaScript/TypeScript, and Markdown
-- [ ] Editor table-stakes: multi-cursor (`Cmd+D`, `Cmd+Click`), code folding, indent guides, word wrap toggle, bracket auto-close (including JSX)
+- [x] CodeMirror 6 editor with syntax highlighting for Python, JavaScript/TypeScript, and Markdown
+- [x] Editor table-stakes: multi-cursor (`Cmd+D`, `Cmd+Click`), code folding, indent guides, word wrap toggle, bracket auto-close (including JSX)
 - [ ] Find in files (`Cmd+Shift+F`) via bundled ripgrep, find/replace in current file (`@codemirror/search`), LSP symbol search (`workspace/symbol`)
-- [ ] Markdown preview pane (side-by-side: editor left, rendered HTML right via `marked`/`remark`)
+- [x] Markdown preview pane (side-by-side: editor left, rendered HTML right via `marked`/`remark`)
 - [ ] LSP integration: Pyright (Python) and typescript-language-server (JS/TS) as the first two language packs — installed individually, not bundled by default
-- [ ] Fixed left sidebar for file tree with dirty file indicators and git branch display (outside Dockview — always present)
-- [ ] Theming system designed for dark + light mode from day one — Atom One Dark as default, light mode as alternative, CSS variable token system supports custom themes in future
+- [x] Fixed left sidebar for file tree with dirty file indicators and git branch display (outside Dockview — always present)
+- [x] Theming system designed for dark + light mode from day one — Atom One Dark as default, light mode as alternative, CSS variable token system supports custom themes in future
 - [ ] Global command palette (`Cmd+Shift+P`) — cross-workspace search and global commands
 
 ### Nice-to-have (v2+)
 - [ ] Cursor-style agent panel UI (structured diffs, progress, pause/resume)
 - [ ] Claude Agent SDK integration (replacing raw Claude Code CLI)
 - [ ] Tailwind CSS IntelliSense (via tailwindcss-language-server)
+- [x] Git worktree management — sidebar panel to create/remove/switch worktrees, file tree re-roots on worktree switch, terminal right-click to switch worktree cwd, auto-detect externally created worktrees
 - [ ] Git integration UI (diff viewer, stage/unstage, commit)
 - [ ] Multi-root workspace support (monorepos with separate backend/frontend LSP roots)
 - [ ] Plugin system with npm-based distribution
@@ -73,6 +74,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] React `ErrorBoundary` per pane (crash in one pane doesn't kill others), graceful error state UI, opt-in crash telemetry via `electron.crashReporter` or Sentry
 - [ ] Notifications center — aggregated view of all agent activity across all workspaces
 - [ ] API usage / cost dashboard — tokens consumed, running cost across all agents
+- [ ] `.aide` project settings folder — per-project configuration directory (like `.vscode`/`.cursor`) for workspace settings, recommended extensions, debug configs, and app preferences. Committed to version control so collaborators share the same IDE setup
 
 ### Explicitly out of scope
 - Web-based version (desktop-only by design)
@@ -166,6 +168,14 @@ Main Process (Electron)
 |---|---|---|
 | Terminal renderer | **xterm.js** | Battle-tested, used by VS Code; future upgrade path to libghostty-vt WASM |
 | PTY bridge | **node-pty** | Spawns real shell with PTY; required for Claude Code, vim, etc. |
+
+> **Future exploration: Ghostty WASM terminal upgrade (v2+)**
+>
+> Ghostty (MIT licensed, written in Zig) offers GPU-accelerated rendering, superior VT escape sequence parsing, full OpenType ligature support, and significantly faster throughput than xterm.js. Its parser is already separated as `libghostty-vt` within the repo, and Zig supports `wasm32-freestanding` as a compile target.
+>
+> **DIY WASM build is theoretically possible but non-trivial:** system API dependencies (memory, I/O) need stubs for WASM, a JS bridge between the WASM module and xterm.js's rendering pipeline would need to be built, Zig-to-WASM tooling is less mature than Rust's `wasm-pack` ecosystem, and maintaining a fork against upstream changes is ongoing work.
+>
+> **Recommendation:** Park this unless xterm.js parsing becomes a real pain point. If the Ghostty team ships an official WASM build of `libghostty-vt`, adopt it then for free.
 
 ### Language servers (individually installable — nothing bundled by default)
 
@@ -416,6 +426,9 @@ Each Dockview panel header should have a row of icon buttons on the right side (
 - **Split horizontal** — splits the tile horizontally
 
 These buttons provide quick, discoverable access to tile operations without needing keyboard shortcuts or right-click context menus.
+
+**Double-click tab to maximize pane (v2+):**
+Double-clicking a Dockview panel tab should expand that pane to fill the entire workspace area, hiding all other panes. Double-clicking again restores the previous layout. Same behavior as VS Code's editor tab maximize. Dockview exposes `maximizeGroup()` / `exitMaximizedGroup()` on the API — toggle based on `isMaximized` state.
 
 **Layout serialization:**
 ```typescript
@@ -754,7 +767,7 @@ An Electron window with the correct visual chrome, dark + light theme toggle wor
     - Find/replace in file (`Cmd+F` find, `Cmd+H` replace) — via basicSetup
   - Wire CodeMirror theme to follow app theme (swap extension on theme toggle)
 
-- [ ] **2.3** Terminal (xterm.js + node-pty)
+- [x] **2.3** Terminal (xterm.js + node-pty)
   - Install `xterm`, `xterm-addon-fit`, `node-pty`
   - Build `TerminalPane` component
   - Spawn PTY shell on pane creation (use user's default shell from `process.env.SHELL`)
@@ -771,13 +784,15 @@ An Electron window with the correct visual chrome, dark + light theme toggle wor
   - Replace across files (with confirmation)
   - LSP symbol search via `Cmd+T` (wired after LSP is available in Phase 3)
 
-- [ ] **2.5** Markdown preview
+- [x] **2.5** Markdown preview
   - Build `MarkdownPreviewPane` React component in Dockview
   - Use `marked` for parsing + `DOMPurify` for XSS sanitization
-  - Live-update preview on editor keystroke
-  - Style preview to match current app theme (dark/light)
+  - Live-update preview on editor keystroke via `editorContentBus` pub/sub
+  - Style preview to match current app theme (dark/light) using CSS variable tokens
+  - Code block syntax highlighting via `highlight.js` (regex-based, 190+ languages). May switch to Shiki (TextMate grammars) in future for VS Code-grade accuracy. Does not interact with LSP — code blocks are static snippets
   - `Cmd+Shift+V` toggles preview for current markdown file
-  - Toast suggestion to open preview when `.md` file is opened
+  - Toast notification system with "Open Preview" action when `.md` file is opened
+  - Preview auto-closes when source editor tab is closed
 
 - [ ] **2.6** Keyboard shortcut system
   - Build `ShortcutManager` singleton with a focus context stack
@@ -1095,6 +1110,7 @@ Additionally: version-stamp all saved layouts (`version: 1`) and write a migrati
 | D2 | File tree: fixed sidebar or Dockview pane? | **Fixed sidebar** — always present, outside Dockview. Toggle with `Cmd+B` | Phase 1 |
 | D3 | Minimap in editor? | **Skip v1** — add community CodeMirror extension later | Phase 2 |
 | D4 | Markdown preview: side-by-side or inline? | **Side-by-side** Dockview pane in v1 | Phase 2 |
+| D4b | Markdown code block highlighting? | **highlight.js** (regex-based, 190+ langs, lightweight) for v1. May switch to **Shiki** (TextMate grammars, VS Code-grade accuracy) in v2+. No LSP interaction — code blocks are static snippets | Phase 2 |
 | D5 | Agent permission defaults? | **Ask before destructive ops** — configurable via `.agentconfig` per workspace (v2) | Phase 5 |
 | D6 | Update mechanism: silent or prompt? | **Prompt always** — compile-from-source only for MVP, `electron-updater` in v2 | Phase 6 |
 | D7 | Crash telemetry: opt-in or none? | **Opt-in with explicit consent** | Phase 6 |
@@ -1116,6 +1132,7 @@ These need a decision before or during the relevant phase.
 | Q6 | **How to handle `.env` files in agent context?** | 5 | The agent shouldn't be able to read/exfiltrate `.env` files. Part of the broader agent permission system (v2 `.agentconfig`) |
 | Q7 | **Linked workspace groups?** | v2+ | Related workspaces (frontend + backend) that share context: cross-workspace terminal, shared env references. Interesting concept — needs design |
 | Q8 | **Agent project memory / context generation?** | v2+ | Auto-generate `project-summary.md`, track agent-seen files, surface unseen files for context priming. Design data model in v1 to not block this |
+| Q9 | **Ghostty libghostty-vt WASM as xterm.js parser replacement?** | v2+ | Ghostty is open source (MIT/Zig). DIY WASM build is possible but heavy — needs system API stubs, JS bridge to xterm.js renderer, and ongoing fork maintenance. Wait for official WASM build unless xterm.js parsing causes real issues. See Terminal section notes |
 
 ---
 
@@ -1134,12 +1151,13 @@ Track milestone completion here. Update as you go.
 ### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
 |---|---|---|
-| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. 2.1b complete: @parcel/watcher (native C++ FSEvents, not chokidar) with debounced incremental tree updates, native ignore patterns (node_modules/.git/dist/build), error recovery with exponential backoff. File operations: createFile, createDir, delete, rename IPC handlers. Right-click context menu (New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder). Inline rename input with validation. Cmd+B sidebar toggle via ShortcutManager. Deferred to 2.1c: @tanstack/react-virtual virtualization, git status badges (simple-git) |
+| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. 2.1b complete: @parcel/watcher (native C++ FSEvents, not chokidar) with debounced incremental tree updates, native ignore patterns (node_modules/.git/dist/build), error recovery with exponential backoff. File operations: createFile, createDir, delete, rename IPC handlers. Right-click context menu (New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder). Inline rename input with validation. Cmd+B sidebar toggle via ShortcutManager. 2.1c complete: simple-git status polling (3s interval) with per-file badges (M/A/U/D) and directory-level dirty dots, current branch display in StatusBar, case-insensitive file tree filter with ancestor path preservation. 2.1d complete: @tanstack/react-virtual virtualization (22px fixed rows, 15-item overscan, memoized DFS into VirtualRow[] union type), Seti-style file-type icons (~30 file types + ~15 special folders with color-coded SVGs), gitignored file dimming via `git ls-files --others --ignored --exclude-standard --directory` (0.4 opacity + italic). Deferred: drag files between directories |
 | 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. Deferred to 2.2c: minimap, breadcrumb nav |
 | 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
-| 2.5 Markdown preview | ⬜ Not started | Side-by-side pane |
+| 2.5 Markdown preview | ✅ Complete | MarkdownPreviewPane in Dockview, marked v17 + DOMPurify + highlight.js (may switch to Shiki TextMate in future). Live preview via editorContentBus pub/sub. Cmd+Shift+V toggle. Toast notification on .md open. Auto-close on editor close. Theme-aware CSS with syntax token mapping |
 | 2.6 Keyboard shortcut system | 🟡 In progress | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. Shortcuts wired: Cmd+Shift+T (new terminal), Cmd+B (sidebar toggle), Cmd+W (close active panel). Deferred: Cmd+P quick open, Cmd+Shift+P command palette, Cmd+Shift+F find in files |
+| 2.7 Git worktree management | ✅ Complete | Sidebar refactored into collapsible SidebarSection components. Worktree panel lists all repo worktrees with branch name, dirty badge, main label. Create worktree modal (new or existing branch, base branch picker). Worktrees stored at `../.aide-worktrees/<branch>/`. File tree re-roots on worktree switch. Terminal right-click context menu for worktree switching. Auto-detect external worktrees via 5s polling of `git worktree list --porcelain`. Backend: `worktreeManager.ts` follows gitStatus.ts pattern. New IPC channels: WORKTREE_LIST/CREATE/REMOVE/SET_ACTIVE/GET_ACTIVE/LIST_CHANGED/LIST_BRANCHES. **UX polish pass**: VS Code-style 2px accent left-border for active item, 30px item height, inline hover action buttons (terminal + more), "M" letter badge for dirty status with pulse animation, context menu icons, segmented toggle in create modal replacing checkbox, CSS spinner + success flash on submit, entry slide-in animations for new worktrees, empty state guidance, list-integrated add button. Deferred: cross-worktree diff, agent panel integration, git graph sidebar section |
 
 ### Phase 3: LSP + Browser Pane (Weeks 8–10)
 | Milestone | Status | Notes |
@@ -1175,7 +1193,7 @@ Track milestone completion here. Update as you go.
 | 6.3 GitHub repository + CI | 🟡 In progress | electron-builder.yml configured for macOS (dmg+zip arm64+x64), Linux (AppImage+deb), Windows (nsis+zip). pnpm dist scripts added. GitHub Releases publish via `--publish always`. First alpha release: v0.1.0-alpha.1 |
 | 6.4 Plugin system foundation | ⬜ Not started | |
 
-**Status key:** ⬜ Not started · 🔵 In progress · ✅ Complete · ⏸ Blocked
+**Status key:** ⬜ Not started · 🟡 In progress · ✅ Complete · ⏸ Blocked
 
 ---
 

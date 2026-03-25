@@ -1,11 +1,14 @@
 import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell, session } from 'electron'
 import { join, dirname } from 'path'
+import { existsSync } from 'fs'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
 import { registerFileWatcherHandlers, startWatcher, stopWatcher } from './fileWatcher'
+import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
+import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
@@ -52,7 +55,13 @@ function buildAppMenu(): void {
         { type: 'separator' },
         { role: 'togglefullscreen' },
         { type: 'separator' },
-        { role: 'toggleDevTools' },
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Option+I' : 'Ctrl+Shift+I',
+          click: () => {
+            contentView?.webContents.toggleDevTools()
+          },
+        },
       ],
     },
     {
@@ -173,7 +182,11 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   if (result.canceled || result.filePaths.length === 0) return null
   const selected = result.filePaths[0]
   store.set('workspaceRoot', selected)
+  store.set('activeWorktree', null)
   await startWatcher(selected)
+  const getWc = () => contentView?.webContents ?? null
+  await startGitPolling(selected, getWc)
+  await startWorktreePolling(selected, getWc, store)
   return selected
 })
 
@@ -308,15 +321,30 @@ app.whenReady().then(async () => {
   registerPtyHandlers(() => contentView?.webContents ?? null, store)
   registerFileWatcherHandlers(() => contentView?.webContents ?? null)
 
+  const getWebContents = () => contentView?.webContents ?? null
+  registerGitStatusHandlers(getWebContents)
+  registerWorktreeHandlers(getWebContents, store)
+
   // Auto-start watcher if we have a persisted workspace
   const savedRoot = store.get('workspaceRoot')
-  if (savedRoot) {
-    await startWatcher(savedRoot)
+  if (savedRoot && existsSync(savedRoot)) {
+    // Use active worktree root for file watcher and git polling if set
+    const activeWorktree = store.get('activeWorktree')
+    const effectiveRoot = activeWorktree && existsSync(activeWorktree) ? activeWorktree : savedRoot
+    await startWatcher(effectiveRoot)
+    await startGitPolling(effectiveRoot, getWebContents)
+    await startWorktreePolling(savedRoot, getWebContents, store)
+  } else if (savedRoot) {
+    console.warn(`[startup] Persisted workspace root no longer exists: ${savedRoot}`)
+    store.set('workspaceRoot', '')
+    store.set('activeWorktree', '')
   }
 })
 
 app.on('before-quit', async () => {
   killAllPtys()
+  stopGitPolling()
+  stopWorktreePolling()
   await stopWatcher()
 })
 

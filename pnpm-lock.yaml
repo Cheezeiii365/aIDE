@@ -99,6 +99,9 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
+      simple-git:
+        specifier: ^3.33.0
+        version: 3.33.0
 
   packages/renderer:
     dependencies:
@@ -144,6 +147,9 @@ importers:
       '@replit/codemirror-indentation-markers':
         specifier: ^6.5.3
         version: 6.5.3(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.40.0)
+      '@tanstack/react-virtual':
+        specifier: ^3.13.23
+        version: 3.13.23(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -162,6 +168,15 @@ importers:
       dockview-react:
         specifier: ^5.1.0
         version: 5.1.0(react@19.2.4)
+      dompurify:
+        specifier: ^3.3.3
+        version: 3.3.3
+      highlight.js:
+        specifier: ^11.11.1
+        version: 11.11.1
+      marked:
+        specifier: ^17.0.5
+        version: 17.0.5
       react:
         specifier: ^19.0.0
         version: 19.2.4
@@ -169,6 +184,9 @@ importers:
         specifier: ^19.0.0
         version: 19.2.4(react@19.2.4)
     devDependencies:
+      '@types/dompurify':
+        specifier: ^3.2.0
+        version: 3.2.0
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.14
@@ -729,6 +747,12 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@kwsites/file-exists@1.1.1':
+    resolution: {integrity: sha512-m9/5YGR18lIwxSFDwfE3oA7bWuq9kdau6ugN4H2rJeyhFQZcG9AgSHkQtSD15a8WvTgfz9aikZMrKPHvbpqFiw==}
+
+  '@kwsites/promise-deferred@1.1.1':
+    resolution: {integrity: sha512-GaHYm+c0O9MjZRu0ongGBRbinu8gVAMd2UZjji6jVmqKtZluZnptXGWhz1E8j8D2HJ3f/yMxKAUC0b+57wncIw==}
+
   '@lezer/common@1.5.1':
     resolution: {integrity: sha512-6YRVG9vBkaY7p1IVxL4s44n5nUnaNnGM2/AckNgYOnxTG2kWh1vR8BMxPseWPjRNpb5VtXnMpeYAEAADoRV1Iw==}
 
@@ -949,6 +973,15 @@ packages:
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
 
+  '@tanstack/react-virtual@3.13.23':
+    resolution: {integrity: sha512-XnMRnHQ23piOVj2bzJqHrRrLg4r+F86fuBcwteKfbIjJrtGxb4z7tIvPVAe4B+4UVwo9G4Giuz5fmapcrnZ0OQ==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  '@tanstack/virtual-core@3.13.23':
+    resolution: {integrity: sha512-zSz2Z2HNyLjCplANTDyl3BcdQJc2k1+yyFoKhNRmCr7V7dY8o8q5m8uFTI1/Pg1kL+Hgrz6u3Xo6eFUB7l66cg==}
+
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
     engines: {node: '>=18'}
@@ -1003,6 +1036,10 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
+  '@types/dompurify@3.2.0':
+    resolution: {integrity: sha512-Fgg31wv9QbLDA0SpTOXO3MaxySc4DKGLi8sna4/Utjo4r3ZRPdCt4UQee8BWr+Q5z21yifghREPJGYaEOEIACg==}
+    deprecated: This is a stub types definition. dompurify provides its own type definitions, so you do not need this installed.
+
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
@@ -1040,6 +1077,9 @@ packages:
 
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
+
+  '@types/trusted-types@2.0.7':
+    resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
   '@types/verror@1.10.11':
     resolution: {integrity: sha512-RlDm9K7+o5stv0Co8i8ZRGxDbrTxhJtgjqjFyVh/tXQyl/rYtTKlnTvZ88oSTeYREWurwx20Js4kTuKCsFkUtg==}
@@ -1663,6 +1703,9 @@ packages:
   dom-accessibility-api@0.6.3:
     resolution: {integrity: sha512-7ZgogeTnjuHbo+ct10G9Ffp0mif17idi0IyWNVA/wcwcm7NPOD/WEHVP3n7n3MhXqxoIYm8d6MuZohYWIZ4T3w==}
 
+  dompurify@3.3.3:
+    resolution: {integrity: sha512-Oj6pzI2+RqBfFG+qOaOLbFXLQ90ARpcGG6UePL82bJLtdsa6CYJD7nmiU8MW9nQNOtCHV3lZ/Bzq1X0QYbBZCA==}
+
   dot-prop@5.3.0:
     resolution: {integrity: sha512-QM8q3zDe58hqUqjraQOmzZ1LIH9SWQJTlEKCH4kJ2oQvLZk7RbQXvtDM2XEq3fwkV9CCvvH4LA0AV+ogFsBM2Q==}
     engines: {node: '>=8'}
@@ -2083,6 +2126,10 @@ packages:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
 
+  highlight.js@11.11.1:
+    resolution: {integrity: sha512-Xwwo44whKBVCYoliBQwaPvtd/2tYFkRQtXDWj1nackaV2JPXx3L0+Jvd8/qCJ2p+ML0/XVkJ2q+Mr+UVdpJK5w==}
+    engines: {node: '>=12.0.0'}
+
   hosted-git-info@4.1.0:
     resolution: {integrity: sha512-kyCuEOWjJqZuDbRHzL8V93NzQhwIB71oFWSyzVo+KPZI+pnQPPxucdkrOZvkLRnrf5URsQM+IJ09Dw29cRALIA==}
     engines: {node: '>=10'}
@@ -2466,6 +2513,11 @@ packages:
   make-fetch-happen@14.0.3:
     resolution: {integrity: sha512-QMjGbFTP0blj97EeidG5hk/QhKQ3T4ICckQGLgz38QF7Vgbk6e6FTARN8KhKxyBbWn8R0HU+bnw8aSoFPD4qtQ==}
     engines: {node: ^18.17.0 || >=20.5.0}
+
+  marked@17.0.5:
+    resolution: {integrity: sha512-6hLvc0/JEbRjRgzI6wnT2P1XuM1/RrrDEX0kPt0N7jGm1133g6X7DlxFasUIx+72aKAr904GTxhSLDrd5DIlZg==}
+    engines: {node: '>= 20'}
+    hasBin: true
 
   matcher@3.0.0:
     resolution: {integrity: sha512-OkeDaAZ/bQCxeFAozM55PKcKU0yJMPGifLwV4Qgjitu+5MoAfSQN4lsLJeXZ1b8w0x+/Emda6MZgXS1jvsapng==}
@@ -3065,6 +3117,9 @@ packages:
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
+
+  simple-git@3.33.0:
+    resolution: {integrity: sha512-D4V/tGC2sjsoNhoMybKyGoE+v8A60hRawKQ1iFRA1zwuDgGZCBJ4ByOzZ5J8joBbi4Oam0qiPH+GhzmSBwbJng==}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -4159,6 +4214,14 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@kwsites/file-exists@1.1.1':
+    dependencies:
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@kwsites/promise-deferred@1.1.1': {}
+
   '@lezer/common@1.5.1': {}
 
   '@lezer/css@1.3.3':
@@ -4339,6 +4402,14 @@ snapshots:
     dependencies:
       defer-to-connect: 2.0.1
 
+  '@tanstack/react-virtual@3.13.23(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      '@tanstack/virtual-core': 3.13.23
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+
+  '@tanstack/virtual-core@3.13.23': {}
+
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.29.0
@@ -4412,6 +4483,10 @@ snapshots:
 
   '@types/deep-eql@4.0.2': {}
 
+  '@types/dompurify@3.2.0':
+    dependencies:
+      dompurify: 3.3.3
+
   '@types/estree@1.0.8': {}
 
   '@types/fs-extra@9.0.13':
@@ -4453,6 +4528,9 @@ snapshots:
   '@types/responselike@1.0.3':
     dependencies:
       '@types/node': 20.19.37
+
+  '@types/trusted-types@2.0.7':
+    optional: true
 
   '@types/verror@1.10.11':
     optional: true
@@ -5256,6 +5334,10 @@ snapshots:
 
   dom-accessibility-api@0.6.3: {}
 
+  dompurify@3.3.3:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
+
   dot-prop@5.3.0:
     dependencies:
       is-obj: 2.0.0
@@ -5868,6 +5950,8 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  highlight.js@11.11.1: {}
+
   hosted-git-info@4.1.0:
     dependencies:
       lru-cache: 6.0.0
@@ -6291,6 +6375,8 @@ snapshots:
       ssri: 12.0.0
     transitivePeerDependencies:
       - supports-color
+
+  marked@17.0.5: {}
 
   matcher@3.0.0:
     dependencies:
@@ -6936,6 +7022,14 @@ snapshots:
   signal-exit@3.0.7: {}
 
   signal-exit@4.1.0: {}
+
+  simple-git@3.33.0:
+    dependencies:
+      '@kwsites/file-exists': 1.1.1
+      '@kwsites/promise-deferred': 1.1.1
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
 
   simple-update-notifier@2.0.0:
     dependencies:

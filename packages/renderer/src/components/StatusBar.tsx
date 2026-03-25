@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useEditorStatus } from '../hooks/useEditorStatus'
 
 function GitBranchIcon() {
@@ -13,13 +14,22 @@ function GitBranchIcon() {
 
 export function StatusBar() {
   const { status } = useEditorStatus()
+  const [branch, setBranch] = useState('main')
+
+  useEffect(() => {
+    window.api.getGitStatus().then((result) => {
+      if (result) setBranch(result.branch)
+    })
+    const unsub = window.api.onGitBranchChanged(setBranch)
+    return unsub
+  }, [])
 
   return (
     <footer className="status-bar">
       <div className="status-bar__left">
         <span className="status-bar__item status-bar__item--branch">
           <GitBranchIcon />
-          main
+          {branch}
         </span>
         <div className="status-bar__separator" />
         <span className="status-bar__item">Ln {status.line}, Col {status.col}</span>

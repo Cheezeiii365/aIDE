@@ -40,6 +40,11 @@ export const IpcChannels = {
   // File watcher
   FS_WATCH_EVENT: 'fs:watch-event',
 
+  // Git
+  GIT_STATUS: 'git:status',
+  GIT_STATUS_CHANGED: 'git:status-changed',
+  GIT_BRANCH_CHANGED: 'git:branch-changed',
+
   // Terminal / PTY
   PTY_CREATE: 'pty:create',
   PTY_DATA_IN: 'pty:data-in',
@@ -47,6 +52,15 @@ export const IpcChannels = {
   PTY_RESIZE: 'pty:resize',
   PTY_KILL: 'pty:kill',
   PTY_EXIT: 'pty:exit',
+
+  // Worktrees
+  WORKTREE_LIST: 'worktree:list',
+  WORKTREE_CREATE: 'worktree:create',
+  WORKTREE_REMOVE: 'worktree:remove',
+  WORKTREE_SET_ACTIVE: 'worktree:set-active',
+  WORKTREE_GET_ACTIVE: 'worktree:get-active',
+  WORKTREE_LIST_CHANGED: 'worktree:list-changed',
+  WORKTREE_LIST_BRANCHES: 'worktree:list-branches',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -65,16 +79,40 @@ export interface FsWatchEvent {
   isDirectory: boolean
 }
 
+export type GitFileStatus = 'M' | 'A' | '?' | 'D' | 'C'
+
+export interface GitStatusResult {
+  files: Record<string, GitFileStatus>
+  branch: string
+  ignoredPaths?: string[]
+}
+
+export interface WorktreeInfo {
+  path: string
+  branch: string
+  isMain: boolean
+  isDirty: boolean
+  isCurrent: boolean
+}
+
+export interface WorktreeCreateOpts {
+  branch: string
+  createBranch: boolean
+  baseBranch?: string
+}
+
 export interface AppSettings {
   theme: ThemeName
   sidebarWidth: number
   workspaceRoot: string | null
+  activeWorktree: string | null
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'one-dark',
   sidebarWidth: 220,
   workspaceRoot: null,
+  activeWorktree: null,
 }
 
 /** Single source of truth for the preload bridge API shape. */
@@ -113,6 +151,11 @@ export interface WindowApi {
   // File watcher
   onFsWatchEvent: (callback: (events: FsWatchEvent[]) => void) => () => void
 
+  // Git
+  getGitStatus: () => Promise<GitStatusResult | null>
+  onGitStatusChanged: (callback: (status: GitStatusResult) => void) => () => void
+  onGitBranchChanged: (callback: (branch: string) => void) => () => void
+
   // Terminal
   ptyCreate: (opts?: { cwd?: string; shell?: string }) => Promise<{ id: string }>
   ptyWrite: (id: string, data: string) => void
@@ -120,6 +163,15 @@ export interface WindowApi {
   ptyKill: (id: string) => void
   onPtyData: (callback: (id: string, data: string) => void) => () => void
   onPtyExit: (callback: (id: string, exitCode: number) => void) => () => void
+
+  // Worktrees
+  listWorktrees: () => Promise<WorktreeInfo[]>
+  createWorktree: (opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
+  removeWorktree: (worktreePath: string) => Promise<{ success: true } | { error: string }>
+  setActiveWorktree: (worktreePath: string | null) => Promise<void>
+  getActiveWorktree: () => Promise<string | null>
+  onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => () => void
+  listBranches: () => Promise<string[]>
 
   // Platform info
   platform: NodeJS.Platform

@@ -1,0 +1,219 @@
+/* ─── Worktree Panel ──────────────────────────── */
+.worktree-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.worktree-panel__list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Add Button (list-integrated) ───────────── */
+.worktree-panel__add-btn {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px 0 8px;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.worktree-panel__add-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.worktree-panel__add-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+/* ─── Empty State ────────────────────────────── */
+.worktree-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 12px;
+  text-align: center;
+}
+
+.worktree-panel__empty-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.worktree-panel__empty-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.worktree-panel__empty-btn:hover {
+  opacity: 0.85;
+}
+
+/* ─── Worktree Item ──────────────────────────── */
+.worktree-item {
+  display: flex;
+  align-items: center;
+  position: relative;
+  height: 30px;
+  padding: 0 12px 0 8px;
+  cursor: pointer;
+  gap: 6px;
+  border-left: 2px solid transparent;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.worktree-item:hover {
+  background: var(--bg-hover);
+}
+
+.worktree-item--active {
+  background: var(--bg-active-tab);
+  border-left-color: var(--accent);
+}
+
+/* Separator after main worktree */
+.worktree-item--main {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.worktree-item__icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color 150ms ease;
+}
+
+.worktree-item--active .worktree-item__icon {
+  color: var(--accent);
+}
+
+.worktree-item__branch {
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  transition: font-weight 100ms ease;
+}
+
+.worktree-item--active .worktree-item__branch {
+  font-weight: 600;
+}
+
+.worktree-item__badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.worktree-item__badge--main {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+/* ─── Dirty Badge (M) ────────────────────────── */
+.worktree-item__dirty {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  color: var(--text-warning);
+  background: rgba(229, 192, 123, 0.15);
+  animation: pulse-dirty 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dirty {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229, 192, 123, 0); }
+  50% { box-shadow: 0 0 0 2px rgba(229, 192, 123, 0.2); }
+}
+
+/* ─── Hover Action Buttons ───────────────────── */
+.worktree-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  flex-shrink: 0;
+}
+
+.worktree-item:hover .worktree-item__actions {
+  opacity: 1;
+}
+
+.worktree-item__action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.worktree-item__action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.worktree-item__action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Hide badges on hover to make room for action buttons */
+.worktree-item:hover .worktree-item__badge,
+.worktree-item:hover .worktree-item__dirty {
+  display: none;
+}
+
+/* ─── Entry Animation ────────────────────────── */
+@keyframes worktree-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.worktree-item--entering {
+  animation: worktree-slide-in 200ms ease forwards;
+}

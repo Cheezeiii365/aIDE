@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
 import { FileTree } from './FileTree/FileTree'
+import { SidebarSection } from './SidebarSection'
 
 const MIN_WIDTH = 180
 const MAX_WIDTH = 500
@@ -7,18 +8,20 @@ const MAX_WIDTH = 500
 interface Props {
   onFileOpen: (filePath: string) => void
   collapsed?: boolean
+  activeRoot: string | null
+  onOpenFolder: () => void
+  worktreeSection?: ReactNode
 }
 
-export function Sidebar({ onFileOpen, collapsed = false }: Props) {
+export function Sidebar({ onFileOpen, collapsed = false, activeRoot, onOpenFolder, worktreeSection }: Props) {
   const [width, setWidth] = useState(220) // fallback until loaded
-  const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
+  const [filter, setFilter] = useState('')
   const dragging = useRef(false)
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Load persisted sidebar width and workspace root on mount
+  // Load persisted sidebar width on mount
   useEffect(() => {
     window.api.getSidebarWidth().then(setWidth)
-    window.api.getWorkspaceRoot().then(setWorkspaceRoot)
   }, [])
 
   // Debounced save of sidebar width
@@ -50,11 +53,6 @@ export function Sidebar({ onFileOpen, collapsed = false }: Props) {
     document.addEventListener('mouseup', onMouseUp)
   }, [persistWidth])
 
-  const handleOpenFolder = useCallback(async () => {
-    const selected = await window.api.openWorkspaceDialog()
-    if (selected) setWorkspaceRoot(selected)
-  }, [])
-
   if (collapsed) {
     return null
   }
@@ -62,12 +60,26 @@ export function Sidebar({ onFileOpen, collapsed = false }: Props) {
   return (
     <aside className="sidebar" style={{ width }}>
       <div className="sidebar__content">
-        <div className="sidebar__header">Explorer</div>
-        {workspaceRoot ? (
-          <FileTree rootPath={workspaceRoot} onFileOpen={onFileOpen} />
+        {activeRoot ? (
+          <>
+            <SidebarSection title="Explorer" defaultExpanded>
+              <input
+                className="sidebar__filter-input"
+                type="text"
+                placeholder="Filter files..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setFilter('')
+                }}
+              />
+              <FileTree rootPath={activeRoot} onFileOpen={onFileOpen} filter={filter} />
+            </SidebarSection>
+            {worktreeSection}
+          </>
         ) : (
           <div className="sidebar__empty">
-            <button className="sidebar__open-btn" onClick={handleOpenFolder}>
+            <button className="sidebar__open-btn" onClick={onOpenFolder}>
               Open Folder
             </button>
             <span className="sidebar__empty-hint">
