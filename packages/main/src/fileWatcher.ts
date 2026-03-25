@@ -1,16 +1,17 @@
-import { subscribe, type AsyncSubscription } from '@parcel/watcher'
-import { ipcMain, type WebContents } from 'electron'
+import { watch, type FSWatcher } from 'fs'
 import { stat } from 'fs/promises'
+import { join } from 'path'
+import { ipcMain, type WebContents } from 'electron'
 import { IpcChannels } from '@aide/shared'
 import type { FsWatchEvent, FsEventType } from '@aide/shared'
 
-let activeSubscription: AsyncSubscription | null = null
+let activeWatcher: FSWatcher | null = null
 let watchedRoot: string | null = null
 let eventBuffer: FsWatchEvent[] = []
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 const knownDirectories = new Set<string>()
 
-const IGNORE_PATTERNS = [
+const IGNORE_SEGMENTS = new Set([
   'node_modules',
   '.git',
   'dist',
@@ -19,16 +20,22 @@ const IGNORE_PATTERNS = [
   'out',
   '__pycache__',
   '.pytest_cache',
-  '**/.DS_Store',
-  '**/Thumbs.db',
-]
+])
+
+const IGNORE_NAMES = new Set(['.DS_Store', 'Thumbs.db'])
 
 const DEBOUNCE_MS = 150
 const BULK_DEBOUNCE_MS = 500
 const BULK_THRESHOLD = 50
-const MAX_RETRIES = 3
 
 let getWebContents: (() => WebContents | null) | null = null
+
+function shouldIgnore(relativePath: string): boolean {
+  const segments = relativePath.split('/')
+  const fileName = segments[segments.length - 1]
+  if (IGNORE_NAMES.has(fileName)) return true
+  return segments.some((seg) => IGNORE_SEGMENTS.has(seg))
+}
 
 function flushEvents() {
   flushTimer = null
@@ -45,69 +52,68 @@ function scheduleFlush() {
   flushTimer = setTimeout(flushEvents, delay)
 }
 
-async function resolveIsDirectory(
-  filePath: string,
-  eventType: FsEventType,
-): Promise<boolean> {
-  if (eventType === 'delete') {
-    // Path no longer exists — check our cache
-    const wasDir = knownDirectories.has(filePath)
-    knownDirectories.delete(filePath)
-    return wasDir
-  }
-
+async function resolveEvent(
+  fullPath: string,
+): Promise<{ type: FsEventType; isDirectory: boolean }> {
   try {
-    const info = await stat(filePath)
+    const info = await stat(fullPath)
     const isDir = info.isDirectory()
     if (isDir) {
-      knownDirectories.add(filePath)
+      knownDirectories.add(fullPath)
     } else {
-      knownDirectories.delete(filePath)
+      knownDirectories.delete(fullPath)
     }
-    return isDir
+    // fs.watch gives 'rename' for create/delete — if stat succeeds, it exists
+    const wasKnown = knownDirectories.has(fullPath) || isDir
+    return { type: wasKnown ? 'update' : 'create', isDirectory: isDir }
   } catch {
-    // File may have been deleted between event and stat
-    return false
+    // stat failed — file was deleted
+    const wasDir = knownDirectories.has(fullPath)
+    knownDirectories.delete(fullPath)
+    return { type: 'delete', isDirectory: wasDir }
   }
 }
 
-async function startSubscription(rootPath: string, retryCount = 0): Promise<void> {
+// Deduplicate rapid events for the same path within a flush window
+const pendingPaths = new Set<string>()
+
+async function handleFsEvent(eventType: string, filename: string | null) {
+  if (!filename || !watchedRoot) return
+  if (shouldIgnore(filename)) return
+
+  const fullPath = join(watchedRoot, filename)
+
+  // Deduplicate: fs.watch can fire multiple events for the same file change
+  if (pendingPaths.has(fullPath)) return
+  pendingPaths.add(fullPath)
+  // Clear dedup after a short window
+  setTimeout(() => pendingPaths.delete(fullPath), 50)
+
+  const { type, isDirectory } = await resolveEvent(fullPath)
+  eventBuffer.push({ type, path: fullPath, isDirectory })
+  scheduleFlush()
+}
+
+function startSubscription(rootPath: string): void {
   try {
-    activeSubscription = await subscribe(
-      rootPath,
-      async (err, events) => {
-        if (err) {
-          console.error('[fileWatcher] Watcher error:', err)
-          return
-        }
+    activeWatcher = watch(rootPath, { recursive: true }, (eventType, filename) => {
+      handleFsEvent(eventType, filename)
+    })
 
-        for (const event of events) {
-          const type = event.type as FsEventType
-          const isDirectory = await resolveIsDirectory(event.path, type)
-          eventBuffer.push({ type, path: event.path, isDirectory })
-        }
-
-        scheduleFlush()
-      },
-      { ignore: IGNORE_PATTERNS },
-    )
+    activeWatcher.on('error', (err) => {
+      console.error('[fileWatcher] Watcher error:', err)
+    })
 
     watchedRoot = rootPath
     console.log(`[fileWatcher] Watching: ${rootPath}`)
   } catch (err) {
-    console.error(`[fileWatcher] Failed to start (attempt ${retryCount + 1}):`, err)
-    if (retryCount < MAX_RETRIES) {
-      const delay = Math.pow(2, retryCount + 1) * 1000
-      setTimeout(() => startSubscription(rootPath, retryCount + 1), delay)
-    } else {
-      console.error('[fileWatcher] Max retries reached, giving up')
-    }
+    console.error('[fileWatcher] Failed to start:', err)
   }
 }
 
 export async function startWatcher(rootPath: string): Promise<void> {
   await stopWatcher()
-  await startSubscription(rootPath)
+  startSubscription(rootPath)
 }
 
 export async function stopWatcher(): Promise<void> {
@@ -116,14 +122,11 @@ export async function stopWatcher(): Promise<void> {
     flushTimer = null
   }
   eventBuffer = []
+  pendingPaths.clear()
 
-  if (activeSubscription) {
-    try {
-      await activeSubscription.unsubscribe()
-    } catch (err) {
-      console.error('[fileWatcher] Error unsubscribing:', err)
-    }
-    activeSubscription = null
+  if (activeWatcher) {
+    activeWatcher.close()
+    activeWatcher = null
   }
 
   watchedRoot = null
@@ -135,7 +138,6 @@ export function registerFileWatcherHandlers(
 ): void {
   getWebContents = webContentsFn
 
-  // Auto-start watcher if a workspace root is provided
   ipcMain.handle('fs:watch-start', async (_event, rootPath: string) => {
     await startWatcher(rootPath)
   })

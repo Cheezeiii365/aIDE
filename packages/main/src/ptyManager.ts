@@ -2,6 +2,7 @@ import { ipcMain, type WebContents } from 'electron'
 import { spawn, type IPty } from 'node-pty'
 import { randomUUID } from 'crypto'
 import * as os from 'os'
+import * as fs from 'fs'
 import { IpcChannels } from '@aide/shared'
 import type Store from 'electron-store'
 import type { AppSettings } from '@aide/shared'
@@ -19,7 +20,8 @@ export function registerPtyHandlers(
 ): void {
   ipcMain.handle(IpcChannels.PTY_CREATE, (_event, opts?: { cwd?: string; shell?: string }) => {
     const id = randomUUID()
-    const cwd = opts?.cwd || store.get('workspaceRoot') || os.homedir()
+    const preferredCwd = opts?.cwd || store.get('workspaceRoot') || os.homedir()
+    const cwd = fs.existsSync(preferredCwd) ? preferredCwd : os.homedir()
     const shell = opts?.shell || detectShell()
 
     const pty = spawn(shell, [], {

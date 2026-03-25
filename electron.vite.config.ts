@@ -25,7 +25,7 @@ function stripDockviewStyleInject(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ include: ['node-pty', '@parcel/watcher'] })],
+    plugins: [externalizeDepsPlugin({ include: ['node-pty'] })],
     build: {
       outDir: 'packages/main/dist',
       lib: {
