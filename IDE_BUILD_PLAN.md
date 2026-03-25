@@ -1,7 +1,7 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 24, 2026
-> **Status:** Pre-development / Planning (pressure-tested)
+> **Last updated:** March 25, 2026
+> **Status:** Active development (Phase 2 in progress)
 
 ---
 
@@ -38,19 +38,19 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 ## 2. Core Requirements
 
 ### Must-have at launch (MVP)
-- [ ] Infinitely nestable/resizable tiling panes — any pane can be an editor, terminal, browser, file tree, or agent panel
-- [ ] Workspace switcher ribbon with per-workspace agent status indicators + global zone (settings, notifications, cost dashboard)
+- [x] Infinitely nestable/resizable tiling panes — any pane can be an editor, terminal, browser, file tree, or agent panel
+- [x] Workspace switcher ribbon with per-workspace agent status indicators + global zone (settings, notifications, cost dashboard)
 - [ ] Keyboard shortcut workspace switching (`Cmd+1/2/3...`)
 - [ ] Layout persistence — each workspace restores its exact pane arrangement on switch
 - [ ] Persistent browser panes with real Google, GitHub, and Microsoft account sessions that survive workspace switches and app restarts
 - [ ] Claude Code running in terminal panes, with agent status surfaced to the workspace tab
-- [ ] CodeMirror 6 editor with syntax highlighting for Python, JavaScript/TypeScript, and Markdown
-- [ ] Editor table-stakes: multi-cursor (`Cmd+D`, `Cmd+Click`), code folding, indent guides, word wrap toggle, bracket auto-close (including JSX)
+- [x] CodeMirror 6 editor with syntax highlighting for Python, JavaScript/TypeScript, and Markdown
+- [x] Editor table-stakes: multi-cursor (`Cmd+D`, `Cmd+Click`), code folding, indent guides, word wrap toggle, bracket auto-close (including JSX)
 - [ ] Find in files (`Cmd+Shift+F`) via bundled ripgrep, find/replace in current file (`@codemirror/search`), LSP symbol search (`workspace/symbol`)
-- [ ] Markdown preview pane (side-by-side: editor left, rendered HTML right via `marked`/`remark`)
+- [x] Markdown preview pane (side-by-side: editor left, rendered HTML right via `marked`/`remark`)
 - [ ] LSP integration: Pyright (Python) and typescript-language-server (JS/TS) as the first two language packs — installed individually, not bundled by default
-- [ ] Fixed left sidebar for file tree with dirty file indicators and git branch display (outside Dockview — always present)
-- [ ] Theming system designed for dark + light mode from day one — Atom One Dark as default, light mode as alternative, CSS variable token system supports custom themes in future
+- [x] Fixed left sidebar for file tree with dirty file indicators and git branch display (outside Dockview — always present)
+- [x] Theming system designed for dark + light mode from day one — Atom One Dark as default, light mode as alternative, CSS variable token system supports custom themes in future
 - [ ] Global command palette (`Cmd+Shift+P`) — cross-workspace search and global commands
 
 ### Nice-to-have (v2+)
@@ -766,7 +766,7 @@ An Electron window with the correct visual chrome, dark + light theme toggle wor
     - Find/replace in file (`Cmd+F` find, `Cmd+H` replace) — via basicSetup
   - Wire CodeMirror theme to follow app theme (swap extension on theme toggle)
 
-- [ ] **2.3** Terminal (xterm.js + node-pty)
+- [x] **2.3** Terminal (xterm.js + node-pty)
   - Install `xterm`, `xterm-addon-fit`, `node-pty`
   - Build `TerminalPane` component
   - Spawn PTY shell on pane creation (use user's default shell from `process.env.SHELL`)
@@ -1150,7 +1150,7 @@ Track milestone completion here. Update as you go.
 ### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
 |---|---|---|
-| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. 2.1b complete: @parcel/watcher (native C++ FSEvents, not chokidar) with debounced incremental tree updates, native ignore patterns (node_modules/.git/dist/build), error recovery with exponential backoff. File operations: createFile, createDir, delete, rename IPC handlers. Right-click context menu (New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder). Inline rename input with validation. Cmd+B sidebar toggle via ShortcutManager. Deferred to 2.1c: @tanstack/react-virtual virtualization, git status badges (simple-git) |
+| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. 2.1b complete: @parcel/watcher (native C++ FSEvents, not chokidar) with debounced incremental tree updates, native ignore patterns (node_modules/.git/dist/build), error recovery with exponential backoff. File operations: createFile, createDir, delete, rename IPC handlers. Right-click context menu (New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder). Inline rename input with validation. Cmd+B sidebar toggle via ShortcutManager. 2.1c complete: simple-git status polling (3s interval) with per-file badges (M/A/U/D) and directory-level dirty dots, current branch display in StatusBar, case-insensitive file tree filter with ancestor path preservation. Deferred to 2.1d: @tanstack/react-virtual virtualization for large directories, drag files between directories |
 | 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. Deferred to 2.2c: minimap, breadcrumb nav |
 | 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
@@ -1191,7 +1191,7 @@ Track milestone completion here. Update as you go.
 | 6.3 GitHub repository + CI | 🟡 In progress | electron-builder.yml configured for macOS (dmg+zip arm64+x64), Linux (AppImage+deb), Windows (nsis+zip). pnpm dist scripts added. GitHub Releases publish via `--publish always`. First alpha release: v0.1.0-alpha.1 |
 | 6.4 Plugin system foundation | ⬜ Not started | |
 
-**Status key:** ⬜ Not started · 🔵 In progress · ✅ Complete · ⏸ Blocked
+**Status key:** ⬜ Not started · 🟡 In progress · ✅ Complete · ⏸ Blocked
 
 ---
 
