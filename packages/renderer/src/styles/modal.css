@@ -104,7 +104,7 @@
 
 .modal__toggle-btn--active {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .modal__toggle-btn:not(.modal__toggle-btn--active):hover {
@@ -162,7 +162,7 @@
 
 .modal__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
   border-color: var(--accent);
 }
 
@@ -181,7 +181,7 @@
   width: 12px;
   height: 12px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
+  border-top-color: var(--text-on-accent);
   border-radius: 50%;
   animation: modal-spin 600ms linear infinite;
 }

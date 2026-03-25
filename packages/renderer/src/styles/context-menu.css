@@ -34,7 +34,7 @@
 
 .context-menu__item:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .context-menu__item--danger:hover {
