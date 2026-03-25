@@ -4,13 +4,28 @@ import { WorkspaceRibbon } from './WorkspaceRibbon'
 import { Sidebar } from './Sidebar'
 import { DockviewContainer } from './DockviewContainer'
 import { StatusBar } from './StatusBar'
+import { WorktreePanel } from './WorktreePanel/WorktreePanel'
+import { SidebarSection } from './SidebarSection'
 import { registerAppActions } from '../lib/appActions'
 import { useShortcut } from '../lib/ShortcutManager'
+import { useWorktrees } from '../hooks/useWorktrees'
 import { ToastContainer, showToast } from './Toast'
 
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
+  const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
+
+  // Load persisted workspace root on mount
+  useEffect(() => {
+    window.api.getWorkspaceRoot().then(setWorkspaceRoot)
+  }, [])
+
+  const handleOpenFolder = useCallback(async () => {
+    const selected = await window.api.openWorkspaceDialog()
+    if (selected) setWorkspaceRoot(selected)
+  }, [])
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
@@ -48,6 +63,7 @@ export function AppShell() {
       id,
       component: 'terminalPane',
       title: 'Terminal',
+      params: { worktreePath: activeRoot },
       position,
     })
   })
@@ -146,7 +162,38 @@ export function AppShell() {
     <div className="app-shell">
       <WorkspaceRibbon />
       <div className="app-middle">
-        <Sidebar onFileOpen={onFileOpen} collapsed={sidebarCollapsed} />
+        <Sidebar
+          onFileOpen={onFileOpen}
+          collapsed={sidebarCollapsed}
+          activeRoot={activeRoot}
+          onOpenFolder={handleOpenFolder}
+          worktreeSection={
+            workspaceRoot && worktrees.length > 0 ? (
+              <SidebarSection title="Worktrees" defaultExpanded>
+                <WorktreePanel
+                  worktrees={worktrees}
+                  onSwitch={switchWorktree}
+                  onOpenTerminal={(worktreePath) => {
+                    const api = dockviewApiRef.current
+                    if (!api) return
+                    const id = `terminal-${Date.now()}`
+                    const branch = worktrees.find((w) => w.path === worktreePath)?.branch
+                    const existingTerminal = api.panels.find(
+                      (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
+                    )
+                    api.addPanel({
+                      id,
+                      component: 'terminalPane',
+                      title: branch ? `Terminal (${branch})` : 'Terminal',
+                      params: { worktreePath },
+                      position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
+                    })
+                  }}
+                />
+              </SidebarSection>
+            ) : undefined
+          }
+        />
         <div className="dockview-wrapper">
           <DockviewContainer onApiReady={onApiReady} />
         </div>

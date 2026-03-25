@@ -57,6 +57,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Cursor-style agent panel UI (structured diffs, progress, pause/resume)
 - [ ] Claude Agent SDK integration (replacing raw Claude Code CLI)
 - [ ] Tailwind CSS IntelliSense (via tailwindcss-language-server)
+- [x] Git worktree management — sidebar panel to create/remove/switch worktrees, file tree re-roots on worktree switch, terminal right-click to switch worktree cwd, auto-detect externally created worktrees
 - [ ] Git integration UI (diff viewer, stage/unstage, commit)
 - [ ] Multi-root workspace support (monorepos with separate backend/frontend LSP roots)
 - [ ] Plugin system with npm-based distribution
@@ -1156,6 +1157,7 @@ Track milestone completion here. Update as you go.
 | 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
 | 2.5 Markdown preview | ✅ Complete | MarkdownPreviewPane in Dockview, marked v17 + DOMPurify + highlight.js (may switch to Shiki TextMate in future). Live preview via editorContentBus pub/sub. Cmd+Shift+V toggle. Toast notification on .md open. Auto-close on editor close. Theme-aware CSS with syntax token mapping |
 | 2.6 Keyboard shortcut system | 🟡 In progress | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. Shortcuts wired: Cmd+Shift+T (new terminal), Cmd+B (sidebar toggle), Cmd+W (close active panel). Deferred: Cmd+P quick open, Cmd+Shift+P command palette, Cmd+Shift+F find in files |
+| 2.7 Git worktree management | ✅ Complete | Sidebar refactored into collapsible SidebarSection components. Worktree panel lists all repo worktrees with branch name, dirty badge, main label. Create worktree modal (new or existing branch, base branch picker). Worktrees stored at `../.aide-worktrees/<branch>/`. File tree re-roots on worktree switch. Terminal right-click context menu for worktree switching. Auto-detect external worktrees via 5s polling of `git worktree list --porcelain`. Backend: `worktreeManager.ts` follows gitStatus.ts pattern. New IPC channels: WORKTREE_LIST/CREATE/REMOVE/SET_ACTIVE/GET_ACTIVE/LIST_CHANGED/LIST_BRANCHES. Deferred: cross-worktree diff, agent panel integration, git graph sidebar section |
 
 ### Phase 3: LSP + Browser Pane (Weeks 8–10)
 | Milestone | Status | Notes |

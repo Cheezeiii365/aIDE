@@ -1,0 +1,95 @@
+/* ─── Worktree Panel ──────────────────────────── */
+.worktree-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.worktree-panel__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.worktree-panel__add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 8px;
+  padding: 4px 8px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.worktree-panel__add-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+/* ─── Worktree Item ──────────────────────────── */
+.worktree-item {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 12px 0 8px;
+  cursor: pointer;
+  gap: 6px;
+  transition: background 80ms ease;
+}
+
+.worktree-item:hover {
+  background: var(--bg-hover);
+}
+
+.worktree-item--active {
+  background: var(--bg-active-tab);
+}
+
+.worktree-item__icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.worktree-item--active .worktree-item__icon {
+  color: var(--accent);
+}
+
+.worktree-item__branch {
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.worktree-item--active .worktree-item__branch {
+  font-weight: 600;
+}
+
+.worktree-item__badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.worktree-item__badge--main {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.worktree-item__dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-warning);
+  flex-shrink: 0;
+}

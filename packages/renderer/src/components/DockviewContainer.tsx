@@ -38,6 +38,7 @@ export function DockviewContainer({ onApiReady }: Props) {
         id: 'terminal',
         component: 'terminalPane',
         title: 'Terminal',
+        params: {},
         position: { referencePanel: editorPanel, direction: 'below' },
         initialHeight: 200,
       })

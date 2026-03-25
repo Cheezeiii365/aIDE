@@ -1,0 +1,132 @@
+/* ─── Modal ───────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  min-width: 360px;
+  max-width: 480px;
+}
+
+.modal__header {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.modal__label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modal__label-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.modal__input,
+.modal__select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.modal__input:focus,
+.modal__select:focus {
+  border-color: var(--accent);
+}
+
+.modal__select {
+  cursor: pointer;
+}
+
+.modal__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.modal__checkbox input {
+  accent-color: var(--accent);
+}
+
+.modal__error {
+  font-size: 11px;
+  color: var(--text-error);
+  padding: 6px 8px;
+  background: rgba(224, 108, 117, 0.1);
+  border-radius: 3px;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.modal__btn {
+  padding: 5px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  transition: background 120ms ease;
+}
+
+.modal__btn--secondary {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.modal__btn--secondary:hover {
+  background: var(--bg-hover);
+}
+
+.modal__btn--primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.modal__btn--primary:hover {
+  opacity: 0.9;
+}
+
+.modal__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

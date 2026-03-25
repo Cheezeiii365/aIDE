@@ -9,6 +9,9 @@ import './styles/app-shell.css'
 import './styles/file-tree.css'
 import './styles/context-menu.css'
 import './styles/editor-pane.css'
+import './styles/sidebar-section.css'
+import './styles/worktree-panel.css'
+import './styles/modal.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

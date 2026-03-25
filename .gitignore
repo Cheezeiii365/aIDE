@@ -54,3 +54,4 @@ playwright-report/
 
 # Temp Files
 *.mjs
+tmp.md

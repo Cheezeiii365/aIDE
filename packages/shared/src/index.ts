@@ -52,6 +52,15 @@ export const IpcChannels = {
   PTY_RESIZE: 'pty:resize',
   PTY_KILL: 'pty:kill',
   PTY_EXIT: 'pty:exit',
+
+  // Worktrees
+  WORKTREE_LIST: 'worktree:list',
+  WORKTREE_CREATE: 'worktree:create',
+  WORKTREE_REMOVE: 'worktree:remove',
+  WORKTREE_SET_ACTIVE: 'worktree:set-active',
+  WORKTREE_GET_ACTIVE: 'worktree:get-active',
+  WORKTREE_LIST_CHANGED: 'worktree:list-changed',
+  WORKTREE_LIST_BRANCHES: 'worktree:list-branches',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -78,16 +87,32 @@ export interface GitStatusResult {
   ignoredPaths?: string[]
 }
 
+export interface WorktreeInfo {
+  path: string
+  branch: string
+  isMain: boolean
+  isDirty: boolean
+  isCurrent: boolean
+}
+
+export interface WorktreeCreateOpts {
+  branch: string
+  createBranch: boolean
+  baseBranch?: string
+}
+
 export interface AppSettings {
   theme: ThemeName
   sidebarWidth: number
   workspaceRoot: string | null
+  activeWorktree: string | null
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'one-dark',
   sidebarWidth: 220,
   workspaceRoot: null,
+  activeWorktree: null,
 }
 
 /** Single source of truth for the preload bridge API shape. */
@@ -138,6 +163,15 @@ export interface WindowApi {
   ptyKill: (id: string) => void
   onPtyData: (callback: (id: string, data: string) => void) => () => void
   onPtyExit: (callback: (id: string, exitCode: number) => void) => () => void
+
+  // Worktrees
+  listWorktrees: () => Promise<WorktreeInfo[]>
+  createWorktree: (opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
+  removeWorktree: (worktreePath: string) => Promise<{ success: true } | { error: string }>
+  setActiveWorktree: (worktreePath: string | null) => Promise<void>
+  getActiveWorktree: () => Promise<string | null>
+  onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => () => void
+  listBranches: () => Promise<string[]>
 
   // Platform info
   platform: NodeJS.Platform

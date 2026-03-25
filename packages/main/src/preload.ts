@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WindowApi } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, WindowApi } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -83,6 +83,23 @@ const api: WindowApi = {
     ipcRenderer.on(IpcChannels.PTY_EXIT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.PTY_EXIT, handler)
   },
+
+  // Worktrees
+  listWorktrees: () => ipcRenderer.invoke(IpcChannels.WORKTREE_LIST),
+  createWorktree: (opts: WorktreeCreateOpts) =>
+    ipcRenderer.invoke(IpcChannels.WORKTREE_CREATE, opts),
+  removeWorktree: (worktreePath: string) =>
+    ipcRenderer.invoke(IpcChannels.WORKTREE_REMOVE, worktreePath),
+  setActiveWorktree: (worktreePath: string | null) =>
+    ipcRenderer.invoke(IpcChannels.WORKTREE_SET_ACTIVE, worktreePath),
+  getActiveWorktree: () => ipcRenderer.invoke(IpcChannels.WORKTREE_GET_ACTIVE),
+  onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, worktrees: WorktreeInfo[]) =>
+      callback(worktrees)
+    ipcRenderer.on(IpcChannels.WORKTREE_LIST_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.WORKTREE_LIST_CHANGED, handler)
+  },
+  listBranches: () => ipcRenderer.invoke(IpcChannels.WORKTREE_LIST_BRANCHES),
 
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,

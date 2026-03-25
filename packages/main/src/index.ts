@@ -7,6 +7,7 @@ import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
 import { registerFileWatcherHandlers, startWatcher, stopWatcher } from './fileWatcher'
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
+import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
@@ -174,8 +175,11 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   if (result.canceled || result.filePaths.length === 0) return null
   const selected = result.filePaths[0]
   store.set('workspaceRoot', selected)
+  store.set('activeWorktree', null)
   await startWatcher(selected)
-  await startGitPolling(selected, () => contentView?.webContents ?? null)
+  const getWc = () => contentView?.webContents ?? null
+  await startGitPolling(selected, getWc)
+  await startWorktreePolling(selected, getWc, store)
   return selected
 })
 
@@ -312,18 +316,24 @@ app.whenReady().then(async () => {
 
   const getWebContents = () => contentView?.webContents ?? null
   registerGitStatusHandlers(getWebContents)
+  registerWorktreeHandlers(getWebContents, store)
 
   // Auto-start watcher if we have a persisted workspace
   const savedRoot = store.get('workspaceRoot')
   if (savedRoot) {
-    await startWatcher(savedRoot)
-    await startGitPolling(savedRoot, getWebContents)
+    // Use active worktree root for file watcher and git polling if set
+    const activeWorktree = store.get('activeWorktree')
+    const effectiveRoot = activeWorktree || savedRoot
+    await startWatcher(effectiveRoot)
+    await startGitPolling(effectiveRoot, getWebContents)
+    await startWorktreePolling(savedRoot, getWebContents, store)
   }
 })
 
 app.on('before-quit', async () => {
   killAllPtys()
   stopGitPolling()
+  stopWorktreePolling()
   await stopWatcher()
 })
 
