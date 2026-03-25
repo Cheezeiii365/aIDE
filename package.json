@@ -22,6 +22,9 @@
     "dist:publish": "electron-vite build && electron-builder --mac --publish always"
   },
   "main": "packages/main/dist/index.js",
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  },
   "devDependencies": {
     "@anthropic-ai/claude-code": "*",
     "@eslint/js": "^9.0.0",

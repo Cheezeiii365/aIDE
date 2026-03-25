@@ -11,6 +11,9 @@ files:
   - package.json
   - node_modules/**/*
 
+asarUnpack:
+  - "**/node-pty/**"
+
 extraMetadata:
   main: packages/main/dist/index.js
 
