@@ -35,5 +35,4 @@ export function subscribeContent(
 
 export function clearContent(filePath: string): void {
   contentMap.delete(filePath)
-  listeners.delete(filePath)
 }
