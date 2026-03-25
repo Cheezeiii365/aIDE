@@ -1,4 +1,4 @@
-import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell } from 'electron'
+import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell, session } from 'electron'
 import { join, dirname } from 'path'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
@@ -91,6 +91,20 @@ function createWindow(): void {
   })
 
   mainWindow.contentView.addChildView(contentView)
+
+  // Set CSP via session headers — works reliably for both http:// and file:// protocols
+  const isDev = !!process.env.ELECTRON_RENDERER_URL
+  const csp = isDev
+    ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:*"
+    : "default-src 'self' file:; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:"
+  contentView.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp],
+      },
+    })
+  })
 
   // Fill the window with the content view
   const resizeContentView = () => {

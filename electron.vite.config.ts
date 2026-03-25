@@ -1,6 +1,27 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
+import type { Plugin } from 'vite'
+
+/** Strip dockview's runtime CSS injection so only our manual import is used. */
+function stripDockviewStyleInject(): Plugin {
+  return {
+    name: 'strip-dockview-style-inject',
+    enforce: 'pre',
+    transform(code, id) {
+      if (id.includes('dockview') && id.endsWith('.mjs') && code.includes('styleInject')) {
+        return {
+          code: code.replace(
+            /function styleInject\(css, ref\) \{[\s\S]*?\n\}/,
+            'function styleInject() {}',
+          ),
+          map: null,
+        }
+      }
+      return null
+    },
+  }
+}
 
 export default defineConfig({
   main: {
@@ -23,7 +44,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'packages/renderer'),
-    plugins: [react()],
+    plugins: [react(), stripDockviewStyleInject()],
     build: {
       outDir: resolve(__dirname, 'packages/renderer/dist'),
       rollupOptions: {
