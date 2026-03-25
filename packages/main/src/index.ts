@@ -54,7 +54,13 @@ function buildAppMenu(): void {
         { type: 'separator' },
         { role: 'togglefullscreen' },
         { type: 'separator' },
-        { role: 'toggleDevTools' },
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Option+I' : 'Ctrl+Shift+I',
+          click: () => {
+            contentView?.webContents.toggleDevTools()
+          },
+        },
       ],
     },
     {

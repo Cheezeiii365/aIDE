@@ -205,39 +205,50 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   }, [rootPath])
 
   const toggleExpand = useCallback(async (path: string) => {
-    // Determine action synchronously using the functional updater
-    let needsLoad = false
-    let nodeDepth = 0
+    // Read node state DIRECTLY — not inside the updater — because React 18
+    // may defer functional updaters when other state updates are batched,
+    // making outer variables (needsLoad, nodeDepth) unreliable.
+    const node = nodes.get(path)
+    if (!node || !node.isDirectory) return
 
+    // Already expanded → collapse
+    if (node.isExpanded) {
+      setNodes((prev) => {
+        const n = prev.get(path)
+        if (!n) return prev
+        const next = new Map(prev)
+        next.set(path, { ...n, isExpanded: false })
+        return next
+      })
+      return
+    }
+
+    // Already loaded → just expand
+    if (node.isLoaded) {
+      setNodes((prev) => {
+        const n = prev.get(path)
+        if (!n) return prev
+        const next = new Map(prev)
+        next.set(path, { ...n, isExpanded: true })
+        return next
+      })
+      return
+    }
+
+    // Not yet loaded — guard against concurrent loads
+    if (loadingPaths.current.has(path)) return
+    loadingPaths.current.add(path)
+
+    const nodeDepth = node.depth
+
+    // Mark expanded immediately
     setNodes((prev) => {
-      const node = prev.get(path)
-      if (!node || !node.isDirectory) return prev
-
-      if (node.isExpanded) {
-        const next = new Map(prev)
-        next.set(path, { ...node, isExpanded: false })
-        return next
-      }
-
-      if (node.isLoaded) {
-        const next = new Map(prev)
-        next.set(path, { ...node, isExpanded: true })
-        return next
-      }
-
-      // Not yet loaded — guard against concurrent loads via ref
-      if (loadingPaths.current.has(path)) return prev
-      loadingPaths.current.add(path)
-      needsLoad = true
-      nodeDepth = node.depth
-
-      // Mark expanded synchronously so a second click collapses instead of double-loading
+      const n = prev.get(path)
+      if (!n) return prev
       const next = new Map(prev)
-      next.set(path, { ...node, isExpanded: true })
+      next.set(path, { ...n, isExpanded: true })
       return next
     })
-
-    if (!needsLoad) return
 
     try {
       const entries = await window.api.readDir(path)
@@ -270,7 +281,7 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     } finally {
       loadingPaths.current.delete(path)
     }
-  }, [])
+  }, [nodes])
 
   // ── Context menu handlers ──────────────────────
 
