@@ -20,6 +20,18 @@ interface EditorPaneParams {
 // Tracks the "clean" (last-saved) content per file so we know the baseline
 const cleanContentMap = new Map<string, string>()
 
+/**
+ * Render and manage a CodeMirror editor for the panel's file inside a Dockview panel.
+ *
+ * Initializes a CodeMirror EditorView for `params.filePath`, restores or caches editor state,
+ * tracks cursor position and dirty state, publishes document content to the external content bus,
+ * responds to theme and wrap toggles, updates the Dockview tab title based on dirty state,
+ * and performs cleanup (caching state, clearing published content, and resetting dirty state) on unmount.
+ *
+ * @param params - Panel parameters; `params.filePath` specifies the file to open in the editor.
+ * @param api - Dockview panel API used to set the panel title and subscribe to activation changes.
+ * @returns The React element tree for the editor pane.
+ */
 export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)

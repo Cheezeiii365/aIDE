@@ -38,6 +38,15 @@ interface MarkdownPreviewParams {
   filePath: string
 }
 
+/**
+ * Render a live, syntax-highlighted preview of the markdown content for the given file path.
+ *
+ * The preview stays in sync with editor content when available, falls back to reading the file from disk,
+ * highlights code blocks with highlight.js, debounces rendering, and sanitizes output with DOMPurify.
+ *
+ * @param params - Panel parameters containing `filePath`, the path used to source markdown content
+ * @returns A React element containing the sanitized HTML preview of the markdown content
+ */
 export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPreviewParams>) {
   const { filePath } = params
   const [content, setContent] = useState<string>(() => getContent(filePath) ?? '')

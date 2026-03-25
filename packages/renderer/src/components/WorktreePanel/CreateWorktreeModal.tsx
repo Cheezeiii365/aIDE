@@ -5,6 +5,14 @@ interface Props {
   onClose: () => void
 }
 
+/**
+ * Render a modal that lets the user create a Git worktree either by creating a new branch or selecting an existing branch.
+ *
+ * The modal loads existing branches on mount, focuses the branch input, closes on Escape or overlay click, and calls the API to create the worktree when submitted.
+ *
+ * @param onClose - Callback invoked to close the modal
+ * @returns The modal portal element mounted into `document.body`
+ */
 export function CreateWorktreeModal({ onClose }: Props) {
   const [branchName, setBranchName] = useState('')
   const [createNew, setCreateNew] = useState(true)

@@ -17,7 +17,14 @@ function basename(p: string): string {
   return p.split('/').pop() ?? p
 }
 
-/** Insert a path into children array maintaining dirs-first + alphabetical sort. */
+/**
+ * Insert a path into a children list while keeping directories first and names sorted case-insensitively.
+ *
+ * @param children - Ordered list of child paths
+ * @param newPath - Path to insert into the list
+ * @param nodes - Map of path to node metadata used to determine directory status and node name for ordering
+ * @returns A new array with `newPath` inserted at the correct position; if `newPath` has no metadata in `nodes`, it is appended to the end
+ */
 function insertSorted(
   children: string[],
   newPath: string,
@@ -38,7 +45,16 @@ function insertSorted(
   return result
 }
 
-/** Check if a path is gitignored (directly or via an ignored ancestor). */
+/**
+ * Determines whether a path is gitignored either directly or because one of its ancestor directories is ignored.
+ *
+ * Checks ancestors up toward but not including the repository root; ancestors at or above `rootPath` are not considered.
+ *
+ * @param path - The file or directory path to test
+ * @param ignored - A set of ignored paths (exact matches)
+ * @param rootPath - The repository root path that bounds ancestor checks
+ * @returns `true` if `path` or any ancestor directory (above `rootPath`) is present in `ignored`, `false` otherwise
+ */
 function isGitIgnored(path: string, ignored: Set<string>, rootPath: string): boolean {
   if (ignored.has(path)) return true
   // Check if any ancestor directory is ignored
@@ -61,6 +77,16 @@ interface Props {
   filter?: string
 }
 
+/**
+ * Render a virtualized, interactive file tree for a repository root.
+ *
+ * The component displays files and folders under `rootPath`, supports expand/collapse with lazy loading, reacts to filesystem watcher events, shows git status and ignored state, allows creating/renaming/deleting entries, and supports name filtering. Rows are virtualized for performance and a single-line create-input may be injected into the visible list.
+ *
+ * @param rootPath - Filesystem root path to display as the tree root
+ * @param onFileOpen - Callback invoked with a file path when a file row is opened
+ * @param filter - Optional case-insensitive name filter; when non-empty, only matching nodes and their ancestor directories are shown
+ * @returns The React element rendering the file tree UI
+ */
 export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   const [nodes, setNodes] = useState<Map<string, FileTreeNode>>(new Map())
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})

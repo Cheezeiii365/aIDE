@@ -10,10 +10,23 @@ interface ToastData {
 let nextId = 0
 let showToastFn: ((toast: Omit<ToastData, 'id'>) => void) | null = null
 
+/**
+ * Enqueues a toast notification for display.
+ *
+ * @param message - The message text to show in the toast
+ * @param action - Optional action with a `label` shown as a button and `onClick` executed when that button is pressed
+ */
 export function showToast(message: string, action?: ToastData['action']): void {
   showToastFn?.({ message, action })
 }
 
+/**
+ * Registers a global toast dispatcher and renders a container of dismissible toasts.
+ *
+ * The component sets a module-level `showToastFn` on mount (cleared on unmount) so external code can enqueue toasts. Enqueued toasts automatically remove after 5 seconds, can be dismissed by clicking them, and may include an action button which invokes its callback and then dismisses the toast.
+ *
+ * @returns A JSX element containing active toasts, or `null` when there are none.
+ */
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastData[]>([])
 
