@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, WindowApi } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, WindowApi } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -36,6 +36,18 @@ const api: WindowApi = {
   readDir: (dirPath: string) => ipcRenderer.invoke(IpcChannels.FS_READ_DIR, dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke(IpcChannels.FS_READ_FILE, filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke(IpcChannels.FS_WRITE_FILE, filePath, content),
+  createFile: (filePath: string) => ipcRenderer.invoke(IpcChannels.FS_CREATE_FILE, filePath),
+  createDir: (dirPath: string) => ipcRenderer.invoke(IpcChannels.FS_CREATE_DIR, dirPath),
+  deleteEntry: (entryPath: string) => ipcRenderer.invoke(IpcChannels.FS_DELETE, entryPath),
+  renameEntry: (oldPath: string, newPath: string) => ipcRenderer.invoke(IpcChannels.FS_RENAME, oldPath, newPath),
+  revealInFinder: (filePath: string) => ipcRenderer.send(IpcChannels.FS_REVEAL_IN_FINDER, filePath),
+
+  // File watcher
+  onFsWatchEvent: (callback: (events: FsWatchEvent[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, events: FsWatchEvent[]) => callback(events)
+    ipcRenderer.on(IpcChannels.FS_WATCH_EVENT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.FS_WATCH_EVENT, handler)
+  },
 
   // Terminal
   ptyCreate: (opts?: { cwd?: string; shell?: string }) =>

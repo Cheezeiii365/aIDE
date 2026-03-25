@@ -1,10 +1,11 @@
-import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog } from 'electron'
-import { join, basename } from 'path'
-import { readdir, readFile, writeFile as fsWriteFile, stat } from 'fs/promises'
+import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell } from 'electron'
+import { join, dirname } from 'path'
+import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
+import { registerFileWatcherHandlers, startWatcher, stopWatcher } from './fileWatcher'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
@@ -158,6 +159,7 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   if (result.canceled || result.filePaths.length === 0) return null
   const selected = result.filePaths[0]
   store.set('workspaceRoot', selected)
+  await startWatcher(selected)
   return selected
 })
 
@@ -221,13 +223,88 @@ ipcMain.handle(IpcChannels.FS_WRITE_FILE, async (_event, filePath: string, conte
   }
 })
 
-app.whenReady().then(() => {
+// Create file IPC handler
+ipcMain.handle(IpcChannels.FS_CREATE_FILE, async (_event, filePath: string): Promise<{ success: true } | { error: string }> => {
+  try {
+    // Check if already exists
+    try {
+      await stat(filePath)
+      return { error: 'File already exists' }
+    } catch {
+      // Expected — file doesn't exist yet
+    }
+    // Ensure parent directory exists
+    await mkdir(dirname(filePath), { recursive: true })
+    await fsWriteFile(filePath, '', 'utf-8')
+    return { success: true }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error creating file'
+    return { error: message }
+  }
+})
+
+// Create directory IPC handler
+ipcMain.handle(IpcChannels.FS_CREATE_DIR, async (_event, dirPath: string): Promise<{ success: true } | { error: string }> => {
+  try {
+    await mkdir(dirPath)
+    return { success: true }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error creating directory'
+    return { error: message }
+  }
+})
+
+// Delete file or directory IPC handler
+ipcMain.handle(IpcChannels.FS_DELETE, async (_event, entryPath: string): Promise<{ success: true } | { error: string }> => {
+  try {
+    await rm(entryPath, { recursive: true })
+    return { success: true }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error deleting'
+    return { error: message }
+  }
+})
+
+// Rename file or directory IPC handler
+ipcMain.handle(IpcChannels.FS_RENAME, async (_event, oldPath: string, newPath: string): Promise<{ success: true } | { error: string }> => {
+  try {
+    // Check if target already exists
+    try {
+      await stat(newPath)
+      return { error: 'A file or folder with that name already exists' }
+    } catch {
+      // Expected — target doesn't exist
+    }
+    await rename(oldPath, newPath)
+    return { success: true }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error renaming'
+    return { error: message }
+  }
+})
+
+// Reveal in Finder / file manager
+ipcMain.on(IpcChannels.FS_REVEAL_IN_FINDER, (_event, filePath: string) => {
+  shell.showItemInFolder(filePath)
+})
+
+app.whenReady().then(async () => {
   buildAppMenu()
   createWindow()
   registerPtyHandlers(() => contentView?.webContents ?? null, store)
+  registerFileWatcherHandlers(() => contentView?.webContents ?? null)
+
+  // Auto-start watcher if we have a persisted workspace
+  const savedRoot = store.get('workspaceRoot')
+  if (savedRoot) {
+    await startWatcher(savedRoot)
+  }
 })
 
-app.on('before-quit', killAllPtys)
+app.on('before-quit', async () => {
+  killAllPtys()
+  await stopWatcher()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

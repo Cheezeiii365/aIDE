@@ -1,17 +1,23 @@
-import { useCallback } from 'react'
+import { useCallback, useRef, useEffect } from 'react'
 
-interface FileTreeNode {
+export interface FileTreeNode {
   path: string
   name: string
   isDirectory: boolean
   depth: number
   isExpanded: boolean
+  isLoaded: boolean
+  children: string[]
 }
 
 interface Props {
   node: FileTreeNode
   onToggle: (path: string) => void
   onFileOpen: (filePath: string) => void
+  onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void
+  isRenaming: boolean
+  onRenameSubmit: (oldPath: string, newName: string) => void
+  onRenameCancel: () => void
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -48,7 +54,62 @@ function FileIcon() {
   )
 }
 
-export function FileTreeItem({ node, onToggle, onFileOpen }: Props) {
+function RenameInput({
+  initialName,
+  onSubmit,
+  onCancel,
+}: {
+  initialName: string
+  onSubmit: (name: string) => void
+  onCancel: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    // Select name without extension for files
+    const dotIndex = initialName.lastIndexOf('.')
+    if (dotIndex > 0) {
+      el.setSelectionRange(0, dotIndex)
+    } else {
+      el.select()
+    }
+  }, [initialName])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      const value = inputRef.current?.value.trim()
+      if (value && !value.includes('/')) {
+        onSubmit(value)
+      }
+    } else if (e.key === 'Escape') {
+      onCancel()
+    }
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="file-tree__rename-input"
+      defaultValue={initialName}
+      onKeyDown={handleKeyDown}
+      onBlur={onCancel}
+      onClick={(e) => e.stopPropagation()}
+    />
+  )
+}
+
+export function FileTreeItem({
+  node,
+  onToggle,
+  onFileOpen,
+  onContextMenu,
+  isRenaming,
+  onRenameSubmit,
+  onRenameCancel,
+}: Props) {
   const handleClick = useCallback(() => {
     if (node.isDirectory) {
       onToggle(node.path)
@@ -57,6 +118,14 @@ export function FileTreeItem({ node, onToggle, onFileOpen }: Props) {
     }
   }, [node.path, node.isDirectory, onToggle, onFileOpen])
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      onContextMenu(e, node.path, node.isDirectory)
+    },
+    [node.path, node.isDirectory, onContextMenu],
+  )
+
   const indent = node.depth * 16 + 8
 
   return (
@@ -64,6 +133,7 @@ export function FileTreeItem({ node, onToggle, onFileOpen }: Props) {
       className={`file-tree__row${node.isDirectory ? ' file-tree__row--dir' : ''}`}
       style={{ paddingLeft: indent }}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       {node.isDirectory ? (
         <ChevronIcon expanded={node.isExpanded} />
@@ -71,7 +141,15 @@ export function FileTreeItem({ node, onToggle, onFileOpen }: Props) {
         <span className="file-tree__chevron-spacer" />
       )}
       {node.isDirectory ? <FolderIcon /> : <FileIcon />}
-      <span className="file-tree__name">{node.name}</span>
+      {isRenaming ? (
+        <RenameInput
+          initialName={node.name}
+          onSubmit={(newName) => onRenameSubmit(node.path, newName)}
+          onCancel={onRenameCancel}
+        />
+      ) : (
+        <span className="file-tree__name">{node.name}</span>
+      )}
     </div>
   )
 }

@@ -4,7 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ include: ['node-pty'] })],
+    plugins: [externalizeDepsPlugin({ include: ['node-pty', '@parcel/watcher'] })],
     build: {
       outDir: 'packages/main/dist',
       lib: {

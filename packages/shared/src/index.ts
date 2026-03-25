@@ -31,6 +31,14 @@ export const IpcChannels = {
   FS_READ_DIR: 'fs:read-dir',
   FS_READ_FILE: 'fs:read-file',
   FS_WRITE_FILE: 'fs:write-file',
+  FS_CREATE_FILE: 'fs:create-file',
+  FS_CREATE_DIR: 'fs:create-dir',
+  FS_DELETE: 'fs:delete',
+  FS_RENAME: 'fs:rename',
+  FS_REVEAL_IN_FINDER: 'fs:reveal-in-finder',
+
+  // File watcher
+  FS_WATCH_EVENT: 'fs:watch-event',
 
   // Terminal / PTY
   PTY_CREATE: 'pty:create',
@@ -45,6 +53,14 @@ export type ThemeName = 'one-dark' | 'one-light'
 
 export interface DirEntry {
   name: string
+  path: string
+  isDirectory: boolean
+}
+
+export type FsEventType = 'create' | 'update' | 'delete'
+
+export interface FsWatchEvent {
+  type: FsEventType
   path: string
   isDirectory: boolean
 }
@@ -88,6 +104,14 @@ export interface WindowApi {
   readDir: (dirPath: string) => Promise<DirEntry[]>
   readFile: (filePath: string) => Promise<{ content: string } | { error: string }>
   writeFile: (filePath: string, content: string) => Promise<{ success: true } | { error: string }>
+  createFile: (filePath: string) => Promise<{ success: true } | { error: string }>
+  createDir: (dirPath: string) => Promise<{ success: true } | { error: string }>
+  deleteEntry: (entryPath: string) => Promise<{ success: true } | { error: string }>
+  renameEntry: (oldPath: string, newPath: string) => Promise<{ success: true } | { error: string }>
+  revealInFinder: (filePath: string) => void
+
+  // File watcher
+  onFsWatchEvent: (callback: (events: FsWatchEvent[]) => void) => () => void
 
   // Terminal
   ptyCreate: (opts?: { cwd?: string; shell?: string }) => Promise<{ id: string }>
