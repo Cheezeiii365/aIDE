@@ -223,7 +223,10 @@ function broadcastWorkspaceRegistry(): void {
  *
  * @param id - The workspace id to activate
  */
+let workspaceActivationSeq = 0
+
 async function activateWorkspace(id: string): Promise<void> {
+  const activationSeq = ++workspaceActivationSeq
   const entry = workspaceRegistry.get(id)
   if (!entry) return
 
@@ -240,12 +243,31 @@ async function activateWorkspace(id: string): Promise<void> {
 
   if (entry.rootPath) {
     await ensureAideFolder(entry.rootPath)
+    if (activationSeq !== workspaceActivationSeq) return
+
     initTaskRunner(entry.rootPath)
 
     await startWatchers('default', [entry.rootPath])
+    if (activationSeq !== workspaceActivationSeq) {
+      stopWatcher()
+      return
+    }
+
     const getWc = () => contentView?.webContents ?? null
     await startGitPolling(entry.rootPath, getWc)
+    if (activationSeq !== workspaceActivationSeq) {
+      stopGitPolling()
+      stopWatcher()
+      return
+    }
+
     await startWorktreePolling(entry.rootPath, getWc, store)
+    if (activationSeq !== workspaceActivationSeq) {
+      stopWorktreePolling()
+      stopGitPolling()
+      stopWatcher()
+      return
+    }
   }
 
   broadcastWorkspaceRegistry()
