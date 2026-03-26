@@ -403,7 +403,7 @@ export interface TaskInputRequest {
 
 export interface TaskDiagnostic {
   file: string
-  line: number
+  line?: number
   column?: number
   severity: 'error' | 'warning' | 'info'
   message: string

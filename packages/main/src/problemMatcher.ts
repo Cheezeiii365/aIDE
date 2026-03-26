@@ -16,7 +16,7 @@ export type BuiltinMatcherName = 'tsc' | 'eslint-compact' | 'python' | 'gcc' | '
 interface MatcherDef {
   pattern: RegExp
   file: number
-  line: number
+  line?: number
   column?: number
   severity?: number
   message: number
@@ -82,7 +82,6 @@ const BUILTIN_MATCHERS: Record<BuiltinMatcherName, MatcherDef> = {
   pytest: {
     pattern: /^FAILED\s+(.+?)::(.+?)\s+-\s+(.+)$/,
     file: 1,
-    line: 0, // Pytest doesn't provide line numbers in this format
     message: 3,
     defaultSeverity: 'error',
   },
@@ -116,7 +115,7 @@ function normalizeSeverity(raw: string | undefined): 'error' | 'warning' | 'info
  * Create a matcher function that parses a single output line using the provided matcher definition.
  *
  * @param def - Matcher definition mapping regex capture groups to diagnostic fields and providing a default severity
- * @returns A function that returns a `TaskDiagnostic` when the pattern matches and both a non-empty file and a line number greater than zero are extracted, or `null` otherwise. The returned diagnostic includes `file`, `line`, optional `column`, `severity` (normalized or the definition's default), `message`, and the original `source`.
+ * @returns A function that returns a `TaskDiagnostic` when the pattern matches and a non-empty file is extracted, or `null` otherwise. The returned diagnostic includes `file`, optional `line`, optional `column`, `severity` (normalized or the definition's default), `message`, and the original `source`.
  */
 function createMatcherFromDef(def: MatcherDef): MatcherFn {
   return (line: string, source: string): TaskDiagnostic | null => {
@@ -124,14 +123,14 @@ function createMatcherFromDef(def: MatcherDef): MatcherFn {
     if (!match) return null
 
     const file = def.file > 0 ? match[def.file] : ''
-    const lineNum = def.line > 0 ? parseInt(match[def.line], 10) : 0
+    const lineNum = def.line && def.line > 0 ? parseInt(match[def.line], 10) : undefined
     const column = def.column && def.column > 0 ? parseInt(match[def.column], 10) : undefined
     const severity = def.severity && def.severity > 0
       ? normalizeSeverity(match[def.severity])
       : def.defaultSeverity
     const message = def.message > 0 ? match[def.message] : line.trim()
 
-    if (!file || lineNum === 0) return null
+    if (!file) return null
 
     return { file, line: lineNum, column, severity, message, source }
   }
