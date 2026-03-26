@@ -8,8 +8,18 @@ interface Props {
 }
 
 /**
- * Modal for task user input prompts (text, pick, confirm).
- * Sends the user's response back to main process via provideTaskInput.
+ * Render a modal prompting the user for task input and forward the chosen response to the main process.
+ *
+ * Supports `input.type` values:
+ * - `text`: single-line text input (submit with Enter or OK).
+ * - `pick`: select dropdown populated from `input.options`.
+ * - `confirm`: simple yes/no confirmation.
+ *
+ * The component auto-focuses the first input control on mount. Dismissing via Cancel, overlay click, or Escape sends `null` for the request; confirming a `confirm` prompt sends `'yes'`; other submissions send the current input value. After sending the response it invokes `onClose`.
+ *
+ * @param request - TaskInputRequest containing `input`, `resolvedDescription`, and `requestId`.
+ * @param onClose - Callback invoked after the modal is dismissed.
+ * @returns The modal rendered as a React portal into `document.body`.
  */
 export function TaskInputModal({ request, onClose }: Props) {
   const { input, resolvedDescription, requestId } = request

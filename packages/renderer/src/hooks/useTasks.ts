@@ -11,6 +11,21 @@ export interface TasksState {
   reloadTasks: () => Promise<void>
 }
 
+/**
+ * React hook that manages available tasks, compound tasks, and currently running task executions.
+ *
+ * Returns an object providing current task lists, active executions, the most-recently requested task id,
+ * and actions to run, kill, or reload tasks.
+ *
+ * @returns An object with:
+ * - `tasks`: array of available `AideTask` definitions
+ * - `compounds`: array of available `CompoundTask` definitions
+ * - `runningTasks`: array of active `TaskExecution` entries
+ * - `lastTaskId`: the most-recently requested task id or `null`
+ * - `runTask(taskId)`: function to start a task by id
+ * - `killTask(executionId)`: function to stop an execution by id
+ * - `reloadTasks()`: function to refresh task definitions
+ */
 export function useTasks(): TasksState {
   const [tasks, setTasks] = useState<AideTask[]>([])
   const [compounds, setCompounds] = useState<CompoundTask[]>([])

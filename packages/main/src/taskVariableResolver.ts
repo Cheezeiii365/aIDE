@@ -19,8 +19,10 @@ export interface TaskVariableContext {
 const VARIABLE_RE = /\$\{([^}]+)\}/g
 
 /**
- * Get the current git branch name using execFileSync (no shell injection risk).
- * Returns empty string if not in a git repo.
+ * Retrieve the current Git branch name for the repository at the specified working directory.
+ *
+ * @param cwd - The working directory in which to run Git
+ * @returns The current branch name, or an empty string if the branch cannot be determined
  */
 function getGitBranch(cwd: string): string {
   try {
@@ -31,8 +33,11 @@ function getGitBranch(cwd: string): string {
 }
 
 /**
- * Resolve a single variable reference.
- * Returns the resolved value or the original placeholder if unknown.
+ * Resolve a task variable name to its string value using the provided context.
+ *
+ * @param name - The variable identifier (the content inside `${...}`, e.g. `file`, `env:PATH`, or `input:id`)
+ * @param ctx - Resolution context providing workspace, file, selection, environment, git and pre-resolved input values
+ * @returns The resolved string for `name`, or the original `${name}` placeholder if no value is available
  */
 function resolveVariable(name: string, ctx: TaskVariableContext): string {
   switch (name) {
@@ -86,14 +91,20 @@ function resolveVariable(name: string, ctx: TaskVariableContext): string {
 }
 
 /**
- * Resolve all ${variable} placeholders in a string.
+ * Replaces all `${...}` placeholders in `template` using values from `ctx`.
+ *
+ * @param template - The string containing `${variable}` placeholders
+ * @param ctx - Resolution context providing workspace, file, environment, git, datetime, and input values
+ * @returns The input string with all `${...}` placeholders substituted with resolved values
  */
 export function resolveVariables(template: string, ctx: TaskVariableContext): string {
   return template.replace(VARIABLE_RE, (_match, name: string) => resolveVariable(name, ctx))
 }
 
 /**
- * Find all ${input:id} references in a task's command, args, cwd, promptBefore, and env.
+ * Collects all `${input:id}` references used in the provided task fields.
+ *
+ * @returns A de-duplicated array of input `id` strings found in the task's `command`, `args`, `cwd`, `promptBefore`, and `env` values.
  */
 export function findInputReferences(task: {
   command: string

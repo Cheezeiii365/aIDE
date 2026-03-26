@@ -6,6 +6,12 @@ interface CommandPaletteProps {
   onClose: () => void
 }
 
+/**
+ * Normalize a keyboard shortcut string for compact, user-facing display.
+ *
+ * @param kb - The raw keybinding string (for example, "Cmd+Shift+P")
+ * @returns The formatted keybinding where `Cmd` → `⌘`, `Shift` → `⇧`, `Alt`/`Opt` → `⌥`, `+` characters are removed, and consecutive whitespace is collapsed to a single space
+ */
 function formatKeybinding(kb: string): string {
   // Normalise for display: Cmd → ⌘, Shift → ⇧, Alt → ⌥
   return kb
@@ -16,6 +22,14 @@ function formatKeybinding(kb: string): string {
     .replace(/\s+/g, ' ')
 }
 
+/**
+ * Render a command search panel that lists enabled commands and prioritizes recently used ones.
+ *
+ * The panel shows each command with an optional category-prefixed label and a formatted keybinding.
+ *
+ * @param onClose - Callback invoked when the palette is closed or after a command is selected
+ * @returns A React element rendering a searchable list of enabled commands where recently used commands appear first, labels are prefixed by category when present, and keybindings are normalized for display
+ */
 export function CommandPalette({ onClose }: CommandPaletteProps) {
   const items = useMemo((): SearchPanelItem[] => {
     const commands = getAllCommands().filter((c) => isEnabled(c.id))

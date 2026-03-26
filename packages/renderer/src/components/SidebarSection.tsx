@@ -8,13 +8,13 @@ interface Props {
 }
 
 /**
- * Render a collapsible sidebar section with a header, optional header actions, and body content.
+ * Renders a collapsible sidebar section with a clickable header, optional header actions, and body content.
  *
  * @param title - Text displayed in the section header
  * @param defaultExpanded - Initial expanded state; defaults to `true`
  * @param actions - Optional elements rendered in the header; clicks inside this container do not toggle the section
  * @param children - Content rendered inside the section body
- * @returns The sidebar section element whose visual state toggles between expanded and collapsed when the header is clicked
+ * @returns The sidebar section element
  */
 export function SidebarSection({ title, defaultExpanded = true, actions, children }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded)

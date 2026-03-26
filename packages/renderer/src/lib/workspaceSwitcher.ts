@@ -33,10 +33,10 @@ interface SwitchContext {
 }
 
 /**
- * Perform a full workspace switch.
+ * Orchestrates a complete workspace switch: save current workspace state, clear UI, restore the target layout/panels and sidebar, and focus the last active tab or terminal.
  *
- * Returns false if the switch was superseded by a newer switch request
- * (rapid switching debounce).
+ * @param ctx - Context for the switch, including current and target workspace identifiers, dockview API, sidebar values, and lifecycle callbacks
+ * @returns `true` if the switch completed without being superseded by a newer switch request, `false` otherwise.
  */
 export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
   const gen = ++switchGeneration
@@ -144,7 +144,12 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
 }
 
 /**
- * Create the default 3-pane layout when no saved state exists.
+ * Creates a fallback three-pane Dockview layout when no saved workspace layout is available.
+ *
+ * Adds an editor placeholder, one or more terminal panels stacked below the editor (restored from `savedTerminals` when available, otherwise a single terminal), and an agent placeholder to the right of the editor.
+ *
+ * @param workspaceRoot - Workspace filesystem root used as the default working directory for restored terminals when a terminal's cwd is not present.
+ * @param savedTerminals - Persisted terminal metadata; terminals whose `workspaceId` matches `workspaceId` are restored as individual terminal panels.
  */
 function createDefaultLayout(
   api: DockviewApi,
@@ -198,7 +203,15 @@ function createDefaultLayout(
 }
 
 /**
- * Save the current workspace state (for auto-save interval).
+ * Persist the current workspace and terminal runtime snapshot to persistent storage.
+ *
+ * Captures a runtime snapshot from the provided Dockview API and, if the snapshot contains a root path, saves workspace layout/state and terminal state via the renderer's `window.api`.
+ *
+ * @param dockviewApi - The Dockview API instance used to capture current panels and layout
+ * @param workspaceId - The identifier of the workspace to capture
+ * @param rootPath - The workspace root path used for persisted storage; if null the snapshot will not be saved
+ * @param sidebarWidth - Current sidebar width to include in the snapshot
+ * @param sidebarCollapsed - Current sidebar collapsed state to include in the snapshot
  */
 export function autoSave(
   dockviewApi: DockviewApi | null,

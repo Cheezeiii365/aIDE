@@ -78,9 +78,9 @@ function parseWorktreeListPorcelain(output: string, activeWorktree: string | nul
 }
 
 /**
- * Updates each worktree's `isDirty` property by checking the Git status at the worktree path.
+ * Set each worktree's `isDirty` flag according to its Git working-tree status.
  *
- * @param worktrees - Array of worktree entries whose `isDirty` property will be set to `true` when the worktree has uncommitted changes, or `false` when clean or if the status check fails.
+ * @param worktrees - Array of worktree entries whose `isDirty` property will be set to `true` when the worktree has uncommitted changes, or `false` when the worktree is clean or the status check fails
  */
 async function checkDirtyStatus(worktrees: WorktreeInfo[]): Promise<void> {
   for (const wt of worktrees) {
@@ -134,12 +134,12 @@ function getWorktreeDir(repoRoot: string): string {
 }
 
 /**
- * Register Electron IPC handlers for managing Git worktrees and keep internal cache and renderer synced.
+ * Register IPC handlers that manage Git worktrees and keep the module cache and renderer in sync.
  *
- * Registers handlers for listing worktrees, creating and removing worktrees, setting/getting the active
- * worktree, and listing branches. Handlers update the module's cached worktree list, emit
- * WORKTREE_LIST_CHANGED to the renderer when the list changes, and coordinate watcher/polling lifecycle
- * when the active worktree changes.
+ * Registers handlers for listing, creating, and removing worktrees; getting/setting the active worktree;
+ * and listing branches. Handlers update the internal cached worktree list, emit WORKTREE_LIST_CHANGED to
+ * the renderer when the list changes, and coordinate watcher and polling lifecycle when the active
+ * worktree changes.
  */
 export function registerWorktreeHandlers(
   getWebContents: GetWebContents,
@@ -262,15 +262,15 @@ export function registerWorktreeHandlers(
 }
 
 /**
- * Start polling the repository's worktrees and emit updates when the list changes.
+ * Start polling the repository's worktrees and emit updates when the list of worktrees changes.
  *
- * Stops any existing poller, sets the polling root, performs an initial fetch of the worktree list,
- * and then periodically refreshes the list (every 5000ms). When the serialized list differs from the
- * previous snapshot, broadcasts IpcChannels.WORKTREE_LIST_CHANGED with the new list and updates module-level cache.
+ * Performs an initial fetch (and immediate broadcast) using the store's active worktree, then polls
+ * the repository periodically to detect changes and broadcasts IpcChannels.WORKTREE_LIST_CHANGED when
+ * the serialized list differs from the previous snapshot.
  *
- * @param repoRoot - Filesystem path to the repository to poll
+ * @param repoRoot - Filesystem path of the repository to poll
  * @param getWebContents - Function that returns the current Electron WebContents used to send IPC updates
- * @param store - Application settings store (used to read the active worktree)
+ * @param store - Application settings store (used to read the current `activeWorktree`)
  */
 export async function startWorktreePolling(
   repoRoot: string,

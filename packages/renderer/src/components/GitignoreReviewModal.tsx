@@ -8,8 +8,15 @@ interface Props {
 }
 
 /**
- * Modal showing missing .gitignore security patterns with checkboxes.
- * User can select which patterns to add or dismiss the audit entirely.
+ * Render a modal that lets the user review missing `.gitignore` security patterns and choose which to add.
+ *
+ * The modal groups patterns by category, supports individual toggles and a "Select all" checkbox (with indeterminate state),
+ * calls `window.api.appendToGitignore` with selected patterns when confirming, and calls `window.api.dismissGitignoreAudit` when dismissing.
+ * The modal closes when the overlay is clicked, when the Escape key is pressed, or after add/dismiss actions.
+ *
+ * @param auditResult - Object containing `missing` pattern entries to display (each entry has `pattern` and `category`).
+ * @param onClose - Callback invoked when the modal should be closed.
+ * @returns The portal-mounted modal element rendered into `document.body`.
  */
 export function GitignoreReviewModal({ auditResult, onClose }: Props) {
   const [checked, setChecked] = useState<Set<string>>(

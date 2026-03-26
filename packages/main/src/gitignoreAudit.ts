@@ -51,8 +51,10 @@ export const SECURITY_PATTERNS: { pattern: string; category: string }[] = [
 ]
 
 /**
- * Parse a .gitignore file into a set of normalized pattern strings.
- * Strips comments, empty lines, and leading/trailing whitespace.
+ * Parse `.gitignore` file contents into a set of normalized pattern strings.
+ *
+ * @param content - The raw contents of a `.gitignore` file
+ * @returns A `Set` containing each non-empty, non-comment line trimmed of leading and trailing whitespace
  */
 function parseGitignore(content: string): Set<string> {
   const patterns = new Set<string>()
@@ -66,11 +68,13 @@ function parseGitignore(content: string): Set<string> {
 }
 
 /**
- * Check if a security pattern is covered by the existing .gitignore patterns.
+ * Determine whether a security pattern is present in the set of existing .gitignore entries.
  *
- * A pattern is "covered" if it appears literally in the gitignore.
- * We don't try to do full glob matching — literal presence is sufficient
- * for this security heuristic.
+ * Checks for literal presence and common leading-slash variants; does not perform glob or pattern matching.
+ *
+ * @param pattern - The security pattern to check (literal `.gitignore` line)
+ * @param existingPatterns - A set of normalized `.gitignore` lines previously parsed
+ * @returns `true` if `pattern` or its leading-slash/without-leading-slash variant exists in `existingPatterns`, `false` otherwise
  */
 function isPatternCovered(pattern: string, existingPatterns: Set<string>): boolean {
   // Direct match
@@ -87,8 +91,10 @@ export interface AuditResult {
 }
 
 /**
- * Audit a project's .gitignore for missing security patterns.
- * Returns the list of missing patterns grouped by category.
+ * Identify security-related .gitignore patterns that are missing from a project's .gitignore.
+ *
+ * @param rootPath - Filesystem path to the project root containing the `.gitignore` file
+ * @returns An AuditResult containing `missing` (array of `{ pattern, category }` entries not found) and `total` number of audited security patterns
  */
 export async function auditGitignore(rootPath: string): Promise<AuditResult> {
   const gitignorePath = join(rootPath, '.gitignore')
@@ -110,8 +116,12 @@ export async function auditGitignore(rootPath: string): Promise<AuditResult> {
 }
 
 /**
- * Append security patterns to .gitignore, grouped under a header comment.
- * Creates the file if it doesn't exist.
+ * Append specified security patterns to the repository's .gitignore under a header comment.
+ *
+ * Creates the file if it does not exist and preserves existing trailing newlines so the added block is separated.
+ *
+ * @param rootPath - Filesystem path to the repository root containing the `.gitignore`
+ * @param patterns - Lines to append to `.gitignore`; each entry is written verbatim as its own line
  */
 export async function appendToGitignore(
   rootPath: string,
@@ -137,7 +147,9 @@ export async function appendToGitignore(
 }
 
 /**
- * Check if the gitignore audit has been dismissed for this project.
+ * Determine whether the gitignore audit has been dismissed for the workspace at the given root path.
+ *
+ * @returns `true` if the workspace metadata's `gitignoreAuditDismissed` flag is set to `true`, `false` otherwise.
  */
 export async function isAuditDismissed(rootPath: string): Promise<boolean> {
   const workspace = await readLocalWorkspace(rootPath)
@@ -145,7 +157,9 @@ export async function isAuditDismissed(rootPath: string): Promise<boolean> {
 }
 
 /**
- * Mark the gitignore audit as dismissed for this project.
+ * Persist that the gitignore security audit has been dismissed for the workspace.
+ *
+ * @param rootPath - Filesystem path of the project workspace where the dismissal flag will be set
  */
 export async function dismissAudit(rootPath: string): Promise<void> {
   await updateLocalWorkspace(rootPath, { gitignoreAuditDismissed: true })

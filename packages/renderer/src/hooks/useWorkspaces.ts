@@ -13,6 +13,15 @@ export interface WorkspacesState {
   reorderWorkspaces: (ids: string[]) => Promise<void>
 }
 
+/**
+ * Manages the list of workspaces and the active workspace, and provides actions to create, switch, close, remove, update, and reorder workspaces.
+ *
+ * @returns The current workspaces state and action callbacks:
+ * - `workspaces`: the array of workspace entries
+ * - `activeWorkspaceId`: the id of the active workspace or `null`
+ * - `activeWorkspace`: the active workspace entry or `null`
+ * - `switchWorkspace(id)`, `createWorkspace(rootPath?)`, `closeWorkspace(id)`, `removeWorkspace(id)`, `updateWorkspace(id, patch)`, `reorderWorkspaces(ids)`: functions that perform the named workspace operations
+ */
 export function useWorkspaces(): WorkspacesState {
   const [workspaces, setWorkspaces] = useState<WorkspaceEntry[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)

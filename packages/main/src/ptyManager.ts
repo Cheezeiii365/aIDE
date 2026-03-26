@@ -20,17 +20,35 @@ interface PtySession {
 const ptys = new Map<string, PtySession>()
 const MAX_SCROLLBACK_CHARS = 200_000
 
+/**
+ * Appends new PTY output to the stored scrollback while enforcing the maximum scrollback length.
+ *
+ * @param current - Existing stored scrollback
+ * @param chunk - New output to append
+ * @returns The updated scrollback containing the last up to MAX_SCROLLBACK_CHARS characters of the concatenated input
+ */
 function appendScrollback(current: string, chunk: string): string {
   const next = current + chunk
   if (next.length <= MAX_SCROLLBACK_CHARS) return next
   return next.slice(next.length - MAX_SCROLLBACK_CHARS)
 }
 
+/**
+ * Selects a sensible default shell for the current platform.
+ *
+ * @returns `powershell.exe` on Windows; otherwise the value of `process.env.SHELL` if set; if not set, `/bin/zsh` on macOS, and `/bin/bash` on other platforms.
+ */
 function detectShell(): string {
   if (process.platform === 'win32') return 'powershell.exe'
   return process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash')
 }
 
+/**
+ * Register IPC handlers for creating, controlling, and terminating pseudo-terminal (PTY) sessions and for forwarding PTY events to the renderer.
+ *
+ * @param getWebContents - Function that returns the current renderer WebContents or `null`; used to send PTY events back to the renderer.
+ * @param store - Application settings store used to resolve default workspace/root paths and related configuration.
+ */
 export function registerPtyHandlers(
   getWebContents: () => WebContents | null,
   store: Store<AppSettings>,
@@ -105,6 +123,11 @@ export function registerPtyHandlers(
   })
 }
 
+/**
+ * Terminate all active PTY sessions and clear the internal session store.
+ *
+ * Kills each session's underlying pseudo-terminal process and removes all entries from the PTY session map.
+ */
 export function killAllPtys(): void {
   for (const session of ptys.values()) {
     session.pty.kill()

@@ -98,6 +98,12 @@ const BUILTIN_MATCHERS: Record<BuiltinMatcherName, MatcherDef> = {
   },
 }
 
+/**
+ * Normalize a raw severity token into one of the canonical levels: `error`, `warning`, or `info`.
+ *
+ * @param raw - The raw severity string extracted from output (may be `undefined`)
+ * @returns `'error'` if `raw` is missing or does not match known tokens; `'warning'` for `warning` or `warn`; `'info'` for `info` or `note`
+ */
 function normalizeSeverity(raw: string | undefined): 'error' | 'warning' | 'info' {
   if (!raw) return 'error'
   const lower = raw.toLowerCase()
@@ -106,6 +112,12 @@ function normalizeSeverity(raw: string | undefined): 'error' | 'warning' | 'info
   return 'error'
 }
 
+/**
+ * Create a matcher function that parses a single output line using the provided matcher definition.
+ *
+ * @param def - Matcher definition mapping regex capture groups to diagnostic fields and providing a default severity
+ * @returns A function that returns a `TaskDiagnostic` when the pattern matches and both a non-empty file and a line number greater than zero are extracted, or `null` otherwise. The returned diagnostic includes `file`, `line`, optional `column`, `severity` (normalized or the definition's default), `message`, and the original `source`.
+ */
 function createMatcherFromDef(def: MatcherDef): MatcherFn {
   return (line: string, source: string): TaskDiagnostic | null => {
     const match = def.pattern.exec(line)
@@ -126,8 +138,9 @@ function createMatcherFromDef(def: MatcherDef): MatcherFn {
 }
 
 /**
- * Create a matcher function from a built-in matcher name.
- * Returns null if the name is not recognized.
+ * Produce a matcher function for the given built-in matcher name.
+ *
+ * @returns A matcher function that parses lines into `TaskDiagnostic` objects for the specified built-in matcher, or `null` if the name is not recognized.
  */
 export function createMatcher(name: BuiltinMatcherName): MatcherFn | null {
   const def = BUILTIN_MATCHERS[name]
@@ -136,7 +149,9 @@ export function createMatcher(name: BuiltinMatcherName): MatcherFn | null {
 }
 
 /**
- * Get all available built-in matcher names.
+ * List all available built-in matcher names.
+ *
+ * @returns An array containing every registered built-in matcher identifier.
  */
 export function getBuiltinMatcherNames(): BuiltinMatcherName[] {
   return Object.keys(BUILTIN_MATCHERS) as BuiltinMatcherName[]

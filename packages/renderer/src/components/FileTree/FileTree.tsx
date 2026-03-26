@@ -13,6 +13,12 @@ function dirname(p: string): string {
   return parts.join('/') || '/'
 }
 
+/**
+ * Get the last segment of a slash-separated path.
+ *
+ * @param p - The input path string
+ * @returns The substring after the final `'/'` in `p`, or `p` if no separator is present
+ */
 function basename(p: string): string {
   return p.split('/').pop() ?? p
 }

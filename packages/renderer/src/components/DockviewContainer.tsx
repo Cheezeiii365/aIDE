@@ -28,10 +28,10 @@ interface Props {
 }
 
 /**
- * Renders a Dockview container and initializes a default layout (editor, terminal, and agent panels) when the Dockview API becomes available.
+ * Render a DockviewReact component and forward its API to the provided callback when the Dockview becomes ready.
  *
- * @param onApiReady - Callback invoked with the `DockviewApi` instance once the Dockview is ready
- * @returns The configured `DockviewReact` element
+ * @param onApiReady - Callback invoked with the Dockview API instance once the Dockview is ready
+ * @returns The configured DockviewReact element
  */
 export function DockviewContainer({ onApiReady }: Props) {
   const handleReady = useCallback(

@@ -205,12 +205,24 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
 
 ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, () => store.get('workspaceRoot'))
 
-// Workspace registry IPC handlers
+/**
+ * Broadcasts the current workspace registry to the renderer process.
+ *
+ * Sends a WORKSPACE_REGISTRY_CHANGED message containing the registry snapshot to the renderer
+ * webContents if a content view is available.
+ */
 function broadcastWorkspaceRegistry(): void {
   const workspaces = workspaceRegistry.getAll()
   contentView?.webContents.send(IpcChannels.WORKSPACE_REGISTRY_CHANGED, workspaces)
 }
 
+/**
+ * Activate the workspace identified by `id` and initialize its background services.
+ *
+ * Updates the registry and persisted workspace root, stops any existing task runner, watchers, and pollers, and — if the workspace has a filesystem root — ensures the workspace `.aide` folder exists, initializes the task runner, and starts file watchers, git polling, and worktree polling. Finally broadcasts the updated workspace registry to the renderer.
+ *
+ * @param id - The workspace id to activate
+ */
 async function activateWorkspace(id: string): Promise<void> {
   const entry = workspaceRegistry.get(id)
   if (!entry) return
@@ -432,7 +444,14 @@ ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async () => {
   await dismissAudit(rootPath)
 })
 
-// Task system IPC handlers
+/**
+ * Initializes the module-level TaskRunner for the given workspace and forwards its events to the renderer via IPC.
+ *
+ * Loads task definitions after creating the runner and attaches handlers that propagate status, input requests,
+ * diagnostics, PTY output, and PTY exit events to the renderer process.
+ *
+ * @param rootPath - Filesystem path of the workspace to manage tasks for
+ */
 function initTaskRunner(rootPath: string): void {
   const getWc = () => contentView?.webContents ?? null
   taskRunner = new TaskRunner(rootPath, {
@@ -627,6 +646,13 @@ ipcMain.handle(IpcChannels.FS_LIST_ALL_FILES, async (_event, rootPath: string): 
   const SKIP = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'out', '__pycache__'])
   const results: string[] = []
 
+  /**
+   * Recursively traverses `dir` and appends discovered file paths (relative to `rootPath`) to the module-level `results` array.
+   *
+   * The walk skips entries whose names are in `SKIP` or that start with a dot. If `dir` cannot be read, the function returns without side effects.
+   *
+   * @param dir - The directory path to traverse
+   */
   function walk(dir: string) {
     let entries
     try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
@@ -771,6 +797,11 @@ app.on('before-quit', (event) => {
   }
 })
 
+/**
+ * Finalize application shutdown by persisting session workspace IDs, marking a clean shutdown, stopping background services, and quitting the app.
+ *
+ * Persists the current session workspace order to the registry, sets the stored `cleanShutdown` flag to `true`, terminates running tasks and PTYs, stops git/worktree/watch polling, and calls `app.quit()`.
+ */
 function finishQuit(): void {
   // Save session state to registry
   const sessionWorkspaces = workspaceRegistry.getAll().map((w) => w.id)

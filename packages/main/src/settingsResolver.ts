@@ -25,6 +25,12 @@ const BUILT_IN_DEFAULTS: ResolvedSettings = {
   searchExclude: {},
 }
 
+/**
+ * Compute editor default settings by applying persisted user editor defaults on top of built-in fallbacks.
+ *
+ * @param store - Electron store used to read the saved `editorDefaults` entry
+ * @returns A ResolvedSettings object where each scalar setting is the user value if present, otherwise the built-in default; `filesExclude` and `searchExclude` are shallow-merged so user entries override built-in entries
+ */
 export function resolveAppDefaults(
   store: Store<AppSettings>,
 ): ResolvedSettings {
@@ -50,8 +56,10 @@ export function resolveAppDefaults(
 }
 
 /**
- * Read .aide/settings.json from a project root.
- * Returns an empty object if the file doesn't exist or is invalid.
+ * Loads project-level settings from the .aide/settings.json file in the given project root.
+ *
+ * @param rootPath - Path to the project root directory
+ * @returns The parsed `AideProjectSettings` from the file, or an empty object if the file is absent or cannot be parsed
  */
 async function readProjectSettings(rootPath: string): Promise<AideProjectSettings> {
   const settingsPath = join(rootPath, '.aide', 'settings.json')
@@ -66,11 +74,12 @@ async function readProjectSettings(rootPath: string): Promise<AideProjectSetting
 }
 
 /**
- * Resolve settings for a workspace by merging three layers.
+ * Compute editor settings for a workspace by merging project, user, and built-in defaults.
  *
- * Priority: project settings > user defaults > built-in defaults.
- * Language-specific overrides from .aide/settings.json are NOT applied here —
- * they require knowing the active file's language, which is a renderer concern.
+ * Files- and search-exclusion maps are shallow-merged so project entries override earlier layers.
+ *
+ * @param rootPath - Absolute path to the workspace/project root where `.aide/settings.json` may reside
+ * @returns A `ResolvedSettings` object where each scalar field is taken from project settings if present, otherwise user defaults, otherwise built-in defaults; `filesExclude` and `searchExclude` are shallow-merged with project entries taking precedence.
  */
 export async function resolveSettings(
   rootPath: string,

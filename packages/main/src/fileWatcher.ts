@@ -78,6 +78,13 @@ async function resolveEvent(
 // Deduplicate rapid events for the same path within a flush window
 const pendingPaths = new Set<string>()
 
+/**
+ * Creates an async filesystem event handler bound to a root path and scope.
+ *
+ * @param rootPath - Base directory used to resolve incoming `filename` values into full paths
+ * @param scopeId - Identifier that will be included on emitted events to attribute them to a watcher scope
+ * @returns An async callback `(eventType, filename)` that ignores null or excluded filenames, deduplicates rapid events for the same full path, resolves the event type and directory flag, enqueues an event object `{ type, path, isDirectory, scopeId }` into the shared event buffer, and triggers the debounced flush of buffered events
+ */
 function createFsEventHandler(rootPath: string, scopeId: string) {
   return async function handleFsEvent(eventType: string, filename: string | null) {
     if (!filename) return
@@ -98,8 +105,9 @@ function createFsEventHandler(rootPath: string, scopeId: string) {
 }
 
 /**
- * Check if `candidate` is nested inside any of the `roots`.
- * Used to skip redundant watchers when one root is a subdirectory of another.
+ * Determines whether `candidate` is nested inside any of the provided `roots`.
+ *
+ * @returns `true` if `candidate` is a subpath of any entry in `roots`, `false` otherwise.
  */
 function isNestedRoot(candidate: string, roots: string[]): boolean {
   const normalized = candidate.endsWith('/') ? candidate : candidate + '/'
@@ -111,6 +119,13 @@ function isNestedRoot(candidate: string, roots: string[]): boolean {
   return false
 }
 
+/**
+ * Starts a filesystem watcher for the given root and scope.
+ *
+ * @param rootPath - The filesystem path to watch
+ * @param scopeId - Scope identifier to associate with emitted events
+ * @returns The created `FSWatcher`, or `null` if the watcher could not be started
+ */
 function startSubscription(rootPath: string, scopeId: string): FSWatcher | null {
   try {
     const handler = createFsEventHandler(rootPath, scopeId)
@@ -186,7 +201,14 @@ export async function startWatcher(rootPath: string): Promise<void> {
 }
 
 /**
- * Stop watchers. No arg = stop all scopes. With arg = stop just that scope.
+ * Stops file system watchers and clears related internal state.
+ *
+ * When `scopeId` is provided, stops and removes watchers for that scope only.
+ * When `scopeId` is omitted, stops and removes watchers for all scopes.
+ *
+ * This also clears buffered events, pending path deduplication state, any scheduled flush timer, and the known-directories set.
+ *
+ * @param scopeId - Optional identifier of the watcher scope to stop; if omitted, all scopes are stopped
  */
 export async function stopWatchers(scopeId?: string): Promise<void> {
   if (flushTimer) {
@@ -221,6 +243,13 @@ export async function stopWatcher(): Promise<void> {
   await stopWatchers()
 }
 
+/**
+ * Registers IPC handlers for starting and stopping filesystem watchers and stores a function to access renderer WebContents.
+ *
+ * The handler for 'fs:watch-start' accepts a root path and initiates watching that path. The handler for 'fs:watch-stop' stops active watchers.
+ *
+ * @param webContentsFn - A function that returns the current WebContents instance (or null) used to send filesystem events to the renderer
+ */
 export function registerFileWatcherHandlers(
   webContentsFn: () => WebContents | null,
 ): void {
@@ -236,7 +265,10 @@ export function registerFileWatcherHandlers(
 }
 
 /**
- * Get watched roots. No arg = all roots across all scopes. With arg = roots for that scope.
+ * Retrieve watched filesystem root paths.
+ *
+ * @param scopeId - Optional scope identifier; when provided, returns roots registered for that scope
+ * @returns An array of watched root paths: the roots for `scopeId` if given, otherwise all roots across all scopes
  */
 export function getWatchedRoots(scopeId?: string): string[] {
   if (scopeId) {

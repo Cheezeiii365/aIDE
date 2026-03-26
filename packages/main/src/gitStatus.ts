@@ -65,8 +65,8 @@ async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null>
 /**
  * Register an IPC handler that provides Git status for the currently selected repository root.
  *
- * The handler listens on IpcChannels.GIT_STATUS and, when invoked, returns `null` if no repository
- * root is set or the result of `fetchGitStatus(currentRoot)` otherwise.
+ * The handler listens on `IpcChannels.GIT_STATUS` and returns `null` when no repository root is set;
+ * otherwise it returns the result of `fetchGitStatus(currentRoot)`.
  */
 export function registerGitStatusHandlers(getWebContents: GetWebContents): void {
   ipcMain.handle(IpcChannels.GIT_STATUS, async () => {
@@ -76,14 +76,14 @@ export function registerGitStatusHandlers(getWebContents: GetWebContents): void 
 }
 
 /**
- * Start polling the Git repository at `rootPath` for status changes and emit IPC events when changes occur.
+ * Begin monitoring a Git repository at the given root and emit IPC events when its status or branch changes.
  *
- * Performs an initial status fetch, replaces any existing poll, and then polls every 3000 ms. When the repository's
- * file status map or ignored path list changes, sends `IpcChannels.GIT_STATUS_CHANGED` with the full status result.
- * When the current branch changes, sends `IpcChannels.GIT_BRANCH_CHANGED` with the new branch name.
+ * Replaces any existing poll and performs an initial status fetch. Emits `IpcChannels.GIT_STATUS_CHANGED` when the
+ * repository's file-status map or ignored-path list changes, and `IpcChannels.GIT_BRANCH_CHANGED` when the current
+ * branch changes.
  *
  * @param rootPath - Absolute path to the Git repository root to monitor
- * @param getWebContents - Function that returns the Electron WebContents used to send IPC messages (may return `null`)
+ * @param getWebContents - Function that returns the Electron WebContents used to send IPC messages; may return `null`
  */
 export async function startGitPolling(
   rootPath: string,

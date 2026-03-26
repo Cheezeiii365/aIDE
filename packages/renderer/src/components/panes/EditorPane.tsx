@@ -26,12 +26,12 @@ const cleanContentMap = new Map<string, string>()
 /**
  * Render and manage a CodeMirror editor for the panel's file inside a Dockview panel.
  *
- * Initializes a CodeMirror EditorView for `params.filePath`, restores or caches editor state,
- * tracks cursor position and dirty state, publishes document content to the external content bus,
- * responds to theme and wrap toggles, updates the Dockview tab title based on dirty state,
- * and performs cleanup (caching state, clearing published content, and resetting dirty state) on unmount.
+ * Initializes and tears down an EditorView for `params.filePath`, tracks cursor position
+ * and dirty state, publishes document content to the external content bus, responds to
+ * theme and wrap changes, handles external filesystem updates (with optional reload),
+ * and supports an initial jump-to-line/column.
  *
- * @param params - Panel parameters; `params.filePath` specifies the file to open in the editor.
+ * @param params - Panel parameters. `params.filePath` is the file to open; optional `params.jumpToLine` and `params.jumpToColumn` specify an initial caret position to jump to.
  * @param api - Dockview panel API used to set the panel title and subscribe to activation changes.
  * @returns The React element tree for the editor pane.
  */
@@ -52,6 +52,11 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
     let destroyed = false
 
+    /**
+     * Initialize and mount the CodeMirror editor for the current filePath, loading disk content and wiring editor state, extensions, and listeners.
+     *
+     * Reads the file from disk, records the clean baseline, uses a cached editor state if available or creates a new state with theme, wrap, indentation, language, update listeners, and keybindings, then instantiates and stores the EditorView, publishes the initial document content, clears the loading state, and publishes the initial cursor position. Sets error and loading state on read failure.
+     */
     async function init() {
       const result = await window.api.readFile(filePath)
 
@@ -165,7 +170,13 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     }
   }, [filePath]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload file content from disk into the editor
+  /**
+   * Replace the editor's document with the file's current disk contents.
+   *
+   * Reads the file at `path` and, if successful and an editor is mounted, replaces the entire document with the disk content, updates the stored clean baseline for `path`, clears the dirty flag for the file, and publishes the new content.
+   *
+   * @param path - Filesystem path of the file to reload; does nothing if no editor is mounted or the read fails
+   */
   async function reloadFromDisk(path: string) {
     const view = viewRef.current
     if (!view) return

@@ -29,10 +29,10 @@ interface Props {
 }
 
 /**
- * Renders a chevron SVG used to indicate a node's expanded/collapsed state.
+ * Renders a right-pointing chevron used to indicate a node's expanded or collapsed state.
  *
- * @param expanded - If `true`, the chevron is rendered with the expanded styling class.
- * @returns An SVG element for the chevron; when `expanded` is `true` the element includes the `file-tree__chevron--expanded` class.
+ * @param expanded - Whether the chevron is in the expanded state and should receive the expanded modifier class
+ * @returns An SVG element for the chevron; includes the `file-tree__chevron--expanded` class when `expanded` is `true`
  */
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (

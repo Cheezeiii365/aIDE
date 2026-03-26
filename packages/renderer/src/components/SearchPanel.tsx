@@ -36,6 +36,13 @@ interface FuzzyResult {
   indices: number[]
 }
 
+/**
+ * Determines whether all characters of `query` appear in `text` in order and, if so, returns a match score and the positions of matched characters.
+ *
+ * @param query - The string of characters to match, in order.
+ * @param text - The text to search for the query characters.
+ * @returns `{ score, indices }` where `indices` are the character positions in `text` that match `query` and `score` reflects match quality; `null` if not all query characters are found in order.
+ */
 function fuzzyMatch(query: string, text: string): { score: number; indices: number[] } | null {
   const q = query.toLowerCase()
   const t = text.toLowerCase()
@@ -62,6 +69,13 @@ function fuzzyMatch(query: string, text: string): { score: number; indices: numb
   return { score, indices }
 }
 
+/**
+ * Filter items by fuzzy-matching their labels against the query and return matches ordered by relevance.
+ *
+ * @param items - The list of searchable items to evaluate.
+ * @param query - The search query; when empty, all items are returned with `score: 0` and `indices: []`.
+ * @returns An array of `FuzzyResult` objects for items whose labels match the query, sorted in descending order by `score`.
+ */
 function filterAndSort(items: SearchPanelItem[], query: string): FuzzyResult[] {
   if (!query) return items.map((item) => ({ item, score: 0, indices: [] }))
 
@@ -74,7 +88,16 @@ function filterAndSort(items: SearchPanelItem[], query: string): FuzzyResult[] {
   return results
 }
 
-// ── Highlight helper ───────────────────────────
+/**
+ * Render a label with specific characters wrapped as highlights.
+ *
+ * When `indices` is non-empty, contiguous runs of characters whose positions are included
+ * in `indices` are wrapped in `<mark>` elements; all other characters are wrapped in `<span>`.
+ *
+ * @param label - The text to render
+ * @param indices - Array of character indices in `label` that should be highlighted
+ * @returns A React fragment containing the label with highlighted segments
+ */
 
 function HighlightedLabel({ label, indices }: { label: string; indices: number[] }) {
   if (indices.length === 0) return <>{label}</>
@@ -105,7 +128,19 @@ function HighlightedLabel({ label, indices }: { label: string; indices: number[]
   return <>{parts}</>
 }
 
-// ── Component ──────────────────────────────────
+/**
+ * Renders an interactive, keyboard-navigable search overlay that filters and highlights items as the user types.
+ *
+ * The panel auto-focuses the input, performs fuzzy matching against item labels, virtualizes long result lists for performance, scrolls the active item into view, supports keyboard navigation (ArrowUp/ArrowDown, Enter to select, Escape to close), and closes when clicking outside the panel. The overlay is rendered into `document.body` via a portal.
+ *
+ * @param placeholder - Placeholder text displayed in the search input
+ * @param items - Array of searchable items shown in the panel
+ * @param onSelect - Called with the selected item when the user activates an item (click or Enter)
+ * @param onClose - Called when the panel should close (Escape key or click outside)
+ * @param renderItem - Optional renderer to customize an item's content; receives `(item, isActive, highlights)`
+ * @param emptyMessage - Message shown when no results match the query
+ * @returns The rendered search panel React element
+ */
 
 export function SearchPanel({
   placeholder,

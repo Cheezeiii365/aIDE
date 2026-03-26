@@ -13,6 +13,17 @@ interface FileGroup {
   collapsed: boolean
 }
 
+/**
+ * Renders a "Find in Files" panel with search, optional replace, and results grouped by file.
+ *
+ * The panel provides controls for query input, regex/case/whole-word toggles, optional file-glob filtering,
+ * and optional replace inputs. It displays incremental search results grouped per file, allows collapsing
+ * file groups, opening matches in the editor, and performing replacements for individual matches, a single file,
+ * or all displayed results.
+ *
+ * @param params - Panel props; `params.workspaceRoot` is used as the search root when present.
+ * @returns The rendered Find in Files React element.
+ */
 export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParams>) {
   const [query, setQuery] = useState('')
   const [replaceText, setReplaceText] = useState('')
@@ -285,6 +296,16 @@ export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParam
   )
 }
 
+/**
+ * Renders a line of text with the matched substring highlighted using a `<mark>` element.
+ *
+ * Highlights the substring specified by `matchText` starting at the given `column` within `text`.
+ *
+ * @param text - The full line of text to render
+ * @param matchText - The substring to highlight; expected to start at `column`
+ * @param column - 1-based column index where `matchText` begins within `text`
+ * @returns A React fragment containing `text` with `matchText` wrapped in a `<mark>` element
+ */
 function HighlightedLine({ text, matchText, column }: { text: string; matchText: string; column: number }) {
   const colIdx = column - 1
   const before = text.slice(0, colIdx)

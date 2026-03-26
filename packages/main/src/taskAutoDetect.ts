@@ -17,7 +17,10 @@ interface DetectedProject {
 }
 
 /**
- * Detect project types by scanning for known config files.
+ * Identify project types present in a directory by checking for well-known configuration files.
+ *
+ * @param rootPath - The directory path to scan for project config files
+ * @returns An array of `DetectedProject` objects for each matched config file; each entry contains the detected project `type` and the matching `configFile`
  */
 function detectProjects(rootPath: string): DetectedProject[] {
   const projects: DetectedProject[] = []
@@ -42,7 +45,16 @@ function detectProjects(rootPath: string): DetectedProject[] {
 }
 
 /**
- * Extract npm scripts from package.json and generate tasks.
+ * Generate AideTask entries from npm scripts declared in the project's package.json.
+ *
+ * Each script becomes a task whose label and command incorporate the detected package manager
+ * (`pnpm` if pnpm-lock.yaml exists, else `yarn` if yarn.lock exists, else `npm run`).
+ * Task grouping, background status, and additional properties are derived from the script name and content:
+ * - scripts with names containing `dev`, `start`, `serve`, or `watch` are marked as background tasks and get `autoRestart: false`;
+ * - names containing `build`, `test`, or `lint` are placed into the `build`, `test`, or `lint` groups respectively;
+ * - if the script text includes `tsc`, the task gets `problemMatcher: 'tsc'`.
+ *
+ * @returns An array of generated tasks, or an empty array if `package.json` is missing, unreadable, or contains no `scripts`.
  */
 async function generateNodeTasks(rootPath: string): Promise<AideTask[]> {
   const pkgPath = join(rootPath, 'package.json')
@@ -88,7 +100,9 @@ async function generateNodeTasks(rootPath: string): Promise<AideTask[]> {
 }
 
 /**
- * Generate tasks for Rust/Cargo projects.
+ * Create AideTask entries for common Cargo commands.
+ *
+ * @returns An array of tasks for `cargo build`, `cargo test`, `cargo run`, and `cargo clippy`
  */
 function generateRustTasks(): AideTask[] {
   return [
@@ -100,7 +114,9 @@ function generateRustTasks(): AideTask[] {
 }
 
 /**
- * Generate tasks for Go projects.
+ * Generate a set of predefined tasks for Go projects.
+ *
+ * @returns An array of tasks for common Go workflows: `build`, `test`, and `run` (runs the current file).
  */
 function generateGoTasks(): AideTask[] {
   return [
@@ -111,7 +127,10 @@ function generateGoTasks(): AideTask[] {
 }
 
 /**
- * Generate tasks for Python projects.
+ * Generate task definitions for a Python project.
+ *
+ * @param type - 'python' to use plain Python commands, 'python-pyproject' to use Poetry (prefixes commands with `poetry run` and includes a Poetry install task)
+ * @returns An array of `AideTask` entries for running tests, running the current file, and — when `type` is `'python-pyproject'` — installing dependencies with Poetry. The run task uses `${file}` for Poetry projects and `${fileRelative}` for plain Python projects.
  */
 function generatePythonTasks(type: 'python' | 'python-pyproject'): AideTask[] {
   const prefix = type === 'python-pyproject' ? 'poetry run ' : ''
@@ -125,7 +144,9 @@ function generatePythonTasks(type: 'python' | 'python-pyproject'): AideTask[] {
 }
 
 /**
- * Generate tasks for Ruby projects.
+ * Provide common Aide tasks for Ruby projects.
+ *
+ * @returns An array of AideTask objects for `bundle install`, `bundle exec rake`, and `bundle exec rspec`
  */
 function generateRubyTasks(): AideTask[] {
   return [
@@ -136,7 +157,12 @@ function generateRubyTasks(): AideTask[] {
 }
 
 /**
- * Generate tasks for Docker Compose projects.
+ * Provide standard Aide tasks for Docker Compose workflows.
+ *
+ * @returns An array of `AideTask` objects for common docker-compose commands:
+ * - `docker:up` — `docker-compose up` (group `dev`, background task)
+ * - `docker:down` — `docker-compose down` (group `clean`)
+ * - `docker:build` — `docker-compose build` (group `build`)
  */
 function generateDockerTasks(): AideTask[] {
   return [
@@ -147,8 +173,12 @@ function generateDockerTasks(): AideTask[] {
 }
 
 /**
- * Detect tasks for a project and return the generated task list.
- * Does NOT create tasks.json — that's up to the caller.
+ * Detects project types in the given root directory and generates matching AideTask entries.
+ *
+ * Does not write any files (for example, it does not create a tasks.json); persisting the returned tasks is the caller's responsibility.
+ *
+ * @param rootPath - Path to the project root to scan for known build/config files.
+ * @returns An array of generated AideTask objects; `[]` if no supported projects are detected.
  */
 export async function detectTasks(rootPath: string): Promise<AideTask[]> {
   const projects = detectProjects(rootPath)
@@ -185,7 +215,11 @@ export async function detectTasks(rootPath: string): Promise<AideTask[]> {
 }
 
 /**
- * Generate a tasks.json file from detected tasks. Returns error if file already exists.
+ * Write a `.aide/tasks.json` file in the given project root containing the provided tasks.
+ *
+ * @param rootPath - Filesystem path to the project root where `.aide/tasks.json` will be created
+ * @param tasks - Array of task definitions to serialize into the tasks file
+ * @returns An object `{ success: true }` when the file was written successfully, or `{ error: string }` with a descriptive message if the file already exists or writing failed
  */
 export async function generateTasksFile(
   rootPath: string,
@@ -210,7 +244,10 @@ export async function generateTasksFile(
 }
 
 /**
- * Check if tasks.json already exists for this project.
+ * Determine whether a project already has a `.aide/tasks.json` file.
+ *
+ * @param rootPath - The project root directory to inspect
+ * @returns `true` if `.aide/tasks.json` exists under the given `rootPath`, `false` otherwise
  */
 export function hasTasksFile(rootPath: string): boolean {
   return existsSync(join(rootPath, '.aide', 'tasks.json'))

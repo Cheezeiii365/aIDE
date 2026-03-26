@@ -4,6 +4,12 @@ import type { SearchOpts, SearchMatch, SearchFileResult } from '@aide/shared'
 
 let activeSearch: ChildProcess | null = null
 
+/**
+ * Stops any currently running ripgrep search and clears the active process handle.
+ *
+ * This will terminate the child process tracked by the module and reset the internal
+ * `activeSearch` reference to `null`.
+ */
 export function cancelSearch(): void {
   if (activeSearch) {
     activeSearch.kill()
@@ -11,6 +17,18 @@ export function cancelSearch(): void {
   }
 }
 
+/**
+ * Start a ripgrep-based search using the provided options and stream parsed match results to callbacks.
+ *
+ * The function cancels any previously running search, spawns ripgrep with JSON output, incrementally parses
+ * newline-delimited JSON match events, accumulates matches per file, and emits batched per-file results to
+ * `onResults` (debounced ~100ms). Malformed JSON lines from ripgrep are ignored. When the ripgrep process
+ * finishes or errors, `onComplete` is invoked with summary totals.
+ *
+ * @param opts - Search options (query, rootPath, case sensitivity, whole-word, regex vs fixed-strings, optional file glob)
+ * @param onResults - Called with an array of per-file results; each entry contains `filePath` and its `matches`
+ * @param onComplete - Called once when the search process ends or errors with `{ totalMatches, totalFiles }`
+ */
 export function startSearch(
   opts: SearchOpts,
   onResults: (results: SearchFileResult[]) => void,

@@ -8,6 +8,16 @@ interface QuickOpenProps {
   workspaceRoot: string | null
 }
 
+/**
+ * Render a searchable quick-open panel that lists files from the current workspace.
+ *
+ * The panel shows file names with their parent directory, displays a contextual empty
+ * message when no workspace is open or no files are found, and opens the selected file.
+ *
+ * @param onClose - Callback invoked to close the panel
+ * @param workspaceRoot - Workspace root path; when `null`, the panel shows "No workspace open" and selection is disabled
+ * @returns A SearchPanel configured to search and open files from the current workspace
+ */
 export function QuickOpen({ onClose, workspaceRoot }: QuickOpenProps) {
   const [files, setFiles] = useState<string[]>([])
 

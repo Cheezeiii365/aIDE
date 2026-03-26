@@ -11,10 +11,12 @@ let nextId = 0
 let showToastFn: ((toast: Omit<ToastData, 'id'>) => void) | null = null
 
 /**
- * Enqueues a toast notification for display.
+ * Request showing a toast with the given message and optional action button.
  *
- * @param message - The message text to show in the toast
- * @param action - Optional action with a `label` shown as a button and `onClick` executed when that button is pressed
+ * If no toast dispatcher is registered (for example, if ToastContainer is not mounted), the request is ignored.
+ *
+ * @param message - The message text to display in the toast
+ * @param action - Optional action object; `label` is shown as a button and `onClick` is invoked when that button is pressed
  */
 export function showToast(message: string, action?: ToastData['action']): void {
   showToastFn?.({ message, action })

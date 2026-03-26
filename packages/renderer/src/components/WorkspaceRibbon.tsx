@@ -14,6 +14,20 @@ interface Props {
   onContextMenu: (id: string, x: number, y: number) => void
 }
 
+/**
+ * Renders the workspace ribbon: a horizontal list of workspace tabs with controls for switching,
+ * closing, creating, reordering (drag-and-drop), and opening a context menu.
+ *
+ * @param workspaces - Array of workspace entries to display as tabs
+ * @param activeWorkspaceId - Id of the currently active workspace (tab receives active styling)
+ * @param onSwitch - Called with a workspace id when a tab is clicked to make it active
+ * @param onOpenFolder - Called when the empty-state tab ("No Project") is clicked
+ * @param onNewWorkspace - Called when the New Workspace (+) tab is clicked
+ * @param onCloseWorkspace - Called with a workspace id to close that workspace (also invoked via middle-click or close control)
+ * @param onReorder - Called with the updated array of workspace ids after a drag-and-drop reorder
+ * @param onContextMenu - Called with (id, x, y) when a workspace tab's context menu is requested
+ * @returns The rendered workspace ribbon JSX element
+ */
 export function WorkspaceRibbon({
   workspaces,
   activeWorkspaceId,

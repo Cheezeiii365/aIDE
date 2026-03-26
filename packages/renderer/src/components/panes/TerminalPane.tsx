@@ -18,17 +18,11 @@ interface ContextMenuState {
 }
 
 /**
- * Render a terminal pane that hosts an xterm instance connected to a PTY and provides a context menu to switch worktrees.
- *
- * The component creates and manages an xterm.js Terminal and a corresponding PTY: it initializes the PTY (optionally with
- * an initial working directory), pipes input/output between the terminal and PTY, keeps terminal size synchronized with
- * container/layout changes, focuses the terminal when the panel becomes active, and updates xterm theming when the app
- * theme changes. A right-click context menu loads available worktrees and, when a worktree is selected, issues `cd <path>`
- * to the active PTY.
+ * Render a terminal pane hosting an xterm.js terminal connected to a backend PTY and offering an in-terminal context menu for switching worktrees.
  *
  * @param params - Optional panel parameters.
  * @param params.worktreePath - If provided, used as the PTY's initial working directory.
- * @returns The React element representing the terminal pane.
+ * @returns The React element for the terminal pane.
  */
 export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -82,6 +76,11 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       if (!destroyed) fitAddon.fit()
     })
 
+    /**
+     * Initializes a PTY for the terminal, attaches IO handlers, and synchronizes terminal state.
+     *
+     * Creates a PTY using the component parameters (including a stable terminal id and cwd), stores the returned PTY id, writes any returned scrollback into the terminal, sends an initial resize to match the terminal's columns and rows, forwards terminal input to the PTY, and subscribes to PTY data and exit events. Registers cleanup callbacks (assigned to outer-scope variables) for unsubscribing from PTY data and exit notifications. If the component is destroyed before completion, initialization aborts without making changes.
+     */
     async function init() {
       const cwd = params?.worktreePath || undefined
       const { id, scrollback } = await window.api.ptyCreate({

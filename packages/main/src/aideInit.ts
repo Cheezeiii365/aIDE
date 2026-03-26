@@ -18,8 +18,9 @@ local/
 `
 
 /**
- * Detect project type by scanning the workspace root for known config files.
- * More specific signals (tsconfig.json) take precedence over general ones (package.json).
+ * Detects the project's language or framework by checking for well-known configuration files in the workspace root.
+ *
+ * @returns The detected project type: `'typescript'`, `'rust'`, `'go'`, `'python'`, `'ruby'`, `'node'`, or `'unknown'`.
  */
 export async function detectProjectType(rootPath: string): Promise<ProjectType> {
   const exists = (name: string) => existsSync(join(rootPath, name))
@@ -36,7 +37,10 @@ export async function detectProjectType(rootPath: string): Promise<ProjectType> 
 }
 
 /**
- * Generate default editor settings based on the detected project type.
+ * Create editor settings tailored to the detected project type.
+ *
+ * @param projectType - The detected project type used to select indentation and file-exclude defaults
+ * @returns An AideProjectSettings object containing base settings plus project-type-specific tab size, space/indent settings, and file exclusion entries
  */
 export function generateDefaultSettings(projectType: ProjectType): AideProjectSettings {
   const base: AideProjectSettings = {
@@ -93,7 +97,9 @@ export function generateDefaultSettings(projectType: ProjectType): AideProjectSe
 }
 
 /**
- * Create a new AideLocalWorkspace object with a fresh UUID.
+ * Create a new local workspace metadata object.
+ *
+ * @returns A new AideLocalWorkspace with a unique `id`, `ribbonPosition` set to `0`, and `lastOpenedAt` set to the current timestamp.
  */
 function createLocalWorkspace(): AideLocalWorkspace {
   return {
@@ -104,19 +110,13 @@ function createLocalWorkspace(): AideLocalWorkspace {
 }
 
 /**
- * Idempotent .aide folder initialization.
+ * Initialize and maintain a project's `.aide` workspace folder.
  *
- * Creates only the pieces that are missing:
- * - .aide/ directory
- * - .aide/.gitignore
- * - .aide/local/ directory
- * - .aide/local/workspace.json (with new UUID)
- * - .aide/settings.json (with detected defaults — only if no settings.json exists)
+ * Creates missing pieces (directory structure, `.gitignore`, `.aide/local/workspace.json`,
+ * and `.aide/settings.json` defaults) and updates local workspace metadata when present.
  *
- * Safe to call on every workspace open. Handles:
- * - Fresh project (no .aide/ at all)
- * - Collaborator first-open (.aide/ exists from git, but no local/)
- * - Existing workspace (everything exists — no-op)
+ * @param rootPath - Path to the project root where the `.aide` folder should be ensured
+ * @returns An object containing `projectType` (detected project type), `created` (`true` if `.aide/` was created by this call, `false` if it already existed), and `rootPath` (the provided project root)
  */
 export async function ensureAideFolder(rootPath: string): Promise<AideInitResult> {
   const aideDir = join(rootPath, AIDE_DIR)
@@ -174,8 +174,10 @@ export async function ensureAideFolder(rootPath: string): Promise<AideInitResult
 }
 
 /**
- * Read the local workspace metadata from .aide/local/workspace.json.
- * Returns null if the file doesn't exist or is corrupted.
+ * Reads the local workspace metadata from the project's .aide/local/workspace.json.
+ *
+ * @param rootPath - The project root directory containing the `.aide` folder
+ * @returns The parsed `AideLocalWorkspace`, or `null` if the file is missing or contains invalid JSON
  */
 export async function readLocalWorkspace(rootPath: string): Promise<AideLocalWorkspace | null> {
   const workspacePath = join(rootPath, AIDE_DIR, LOCAL_DIR, 'workspace.json')
@@ -189,7 +191,12 @@ export async function readLocalWorkspace(rootPath: string): Promise<AideLocalWor
 }
 
 /**
- * Write (merge) updates into .aide/local/workspace.json.
+ * Merge partial workspace updates into the project's `.aide/local/workspace.json`.
+ *
+ * If the file is missing or contains invalid JSON, a new workspace object with a fresh `id` is created before applying the updates. The merge is shallow: top-level fields in `updates` overwrite existing top-level fields.
+ *
+ * @param rootPath - Project root directory containing the `.aide` folder
+ * @param updates - Partial workspace fields to merge into the existing workspace metadata
  */
 export async function updateLocalWorkspace(
   rootPath: string,

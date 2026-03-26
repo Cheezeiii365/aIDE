@@ -12,7 +12,12 @@ import { getCachedState, getAllCachedPaths } from './editorStateCache'
 import { isDirty } from './editorDirtyState'
 
 /**
- * Serialize the current workspace state from all sources.
+ * Build an AideLocalState representing the current workspace layout, open editor tabs, active tab, and sidebar settings.
+ *
+ * @param dockviewApi - The Dockview API instance to read panels and layout from, or `null` if unavailable
+ * @param sidebarWidth - The current sidebar width in pixels
+ * @param sidebarCollapsed - Whether the sidebar is collapsed
+ * @returns The serialized AideLocalState with `layout`, `openTabs`, `activeTabPath`, `sidebarWidth`, `sidebarCollapsed`, and `sidebarSections`
  */
 export function serializeWorkspaceState(
   dockviewApi: DockviewApi | null,

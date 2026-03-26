@@ -55,9 +55,12 @@ export function subscribeContent(
 }
 
 /**
- * Removes the stored content and all subscriber callbacks for the specified file path.
+ * Removes the cached content for the given file path.
  *
- * @param filePath - The file path whose cached content and subscriptions should be cleared
+ * This clears the stored content associated with `filePath` but does not modify
+ * any subscriber callbacks; listeners (if any) remain registered.
+ *
+ * @param filePath - The file path whose cached content should be removed
  */
 export function clearContent(filePath: string): void {
   contentMap.delete(filePath)

@@ -14,6 +14,15 @@ interface Props {
   onClose: () => void
 }
 
+/**
+ * Render a context menu as a React portal positioned at the specified screen coordinates.
+ *
+ * @param x - X coordinate used for the menu's left position (pixels).
+ * @param y - Y coordinate used for the menu's top position (pixels).
+ * @param items - Array of menu entries; each entry's `label` is rendered as the button text and `onClick` is invoked when that entry is selected.
+ * @param onClose - Callback invoked to close the menu.
+ * @returns A React portal element that mounts the context menu into `document.body`.
+ */
 export function WorkspaceContextMenu({ x, y, items, onClose }: Props) {
   useEffect(() => {
     const handler = () => onClose()

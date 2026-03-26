@@ -1,5 +1,10 @@
 import type { IDockviewPanelProps } from 'dockview-react'
 
+/**
+ * Render the application's welcome pane containing the title, action buttons, and keyboard shortcut hints.
+ *
+ * @returns A React element containing the welcome pane UI
+ */
 export function WelcomePane(_props: IDockviewPanelProps) {
   const isMac = navigator.platform.includes('Mac')
   const mod = isMac ? '\u2318' : 'Ctrl'

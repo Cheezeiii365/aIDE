@@ -29,14 +29,12 @@ import {
 import type { AideTask, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
 
 /**
- * Top-level application shell that manages workspace state, dockview panels, shortcuts, and the main UI layout.
+ * Top-level application shell coordinating workspace lifecycle, Dockview panels, keyboard commands, and primary UI.
  *
- * Manages a persisted workspace root and worktrees, registers application actions, wires keyboard shortcuts for
- * terminal, sidebar toggle, panel closing, and markdown previewing, and provides handlers for opening files,
- * folders, terminals, and markdown previews. Renders the workspace ribbon, sidebar (including an optional Worktrees
- * section), the dockview container, status bar, and toast container.
+ * Renders the workspace ribbon, sidebar (with optional worktrees), Dockview area, status bar, toasts, and modal overlays;
+ * wires workspace/open/close/remove handlers, autosave and lifecycle persistence, Dockview event syncing, and app-wide commands.
  *
- * @returns The React element that composes the application's shell and primary UI regions.
+ * @returns The root React element composing the application's shell and primary UI regions.
  */
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
