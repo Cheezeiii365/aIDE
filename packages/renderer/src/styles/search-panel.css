@@ -1,0 +1,115 @@
+/* ── Search Panel (command palette / quick open overlay) ── */
+
+.search-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  padding-top: 15vh;
+  pointer-events: none;
+}
+
+.search-panel {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 560px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  animation: search-panel-in 120ms ease-out;
+}
+
+@keyframes search-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Input ── */
+
+.search-panel__input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  outline: none;
+}
+
+.search-panel__input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Results list ── */
+
+.search-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.search-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.search-panel__item--active {
+  background: var(--bg-hover);
+}
+
+.search-panel__icon {
+  flex-shrink: 0;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-panel__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-panel__label mark {
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.search-panel__description {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+/* ── Empty state ── */
+
+.search-panel__empty {
+  padding: 16px 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}

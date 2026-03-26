@@ -1,0 +1,216 @@
+/* ── Find in Files pane ── */
+
+.find-in-files {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+/* ── Controls ── */
+
+.fif-controls {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fif-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.fif-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-base);
+  border-radius: 4px;
+  outline: none;
+}
+
+.fif-input:focus {
+  border-color: var(--accent);
+}
+
+.fif-input--glob {
+  font-size: 12px;
+}
+
+.fif-toggle {
+  flex-shrink: 0;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.fif-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--border-base);
+}
+
+.fif-toggle--active {
+  color: var(--text-on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.fif-replace-all-btn {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-base);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.fif-replace-all-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Summary ── */
+
+.fif-summary {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ── Results ── */
+
+.fif-results {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.fif-file-group {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.fif-file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.fif-file-header:hover {
+  background: var(--bg-hover);
+}
+
+.fif-chevron {
+  flex-shrink: 0;
+  width: 12px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.fif-file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fif-match-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-sunken);
+  padding: 0 5px;
+  border-radius: 8px;
+}
+
+.fif-replace-file-btn {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.fif-replace-file-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-base);
+}
+
+/* ── Match rows ── */
+
+.fif-match-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 2px 28px;
+  cursor: pointer;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-size: 12px;
+}
+
+.fif-match-row:hover {
+  background: var(--bg-hover);
+}
+
+.fif-line-num {
+  flex-shrink: 0;
+  min-width: 36px;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+.fif-line-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fif-line-text mark {
+  background: rgba(var(--accent-rgb, 66, 133, 244), 0.25);
+  color: var(--accent);
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.fif-replace-btn {
+  flex-shrink: 0;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.fif-match-row:hover .fif-replace-btn {
+  opacity: 1;
+}
+
+.fif-replace-btn:hover {
+  color: var(--text-primary);
+}

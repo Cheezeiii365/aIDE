@@ -8,6 +8,16 @@ interface Props {
   onMoreActions: (e: React.MouseEvent, worktree: WorktreeInfo) => void
 }
 
+/**
+ * Render a clickable row representing a repository worktree, showing branch, status badges, and action buttons.
+ *
+ * @param worktree - Worktree metadata used for display and styling (uses `branch`, `path`, `isCurrent`, `isMain`, and `isDirty`)
+ * @param onClick - Called when the row is clicked
+ * @param onContextMenu - Called when the row receives a context menu event
+ * @param onOpenTerminal - Called with the worktree `path` when the "Open in Terminal" action is invoked
+ * @param onMoreActions - Called with the mouse event and the `worktree` when the "More actions" button is invoked
+ * @returns The rendered worktree row element
+ */
 export function WorktreeItem({ worktree, onClick, onContextMenu, onOpenTerminal, onMoreActions }: Props) {
   return (
     <div

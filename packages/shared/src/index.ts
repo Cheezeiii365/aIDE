@@ -3,6 +3,8 @@
  * IPC channel definitions go here for type-safe communication.
  */
 
+export type { CommandDefinition } from './commands'
+
 // IPC channel names — both main and renderer import these
 // to ensure channel strings stay in sync.
 export const IpcChannels = {
@@ -51,6 +53,7 @@ export const IpcChannels = {
   PTY_DATA_OUT: 'pty:data-out',
   PTY_RESIZE: 'pty:resize',
   PTY_KILL: 'pty:kill',
+  PTY_KILL_WORKSPACE: 'pty:kill-workspace',
   PTY_EXIT: 'pty:exit',
 
   // Worktrees
@@ -61,6 +64,63 @@ export const IpcChannels = {
   WORKTREE_GET_ACTIVE: 'worktree:get-active',
   WORKTREE_LIST_CHANGED: 'worktree:list-changed',
   WORKTREE_LIST_BRANCHES: 'worktree:list-branches',
+
+  // File listing (quick open)
+  FS_LIST_ALL_FILES: 'fs:list-all-files',
+
+  // Search (find in files)
+  SEARCH_START: 'search:start',
+  SEARCH_RESULTS: 'search:results',
+  SEARCH_COMPLETE: 'search:complete',
+  SEARCH_CANCEL: 'search:cancel',
+  SEARCH_REPLACE: 'search:replace',
+
+  // .aide project folder
+  AIDE_INIT: 'aide:init',
+  AIDE_INIT_RESULT: 'aide:init-result',
+  AIDE_GET_RESOLVED_SETTINGS: 'aide:get-resolved-settings',
+
+  // Gitignore security audit
+  GITIGNORE_AUDIT: 'gitignore:audit',
+  GITIGNORE_AUDIT_RESULT: 'gitignore:audit-result',
+  GITIGNORE_APPEND: 'gitignore:append',
+  GITIGNORE_DISMISS: 'gitignore:dismiss',
+
+  // Task system
+  TASK_LIST: 'task:list',
+  TASK_RUN: 'task:run',
+  TASK_KILL: 'task:kill',
+  TASK_STATUS_CHANGED: 'task:status-changed',
+  TASK_REQUEST_INPUT: 'task:request-input',
+  TASK_PROVIDE_INPUT: 'task:provide-input',
+  TASK_DIAGNOSTICS: 'task:diagnostics',
+  TASK_RELOAD: 'task:reload',
+  TASK_AUTO_DETECT: 'task:auto-detect',
+  TASK_GENERATE: 'task:generate',
+
+  // Workspace registry
+  WORKSPACE_LIST: 'workspace:list',
+  WORKSPACE_CREATE: 'workspace:create',
+  WORKSPACE_REMOVE: 'workspace:remove',
+  WORKSPACE_CLOSE: 'workspace:close',
+  WORKSPACE_SWITCH: 'workspace:switch',
+  WORKSPACE_UPDATE: 'workspace:update',
+  WORKSPACE_REORDER: 'workspace:reorder',
+  WORKSPACE_REGISTRY_CHANGED: 'workspace:registry-changed',
+  WORKSPACE_GET_ACTIVE: 'workspace:get-active',
+  WORKSPACE_CREATE_BLANK: 'workspace:create-blank',
+  WORKSPACE_SET_ROOT: 'workspace:set-root',
+
+  // State persistence
+  STATE_SAVE: 'state:save',
+  STATE_LOAD: 'state:load',
+  STATE_SAVE_TERMINALS: 'state:save-terminals',
+  STATE_LOAD_TERMINALS: 'state:load-terminals',
+
+  // App lifecycle
+  LIFECYCLE_REQUEST_SAVE: 'lifecycle:request-save',
+  LIFECYCLE_SAVE_COMPLETE: 'lifecycle:save-complete',
+  LIFECYCLE_CRASH_DETECTED: 'lifecycle:crash-detected',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -77,6 +137,7 @@ export interface FsWatchEvent {
   type: FsEventType
   path: string
   isDirectory: boolean
+  scopeId: string
 }
 
 export type GitFileStatus = 'M' | 'A' | '?' | 'D' | 'C'
@@ -106,6 +167,8 @@ export interface AppSettings {
   sidebarWidth: number
   workspaceRoot: string | null
   activeWorktree: string | null
+  editorDefaults?: Partial<AideProjectSettings>
+  cleanShutdown?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -113,6 +176,238 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarWidth: 220,
   workspaceRoot: null,
   activeWorktree: null,
+}
+
+// Search types (find in files)
+export interface SearchOpts {
+  query: string
+  rootPath: string
+  isRegex: boolean
+  caseSensitive: boolean
+  wholeWord: boolean
+  fileGlob?: string
+}
+
+export interface SearchMatch {
+  line: number
+  column: number
+  lineText: string
+  matchText: string
+}
+
+export interface SearchFileResult {
+  filePath: string
+  matches: SearchMatch[]
+}
+
+export interface ReplaceOpts {
+  filePath: string
+  replacements: { line: number; column: number; matchText: string; replaceText: string }[]
+}
+
+// .aide project settings (committable)
+export interface AideProjectSettings {
+  tabSize?: number
+  insertSpaces?: boolean
+  wordWrap?: 'off' | 'on' | 'bounded'
+  rulers?: number[]
+  fontSize?: number
+  fontFamily?: string
+  formatOnSave?: boolean
+  filesExclude?: Record<string, boolean>
+  searchExclude?: Record<string, boolean>
+  languageOverrides?: Record<string, Partial<AideProjectSettings>>
+}
+
+// Fully resolved settings (no optional fields)
+export interface ResolvedSettings {
+  tabSize: number
+  insertSpaces: boolean
+  wordWrap: 'off' | 'on' | 'bounded'
+  rulers: number[]
+  fontSize: number
+  fontFamily: string
+  formatOnSave: boolean
+  filesExclude: Record<string, boolean>
+  searchExclude: Record<string, boolean>
+}
+
+// .aide/local/workspace.json
+export interface AideLocalWorkspace {
+  id: string
+  ribbonPosition: number
+  icon?: string
+  color?: string
+  lastOpenedAt: number
+  gitignoreAuditDismissed?: boolean
+}
+
+export type ProjectType = 'node' | 'typescript' | 'python' | 'rust' | 'go' | 'ruby' | 'unknown'
+
+export interface AideInitResult {
+  projectType: ProjectType
+  created: boolean
+  rootPath: string
+}
+
+// Gitignore audit
+export interface GitignoreAuditResult {
+  missing: { pattern: string; category: string }[]
+  total: number
+}
+
+// ─── Workspace Registry ──────────────────────────
+export interface WorkspaceEntry {
+  id: string
+  name: string
+  rootPath: string | null
+  icon?: string
+  color?: string
+  createdAt: number
+  lastOpenedAt: number
+}
+
+export interface AppWorkspaceRegistry {
+  workspaces: Record<string, WorkspaceEntry>
+  workspaceOrder: string[]
+  activeWorkspaceId: string | null
+  lastSessionWorkspaces: string[]
+}
+
+// ─── State Persistence ───────────────────────────
+export interface TabState {
+  filePath: string
+  scrollTop: number
+  cursorLine: number
+  cursorColumn: number
+  foldedRanges: [number, number][]
+  isDirty: boolean
+  dirtyContent?: string
+}
+
+export interface AideLocalState {
+  layout: unknown | null
+  openTabs: TabState[]
+  activeTabPath: string | null
+  sidebarWidth: number
+  sidebarCollapsed: boolean
+  sidebarSections: Record<string, boolean>
+}
+
+export interface TerminalState {
+  id: string
+  workspaceId: string
+  cwd: string
+  shell?: string
+  title?: string
+}
+
+export interface AideLocalTerminals {
+  terminals: TerminalState[]
+  activeTerminalId: string | null
+}
+
+// ─── Task System ─────────────────────────────────
+export type TaskGroup = 'build' | 'test' | 'dev' | 'deploy' | 'lint' | 'clean' | 'custom'
+
+export interface TaskPresentation {
+  reveal?: 'always' | 'silent' | 'never'
+  panel?: 'shared' | 'dedicated' | 'new'
+  clear?: boolean
+  close?: boolean
+  echo?: boolean
+  group?: string
+}
+
+export interface TaskTrigger {
+  event: 'workspaceOpen' | 'fileSave' | 'preCommit'
+  filePattern?: string
+  delay?: number
+}
+
+export interface TaskInput {
+  id: string
+  type: 'text' | 'pick' | 'confirm'
+  description: string
+  default?: string
+  options?: string[]
+}
+
+export interface AideTask {
+  id: string
+  label: string
+  command: string
+  args?: string[]
+  cwd?: string
+  env?: Record<string, string>
+  envFile?: string
+  shell?: string
+  group?: TaskGroup
+  keybinding?: string
+  dependsOn?: string[]
+  runOn?: TaskTrigger
+  problemMatcher?: string | string[]
+  isBackground?: boolean
+  autoRestart?: boolean
+  presentation?: TaskPresentation
+  promptBefore?: string
+  timeout?: number
+  os?: {
+    darwin?: Partial<AideTask>
+    linux?: Partial<AideTask>
+    win32?: Partial<AideTask>
+  }
+}
+
+export interface CompoundTask {
+  id: string
+  label: string
+  tasks: string[]
+  mode: 'parallel' | 'sequence'
+  keybinding?: string
+  presentation?: {
+    reveal?: 'always' | 'silent'
+    group?: string
+  }
+}
+
+export interface AideTasksFile {
+  version: 1
+  tasks: AideTask[]
+  compounds?: CompoundTask[]
+  inputs?: TaskInput[]
+  defaults?: {
+    shell?: string
+    env?: Record<string, string>
+    presentation?: Partial<TaskPresentation>
+  }
+}
+
+export type TaskExecutionStatus = 'running' | 'succeeded' | 'failed' | 'killed'
+
+export interface TaskExecution {
+  executionId: string
+  taskId: string
+  taskLabel: string
+  status: TaskExecutionStatus
+  startedAt: number
+  exitCode?: number
+  ptyId: string
+}
+
+export interface TaskInputRequest {
+  requestId: string
+  input: TaskInput
+  resolvedDescription: string
+}
+
+export interface TaskDiagnostic {
+  file: string
+  line?: number
+  column?: number
+  severity: 'error' | 'warning' | 'info'
+  message: string
+  source: string
 }
 
 /** Single source of truth for the preload bridge API shape. */
@@ -157,10 +452,11 @@ export interface WindowApi {
   onGitBranchChanged: (callback: (branch: string) => void) => () => void
 
   // Terminal
-  ptyCreate: (opts?: { cwd?: string; shell?: string }) => Promise<{ id: string }>
+  ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) => Promise<{ id: string; scrollback: string }>
   ptyWrite: (id: string, data: string) => void
   ptyResize: (id: string, cols: number, rows: number) => void
   ptyKill: (id: string) => void
+  ptyKillWorkspace: (workspaceId: string) => void
   onPtyData: (callback: (id: string, data: string) => void) => () => void
   onPtyExit: (callback: (id: string, exitCode: number) => void) => () => void
 
@@ -172,6 +468,63 @@ export interface WindowApi {
   getActiveWorktree: () => Promise<string | null>
   onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => () => void
   listBranches: () => Promise<string[]>
+
+  // File listing (quick open)
+  listAllFiles: (rootPath: string) => Promise<string[]>
+
+  // Search (find in files)
+  searchStart: (opts: SearchOpts) => Promise<void>
+  onSearchResults: (callback: (results: SearchFileResult[]) => void) => () => void
+  onSearchComplete: (callback: (summary: { totalMatches: number; totalFiles: number }) => void) => () => void
+  searchCancel: () => void
+  searchReplace: (opts: ReplaceOpts) => Promise<{ success: true; skipped: number } | { error: string }>
+
+  // .aide project folder
+  aideInit: () => Promise<AideInitResult | { error: string }>
+  getResolvedSettings: () => Promise<ResolvedSettings>
+  onAideInitResult: (callback: (result: AideInitResult) => void) => () => void
+
+  // Gitignore security audit
+  auditGitignore: () => Promise<GitignoreAuditResult>
+  appendToGitignore: (patterns: string[]) => Promise<void>
+  dismissGitignoreAudit: () => Promise<void>
+  onGitignoreAuditResult: (callback: (result: GitignoreAuditResult) => void) => () => void
+
+  // Task system
+  listTasks: () => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
+  runTask: (taskId: string) => Promise<{ executionId: string } | { error: string }>
+  killTask: (executionId: string) => void
+  reloadTasks: () => Promise<void>
+  generateTasks: () => Promise<{ success: true } | { error: string }>
+  provideTaskInput: (requestId: string, value: string | null) => void
+  onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => () => void
+  onTaskRequestInput: (callback: (request: TaskInputRequest) => void) => () => void
+  onTaskDiagnostics: (callback: (diagnostics: TaskDiagnostic[]) => void) => () => void
+  onTaskAutoDetect: (callback: (tasks: AideTask[]) => void) => () => void
+
+  // Workspace registry
+  listWorkspaces: () => Promise<WorkspaceEntry[]>
+  createWorkspace: (rootPath: string) => Promise<WorkspaceEntry>
+  createBlankWorkspace: () => Promise<WorkspaceEntry>
+  removeWorkspace: (id: string) => Promise<void>
+  closeWorkspace: (id: string) => Promise<void>
+  switchWorkspace: (id: string) => Promise<void>
+  updateWorkspace: (id: string, patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>) => Promise<void>
+  reorderWorkspaces: (ids: string[]) => Promise<void>
+  setWorkspaceRoot: (id: string, rootPath: string) => Promise<void>
+  getActiveWorkspaceId: () => Promise<string | null>
+  onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => () => void
+
+  // State persistence
+  saveWorkspaceState: (rootPath: string, state: AideLocalState) => Promise<void>
+  loadWorkspaceState: (rootPath: string) => Promise<AideLocalState | null>
+  saveTerminalState: (rootPath: string, state: AideLocalTerminals) => Promise<void>
+  loadTerminalState: (rootPath: string) => Promise<AideLocalTerminals | null>
+
+  // App lifecycle
+  onLifecycleRequestSave: (callback: () => void) => () => void
+  lifecycleSaveComplete: () => void
+  onCrashDetected: (callback: () => void) => () => void
 
   // Platform info
   platform: NodeJS.Platform

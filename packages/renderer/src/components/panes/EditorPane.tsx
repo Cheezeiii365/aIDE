@@ -8,21 +8,37 @@ import { getLanguageExtension, getLanguageName } from '../../lib/languageExtensi
 import { themeCompartment, getThemeExtension } from '../../lib/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editorWrap'
 import { getCachedState, setCachedState } from '../../lib/editorStateCache'
-import { setDirty, onDirtyChange } from '../../lib/editorDirtyState'
+import { isDirty, setDirty, onDirtyChange } from '../../lib/editorDirtyState'
 import { publishContent, clearContent } from '../../lib/editorContentBus'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
+import { showToast } from '../Toast'
 
 interface EditorPaneParams {
   filePath: string
+  jumpToLine?: number
+  jumpToColumn?: number
 }
 
 // Tracks the "clean" (last-saved) content per file so we know the baseline
 const cleanContentMap = new Map<string, string>()
 
+/**
+ * Render and manage a CodeMirror editor for the panel's file inside a Dockview panel.
+ *
+ * Initializes and tears down an EditorView for `params.filePath`, tracks cursor position
+ * and dirty state, publishes document content to the external content bus, responds to
+ * theme and wrap changes, handles external filesystem updates (with optional reload),
+ * and supports an initial jump-to-line/column.
+ *
+ * @param params - Panel parameters. `params.filePath` is the file to open; optional `params.jumpToLine` and `params.jumpToColumn` specify an initial caret position to jump to.
+ * @param api - Dockview panel API used to set the panel title and subscribe to activation changes.
+ * @returns The React element tree for the editor pane.
+ */
 export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const isReloadingRef = useRef(false)
   const { theme } = useTheme()
   const { setStatus } = useEditorStatus()
   const [loading, setLoading] = useState(true)
@@ -36,6 +52,11 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
     let destroyed = false
 
+    /**
+     * Initialize and mount the CodeMirror editor for the current filePath, loading disk content and wiring editor state, extensions, and listeners.
+     *
+     * Reads the file from disk, records the clean baseline, uses a cached editor state if available or creates a new state with theme, wrap, indentation, language, update listeners, and keybindings, then instantiates and stores the EditorView, publishes the initial document content, clears the loading state, and publishes the initial cursor position. Sets error and loading state on read failure.
+     */
     async function init() {
       const result = await window.api.readFile(filePath)
 
@@ -72,7 +93,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
                 language: languageName,
               })
             }
-            if (update.docChanged) {
+            if (update.docChanged && !isReloadingRef.current) {
               setDirty(filePath, true)
               publishContent(filePath, update.state.doc.toString())
             }
@@ -149,6 +170,71 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     }
   }, [filePath]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Replace the editor's document with the file's current disk contents.
+   *
+   * Reads the file at `path` and, if successful and an editor is mounted, replaces the entire document with the disk content, updates the stored clean baseline for `path`, clears the dirty flag for the file, and publishes the new content.
+   *
+   * @param path - Filesystem path of the file to reload; does nothing if no editor is mounted or the read fails
+   */
+  async function reloadFromDisk(path: string) {
+    const view = viewRef.current
+    if (!view) return
+    const result = await window.api.readFile(path)
+    if ('error' in result) return
+
+    isReloadingRef.current = true
+    cleanContentMap.set(path, result.content)
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: result.content },
+    })
+    isReloadingRef.current = false
+    setDirty(path, false)
+    publishContent(path, result.content)
+  }
+
+  // Subscribe to file watcher events for external change detection
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+
+    const unsub = window.api.onFsWatchEvent(async (events) => {
+      const relevant = events.filter((e) => e.path === filePath && !e.isDirectory)
+      if (relevant.length === 0) return
+
+      const hasDelete = relevant.some((e) => e.type === 'delete')
+      const hasUpdate = relevant.some((e) => e.type === 'update' || e.type === 'create')
+
+      if (hasDelete && !hasUpdate) {
+        showToast('File was deleted externally')
+        setDirty(filePath, true)
+        return
+      }
+
+      if (!hasUpdate) return
+
+      // Read current disk content
+      const result = await window.api.readFile(filePath)
+      if ('error' in result) return
+
+      // Skip if content matches what we already have (e.g., we just saved)
+      if (result.content === cleanContentMap.get(filePath)) return
+
+      if (isDirty(filePath)) {
+        // File has unsaved changes — prompt user
+        showToast('File changed on disk', {
+          label: 'Reload',
+          onClick: () => reloadFromDisk(filePath),
+        })
+      } else {
+        // Clean file — silent reload
+        reloadFromDisk(filePath)
+      }
+    })
+
+    return unsub
+  }, [filePath, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Hot-swap theme when it changes
   useEffect(() => {
     if (!viewRef.current) return
@@ -156,6 +242,21 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       effects: themeCompartment.reconfigure(getThemeExtension(theme)),
     })
   }, [theme])
+
+  // Jump to line/column when requested via params
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !params.jumpToLine) return
+    const lineNum = Math.min(params.jumpToLine, view.state.doc.lines)
+    const line = view.state.doc.line(lineNum)
+    const col = Math.min((params.jumpToColumn ?? 1) - 1, line.length)
+    const pos = line.from + col
+    view.dispatch({
+      selection: { anchor: pos },
+      scrollIntoView: true,
+    })
+    view.focus()
+  }, [params.jumpToLine, params.jumpToColumn])
 
   // Update Dockview tab title when dirty state changes
   useEffect(() => {

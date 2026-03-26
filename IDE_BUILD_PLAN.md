@@ -1,7 +1,14 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 25, 2026
+> **Last updated:** March 26, 2026
 > **Status:** Active development (Phase 2 in progress)
+
+---
+
+## TODO
+- Move worktree storage from `../.aide-worktrees/` to `<repoRoot>/.aide/worktrees/` (match Claude Code convention, add `.aide/` to `.gitignore`)
+- Add `@` prefix in Quick Open (Cmd+P) to go to symbol, `:` prefix to go to line (VS Code-style)
+- Clicking the line number indicator in the status bar should open the go-to-line command palette (`:` mode)
 
 ---
 
@@ -68,6 +75,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Workspace onboarding wizard — auto-detect project type, Python interpreter, `package.json` scripts, `CLAUDE.md`/`.agentconfig`, git remote, dev server command/port. Surface as a checklist of suggestions on first open
 - [ ] Agent project memory — track which files agent has seen, maintain auto-generated `project-summary.md`, surface "unseen files" in agent panel for context priming
 - [ ] Linked workspace groups — related workspaces (e.g. frontend + backend), cross-workspace terminal, shared env references
+- [ ] Worktree color coding — assign a distinct accent color to each worktree and apply it to terminal tabs, editor tabs, and pane borders so it's immediately clear which worktree a tab belongs to
 - [ ] Custom user themes beyond light/dark defaults
 - [ ] Editor minimap (community CodeMirror extension or custom build)
 - [ ] Auto-update via `electron-updater` — notify + prompt (never silent restart). Compile-from-source only for MVP
@@ -472,6 +480,9 @@ view.webContents.loadURL('https://github.com');
 
 **No Chrome extension support in v1.** Electron's `session.loadExtension()` does not support password manager APIs (`chrome.identity`, `chrome.action`, `chrome.storage.sync`). Plan to handle authentication by staying logged in via persistent sessions — don't promise Chrome extension support to users.
 
+**Fullscreen browser toggle (`Cmd+R`):**
+A keyboard shortcut (`Cmd+\``) expands the active browser/dev server pane to fill the entire app window (hiding sidebar, ribbon, other panes). Pressing it again restores the previous layout. This makes it easy to preview a web app at full size without leaving the IDE. Implementation: toggle between `view.setBounds(fullWindowBounds)` and the original Dockview-managed bounds. The browser chrome (URL bar, back/forward) stays visible as an overlay. State: `isFullscreenBrowser: boolean` on the workspace. Keyboard shortcut is user-configurable via the shortcut system.
+
 ### 6.4 Editor (CodeMirror 6)
 
 **Extensions to configure at initialization:**
@@ -595,9 +606,42 @@ for await (const event of query({
 
 This enables the structured agent panel UI: file-by-file progress, diff previews before applying, pause/resume, and cost tracking.
 
-### 6.7 File Tree
+### 6.7 Customizable Sidebar
 
-**Architecture decision: Fixed left sidebar** (outside Dockview, always present). The file tree is special — it's the navigation root. This avoids the problem of users accidentally closing it with no obvious way to get it back, and simplifies `WebContentsView` overlay positioning (overlays can never overlap the sidebar).
+**Architecture decision: Fixed left sidebar** (outside Dockview, always present). The sidebar is the navigation root — always accessible, never accidentally closable. This simplifies `WebContentsView` overlay positioning (overlays never overlap the sidebar).
+
+**Icon rail + panel system:**
+The sidebar has a VS Code-style icon rail on the far left. Each icon opens a corresponding panel. Default icons (top-to-bottom):
+
+| Icon | Panel | Contents |
+|---|---|---|
+| 📁 Folder | **Explorer** | File tree (see below) + git worktree list |
+| 🔀 Git branch | **Source Control** | Staging UI (stage/unstage hunks/files, commit message, commit button), git graph (commit history DAG), open PR list (fetch from GitHub API, show status checks) |
+| 🧪 Beaker | **Testing / Debug** | Test runner UI (discover + run tests, show pass/fail), debugger controls (breakpoints, call stack, variables) |
+
+**Customization model:**
+- Users can **reorder**, **add**, **remove**, or **replace** sidebar icons and their associated panels
+- Each icon maps to a panel component (built-in or plugin-provided in v2+)
+- Two layers of configuration:
+  - **User default** — stored in global settings, applied when opening any new workspace that doesn't have its own config
+  - **Workspace override** — stored per-workspace, overrides user default for that workspace only. Useful for project-specific panels (e.g. a monorepo might add a "Services" panel)
+- Settings UI: drag-to-reorder icon list, toggle visibility, pick icon from a set, assign panel type
+- Config shape (stored in settings / workspace config):
+```typescript
+SidebarConfig {
+  icons: SidebarIconEntry[]  // ordered list
+}
+
+SidebarIconEntry {
+  id: string           // e.g. 'explorer', 'source-control', 'testing'
+  icon: string         // icon identifier (built-in set or custom SVG path)
+  label: string        // tooltip / accessibility label
+  panelType: string    // component key to render in the panel area
+  enabled: boolean     // toggle visibility without removing
+}
+```
+
+### 6.8 File Tree
 
 **Features:**
 - Virtual list (TanStack Virtual) for large directories without DOM bloat
@@ -619,7 +663,7 @@ const status = await git.status();
 // status.modified, status.staged, status.not_added, etc.
 ```
 
-### 6.8 Search
+### 6.9 Search
 
 **Find in files (`Cmd+Shift+F`):**
 One of the most-used IDE features — especially critical for the AI workflow where you want to search for what the agent just wrote. Uses bundled ripgrep (`@vscode/ripgrep`) for speed and `.gitignore` awareness.
@@ -1133,6 +1177,9 @@ These need a decision before or during the relevant phase.
 | Q7 | **Linked workspace groups?** | v2+ | Related workspaces (frontend + backend) that share context: cross-workspace terminal, shared env references. Interesting concept — needs design |
 | Q8 | **Agent project memory / context generation?** | v2+ | Auto-generate `project-summary.md`, track agent-seen files, surface unseen files for context priming. Design data model in v1 to not block this |
 | Q9 | **Ghostty libghostty-vt WASM as xterm.js parser replacement?** | v2+ | Ghostty is open source (MIT/Zig). DIY WASM build is possible but heavy — needs system API stubs, JS bridge to xterm.js renderer, and ongoing fork maintenance. Wait for official WASM build unless xterm.js parsing causes real issues. See Terminal section notes |
+| Q10 | ~~**Best keybinding for fullscreen browser toggle?**~~ | 3 | **Resolved:** `Cmd+\`` — no common IDE conflicts, has a natural "toggle/switch" feel consistent with macOS `Cmd+\`` window cycling |
+| Q11 | **Source Control panel: embed git graph or link to a Dockview pane?** | v2+ | Git graph (commit DAG) can get complex. Options: simplified inline graph in sidebar, or clicking "Git Graph" opens a full Dockview pane. Sidebar space is limited — lean toward a summary view in sidebar + full pane for detail |
+| Q12 | **PR list data source: GitHub API only, or also GitLab/Bitbucket?** | v2+ | Start with GitHub (octokit). Abstract behind a provider interface so other forges can be added via plugins |
 
 ---
 
@@ -1151,13 +1198,13 @@ Track milestone completion here. Update as you go.
 ### Phase 2: Core IDE Features (Weeks 4–7)
 | Milestone | Status | Notes |
 |---|---|---|
-| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. 2.1b complete: @parcel/watcher (native C++ FSEvents, not chokidar) with debounced incremental tree updates, native ignore patterns (node_modules/.git/dist/build), error recovery with exponential backoff. File operations: createFile, createDir, delete, rename IPC handlers. Right-click context menu (New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder). Inline rename input with validation. Cmd+B sidebar toggle via ShortcutManager. 2.1c complete: simple-git status polling (3s interval) with per-file badges (M/A/U/D) and directory-level dirty dots, current branch display in StatusBar, case-insensitive file tree filter with ancestor path preservation. 2.1d complete: @tanstack/react-virtual virtualization (22px fixed rows, 15-item overscan, memoized DFS into VirtualRow[] union type), Seti-style file-type icons (~30 file types + ~15 special folders with color-coded SVGs), gitignored file dimming via `git ls-files --others --ignored --exclude-standard --directory` (0.4 opacity + italic). Deferred: drag files between directories |
-| 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. Deferred to 2.2c: minimap, breadcrumb nav |
+| 2.1 File tree (fixed sidebar) | 🟡 In progress | 2.1a complete: open folder dialog, read-only browsable tree, persisted workspace root + sidebar width. WindowApi centralized. 2.1b complete: @parcel/watcher (native C++ FSEvents, not chokidar) with debounced incremental tree updates, native ignore patterns (node_modules/.git/dist/build), error recovery with exponential backoff. File operations: createFile, createDir, delete, rename IPC handlers. Right-click context menu (New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder). Inline rename input with validation. Cmd+B sidebar toggle via ShortcutManager. 2.1c complete: simple-git status polling (3s interval) with per-file badges (M/A/U/D) and directory-level dirty dots, current branch display in StatusBar, case-insensitive file tree filter with ancestor path preservation. 2.1d complete: @tanstack/react-virtual virtualization (22px fixed rows, 15-item overscan, memoized DFS into VirtualRow[] union type), Seti-style file-type icons (~30 file types + ~15 special folders with color-coded SVGs), gitignored file dimming via `git ls-files --others --ignored --exclude-standard --directory` (0.4 opacity + italic). 2.1e complete: file watcher rewritten from single-root to scoped multi-root system — `activeScopes: Map<scopeId, { roots, watchers }>` replaces single `activeWatcher`. Events tagged with `scopeId` field on `FsWatchEvent`. Nested-root deduplication prevents duplicate events. Currently uses `'default'` scope; designed for Phase 4 cross-workspace watching where each workspace gets its own scope. Deferred: drag files between directories |
+| 2.2 CodeMirror 6 editor | 🟡 In progress | 2.2a complete: click-to-open files with syntax highlighting (JS/TS/Python/Markdown/JSON/CSS/HTML), readFile IPC with 10MB limit + binary rejection, EditorState cache preserving cursor/scroll across tab switches, theme hot-swap via Compartment, real line/col/language in status bar. 2.2b complete: writeFile IPC + Cmd+S save, dirty tracking with `•` tab indicator, indent guides (@replit/codemirror-indentation-markers), word wrap toggle (Cmd+Alt+W via Compartment), confirm-before-close for unsaved tabs (DockviewDefaultTab + closeActionOverride). Search (Cmd+F/H), code folding, bracket auto-close, multi-cursor all work via basicSetup. 2.2c complete: EditorPane subscribes to `onFsWatchEvent` for external change detection — clean files auto-reload silently, dirty files show toast with "Reload" button, deleted files show deletion toast and mark dirty. `isReloadingRef` guard prevents self-triggered dirty state during programmatic reloads. Content comparison against `cleanContentMap` prevents spurious reloads after save. Deferred to 2.2d: minimap, breadcrumb nav |
 | 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
-| 2.4 Find in files + symbol search | ⬜ Not started | Bundled ripgrep |
+| 2.4 Find in files + symbol search | 🟡 In progress | 2.4a complete: FindInFilesPane Dockview pane with bundled @vscode/ripgrep, streaming JSON results via IPC (SEARCH_START/RESULTS/COMPLETE/CANCEL/REPLACE), toggle buttons (regex/case/whole-word/file-glob), results grouped by file with match highlighting, click-to-jump opens file at line/column, single/per-file/global replace mode. Deferred: symbol search (requires LSP in Phase 3) |
 | 2.5 Markdown preview | ✅ Complete | MarkdownPreviewPane in Dockview, marked v17 + DOMPurify + highlight.js (may switch to Shiki TextMate in future). Live preview via editorContentBus pub/sub. Cmd+Shift+V toggle. Toast notification on .md open. Auto-close on editor close. Theme-aware CSS with syntax token mapping |
-| 2.6 Keyboard shortcut system | 🟡 In progress | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. Shortcuts wired: Cmd+Shift+T (new terminal), Cmd+B (sidebar toggle), Cmd+W (close active panel). Deferred: Cmd+P quick open, Cmd+Shift+P command palette, Cmd+Shift+F find in files |
-| 2.7 Git worktree management | ✅ Complete | Sidebar refactored into collapsible SidebarSection components. Worktree panel lists all repo worktrees with branch name, dirty badge, main label. Create worktree modal (new or existing branch, base branch picker). Worktrees stored at `../.aide-worktrees/<branch>/`. File tree re-roots on worktree switch. Terminal right-click context menu for worktree switching. Auto-detect external worktrees via 5s polling of `git worktree list --porcelain`. Backend: `worktreeManager.ts` follows gitStatus.ts pattern. New IPC channels: WORKTREE_LIST/CREATE/REMOVE/SET_ACTIVE/GET_ACTIVE/LIST_CHANGED/LIST_BRANCHES. **UX polish pass**: VS Code-style 2px accent left-border for active item, 30px item height, inline hover action buttons (terminal + more), "M" letter badge for dirty status with pulse animation, context menu icons, segmented toggle in create modal replacing checkbox, CSS spinner + success flash on submit, entry slide-in animations for new worktrees, empty state guidance, list-integrated add button. Deferred: cross-worktree diff, agent panel integration, git graph sidebar section |
+| 2.6 Keyboard shortcut system | ✅ Complete | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. 2.6b complete: CommandRegistry (single source of truth for all IDE commands), ContextKeys system (boolean when-clause evaluation), chord shortcut support (Cmd+K Cmd+S style), conflict detection with console.warn, useCommand hook. All existing shortcuts migrated to command registry. New shortcuts: Cmd+Shift+P (command palette), Cmd+P (quick open), Cmd+Shift+F (find in files), Cmd+\\ (split vertical), Cmd+Shift+\\ (split horizontal). Placeholder commands: Cmd+1-9 (workspace switching), Cmd+Shift+[/] (tab cycling), Cmd+T (symbol search) |
+| 2.7 Git worktree management | ✅ Complete | Sidebar refactored into collapsible SidebarSection components. Worktree panel lists all repo worktrees with branch name, dirty badge, main label. Create worktree modal (new or existing branch, base branch picker). Worktrees stored at `../.aide-worktrees/<branch>/`. File tree re-roots on worktree switch. Terminal right-click context menu for worktree switching. Auto-detect external worktrees via 5s polling of `git worktree list --porcelain`. Backend: `worktreeManager.ts` follows gitStatus.ts pattern. New IPC channels: WORKTREE_LIST/CREATE/REMOVE/SET_ACTIVE/GET_ACTIVE/LIST_CHANGED/LIST_BRANCHES. **UX polish pass**: VS Code-style 2px accent left-border for active item, 30px item height, inline hover action buttons (terminal + more), "M" letter badge for dirty status with pulse animation, context menu icons, segmented toggle in create modal replacing checkbox, CSS spinner + success flash on submit, entry slide-in animations for new worktrees, empty state guidance, list-integrated add button. **Worktree file watcher fix**: switching worktrees now watches both repo root and active worktree simultaneously via `startWatchers('default', [repoRoot, worktreePath])` — changes in either root are detected and surfaced to the editor. Deferred: cross-worktree diff, agent panel integration, git graph sidebar section |
 
 ### Phase 3: LSP + Browser Pane (Weeks 8–10)
 | Milestone | Status | Notes |
@@ -1171,10 +1218,14 @@ Track milestone completion here. Update as you go.
 ### Phase 4: Workspace System (Weeks 11–13)
 | Milestone | Status | Notes |
 |---|---|---|
-| 4.1 Workspace creation flow | ⬜ Not started | |
-| 4.2 Workspace switching + state persistence | ⬜ Not started | |
+| 4.0a .aide folder infrastructure | ✅ Complete | `aideInit.ts`, `settingsResolver.ts`, project type detection, settings cascade |
+| 4.0b Gitignore security audit | ✅ Complete | `gitignoreAudit.ts`, review modal, command palette command, toast flow |
+| 4.0c Task system | ✅ Complete | `taskRunner.ts`, `taskVariableResolver.ts`, `problemMatcher.ts`, `taskAutoDetect.ts`, `useTasks` hook, `TaskInputModal`, status bar indicator, command palette commands |
+| 4.1 Workspace creation flow | ✅ Complete | `workspaceRegistry.ts`, `useWorkspaces` hook, ribbon tabs, context menu, Cmd+1-9/Cmd+Shift+[/] switching |
+| 4.2 Workspace switching + state persistence | ✅ Complete | `stateSerializer.ts`, `workspaceStateSerializer.ts`, `workspaceSwitcher.ts`, 30s auto-save, atomic writes, worktree sync fix |
 | 4.3 Agent status in ribbon | ⬜ Not started | |
-| 4.4 Workspace management UI | ⬜ Not started | |
+| 4.4 Workspace management UI | ✅ Complete | Close workspace (Cmd+Shift+W, tab × button, middle-click, context menu), blank workspace (Cmd+Shift+N, + button), open folder in blank workspace (Cmd+O), welcome pane with shortcut hints, proper empty state on last workspace close |
+| 4.5 App lifecycle (Phase E) | ✅ Complete | Session restore, graceful quit with async save, crash recovery toast, `--clean` flag, welcome tab on empty session |
 
 ### Phase 5: Agent Integration (Weeks 14–17)
 | Milestone | Status | Notes |
@@ -1189,7 +1240,7 @@ Track milestone completion here. Update as you go.
 | Milestone | Status | Notes |
 |---|---|---|
 | 6.1 Settings system | ⬜ Not started | |
-| 6.2 Quick open (`Cmd+P`) + command palette | ⬜ Not started | |
+| 6.2 Quick open (`Cmd+P`) + command palette | ✅ Complete | Reusable SearchPanel overlay (fuzzy filtering, virtualized list, portal-based). CommandPalette: lists all registered commands with keybinding hints, recently-used sort. QuickOpen: file search via `git ls-files` IPC, FileTypeIcon, relative path display. Both wired as commands in registry | |
 | 6.3 GitHub repository + CI | 🟡 In progress | electron-builder.yml configured for macOS (dmg+zip arm64+x64), Linux (AppImage+deb), Windows (nsis+zip). pnpm dist scripts added. GitHub Releases publish via `--publish always`. First alpha release: v0.1.0-alpha.1 |
 | 6.4 Plugin system foundation | ⬜ Not started | |
 

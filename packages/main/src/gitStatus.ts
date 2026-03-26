@@ -11,6 +11,12 @@ let lastIgnoredJson = ''
 
 type GetWebContents = () => Electron.WebContents | null
 
+/**
+ * Obtains Git status for the repository at the given root path.
+ *
+ * @param rootPath - Absolute path to the Git working tree root to inspect
+ * @returns A result containing a map of absolute file paths to single-letter Git status codes (`'D'`, `'?'`, `'A'`, `'M'`), the current branch name (or `'HEAD'` if unavailable), and an array of absolute ignored paths; `null` if the path is not a Git repository or if an error occurs.
+ */
 async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null> {
   try {
     const git = simpleGit(rootPath)
@@ -56,6 +62,12 @@ async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null>
   }
 }
 
+/**
+ * Register an IPC handler that provides Git status for the currently selected repository root.
+ *
+ * The handler listens on `IpcChannels.GIT_STATUS` and returns `null` when no repository root is set;
+ * otherwise it returns the result of `fetchGitStatus(currentRoot)`.
+ */
 export function registerGitStatusHandlers(getWebContents: GetWebContents): void {
   ipcMain.handle(IpcChannels.GIT_STATUS, async () => {
     if (!currentRoot) return null
@@ -63,6 +75,16 @@ export function registerGitStatusHandlers(getWebContents: GetWebContents): void 
   })
 }
 
+/**
+ * Begin monitoring a Git repository at the given root and emit IPC events when its status or branch changes.
+ *
+ * Replaces any existing poll and performs an initial status fetch. Emits `IpcChannels.GIT_STATUS_CHANGED` when the
+ * repository's file-status map or ignored-path list changes, and `IpcChannels.GIT_BRANCH_CHANGED` when the current
+ * branch changes.
+ *
+ * @param rootPath - Absolute path to the Git repository root to monitor
+ * @param getWebContents - Function that returns the Electron WebContents used to send IPC messages; may return `null`
+ */
 export async function startGitPolling(
   rootPath: string,
   getWebContents: GetWebContents,
@@ -73,12 +95,17 @@ export async function startGitPolling(
   lastBranch = ''
   lastIgnoredJson = ''
 
-  // Initial fetch
+  // Initial fetch — broadcast immediately so the renderer has fresh data
   const initial = await fetchGitStatus(rootPath)
   if (initial) {
     lastJson = JSON.stringify(initial.files)
     lastBranch = initial.branch
     lastIgnoredJson = JSON.stringify(initial.ignoredPaths)
+    const wc = getWebContents()
+    if (wc) {
+      wc.send(IpcChannels.GIT_STATUS_CHANGED, initial)
+      wc.send(IpcChannels.GIT_BRANCH_CHANGED, initial.branch)
+    }
   }
 
   pollTimer = setInterval(async () => {
@@ -103,6 +130,12 @@ export async function startGitPolling(
   }, 3000)
 }
 
+/**
+ * Stops the active Git polling timer and resets cached repository state.
+ *
+ * Clears any existing polling interval, sets the current Git root to `null`,
+ * and clears cached file, branch, and ignored-path data.
+ */
 export function stopGitPolling(): void {
   if (pollTimer) {
     clearInterval(pollTimer)

@@ -16,6 +16,15 @@ interface ContextMenuState {
   worktree: WorktreeInfo
 }
 
+/**
+ * Render a panel listing worktrees with support for switching active worktree, opening a terminal,
+ * showing a contextual menu (open in terminal, reveal in Finder, remove), and creating new worktrees.
+ *
+ * @param worktrees - Array of worktree metadata to display
+ * @param onSwitch - Callback invoked with the selected worktree path (or `null` for the main worktree) to switch active worktree
+ * @param onOpenTerminal - Callback invoked with a worktree path to open a terminal for that worktree
+ * @returns The rendered worktree panel element
+ */
 export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)

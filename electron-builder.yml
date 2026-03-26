@@ -13,6 +13,7 @@ files:
 
 asarUnpack:
   - "**/node-pty/**"
+  - "**/@vscode/ripgrep/**"
 
 extraMetadata:
   main: packages/main/dist/index.js

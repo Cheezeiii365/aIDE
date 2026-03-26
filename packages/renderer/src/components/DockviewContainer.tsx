@@ -1,18 +1,22 @@
 import { useCallback } from 'react'
 import { DockviewReact, type DockviewReadyEvent, type DockviewApi } from 'dockview-react'
 import { PlaceholderPane } from './panes/PlaceholderPane'
+import { WelcomePane } from './panes/WelcomePane'
 import { EditorPane } from './panes/EditorPane'
 import { EditorTab } from './panes/EditorTab'
 import { TerminalPane } from './panes/TerminalPane'
 import { MarkdownPreviewPane } from './panes/MarkdownPreviewPane'
+import { FindInFilesPane } from './panes/FindInFilesPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
 const components = {
   placeholder: PlaceholderPane,
+  welcomePane: WelcomePane,
   editorPane: EditorPane,
   terminalPane: TerminalPane,
   markdownPreview: MarkdownPreviewPane,
+  findInFiles: FindInFilesPane,
 }
 
 const tabComponents = {
@@ -23,35 +27,16 @@ interface Props {
   onApiReady: (api: DockviewApi) => void
 }
 
+/**
+ * Render a DockviewReact component and forward its API to the provided callback when the Dockview becomes ready.
+ *
+ * @param onApiReady - Callback invoked with the Dockview API instance once the Dockview is ready
+ * @returns The configured DockviewReact element
+ */
 export function DockviewContainer({ onApiReady }: Props) {
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
-      const { api } = event
-
-      const editorPanel = api.addPanel({
-        id: 'editor',
-        component: 'placeholder',
-        params: { title: 'Welcome' },
-      })
-
-      api.addPanel({
-        id: 'terminal',
-        component: 'terminalPane',
-        title: 'Terminal',
-        params: {},
-        position: { referencePanel: editorPanel, direction: 'below' },
-        initialHeight: 200,
-      })
-
-      api.addPanel({
-        id: 'agent',
-        component: 'placeholder',
-        params: { title: 'Agent' },
-        position: { referencePanel: editorPanel, direction: 'right' },
-        initialWidth: 350,
-      })
-
-      onApiReady(api)
+      onApiReady(event.api)
     },
     [onApiReady],
   )

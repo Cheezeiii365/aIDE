@@ -57,6 +57,60 @@
   color: var(--text-primary);
 }
 
+.workspace-tab--drag-over {
+  border-left: 2px solid var(--accent);
+}
+
+.workspace-tab--add {
+  font-size: 14px;
+  font-weight: 400;
+  opacity: 0.5;
+  min-width: 28px;
+  padding: 0 8px;
+}
+
+.workspace-tab--add:hover {
+  opacity: 0.9;
+}
+
+.workspace-tab__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.workspace-tab__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.workspace-tab__close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 2px;
+  margin-right: -4px;
+}
+
+.workspace-tab:hover .workspace-tab__close {
+  display: flex;
+}
+
+.workspace-tab__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .workspace-ribbon__actions {
   -webkit-app-region: no-drag;
   display: flex;
@@ -230,6 +284,23 @@
   width: 11px;
   height: 11px;
   opacity: 0.7;
+}
+
+.status-bar__item--tasks {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+}
+
+.status-bar__spinner {
+  width: 10px;
+  height: 10px;
+  animation: status-spin 800ms linear infinite;
+}
+
+@keyframes status-spin {
+  to { transform: rotate(360deg); }
 }
 
 .status-bar__separator {
