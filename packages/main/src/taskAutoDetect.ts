@@ -7,7 +7,7 @@
  */
 
 import { existsSync } from 'fs'
-import { readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { AideTask, AideTasksFile } from '@aide/shared'
 
@@ -186,6 +186,8 @@ export async function detectTasks(rootPath: string): Promise<AideTask[]> {
 
   const allTasks: AideTask[] = []
 
+  const hasPyproject = projects.some((p) => p.type === 'python-pyproject')
+
   for (const project of projects) {
     switch (project.type) {
       case 'node':
@@ -198,6 +200,10 @@ export async function detectTasks(rootPath: string): Promise<AideTask[]> {
         allTasks.push(...generateGoTasks())
         break
       case 'python':
+        // Skip plain python if pyproject.toml was also detected to avoid duplicate task IDs
+        if (hasPyproject) break
+        allTasks.push(...generatePythonTasks(project.type))
+        break
       case 'python-pyproject':
         allTasks.push(...generatePythonTasks(project.type))
         break
@@ -236,6 +242,7 @@ export async function generateTasksFile(
   }
 
   try {
+    await mkdir(join(rootPath, '.aide'), { recursive: true })
     await writeFile(tasksPath, JSON.stringify(tasksFile, null, 2), 'utf-8')
     return { success: true }
   } catch (err) {
