@@ -8,10 +8,11 @@ import { getLanguageExtension, getLanguageName } from '../../lib/languageExtensi
 import { themeCompartment, getThemeExtension } from '../../lib/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editorWrap'
 import { getCachedState, setCachedState } from '../../lib/editorStateCache'
-import { setDirty, onDirtyChange } from '../../lib/editorDirtyState'
+import { isDirty, setDirty, onDirtyChange } from '../../lib/editorDirtyState'
 import { publishContent, clearContent } from '../../lib/editorContentBus'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
+import { showToast } from '../Toast'
 
 interface EditorPaneParams {
   filePath: string
@@ -37,6 +38,7 @@ const cleanContentMap = new Map<string, string>()
 export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const isReloadingRef = useRef(false)
   const { theme } = useTheme()
   const { setStatus } = useEditorStatus()
   const [loading, setLoading] = useState(true)
@@ -86,7 +88,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
                 language: languageName,
               })
             }
-            if (update.docChanged) {
+            if (update.docChanged && !isReloadingRef.current) {
               setDirty(filePath, true)
               publishContent(filePath, update.state.doc.toString())
             }
@@ -162,6 +164,65 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       cleanContentMap.delete(filePath)
     }
   }, [filePath]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload file content from disk into the editor
+  async function reloadFromDisk(path: string) {
+    const view = viewRef.current
+    if (!view) return
+    const result = await window.api.readFile(path)
+    if ('error' in result) return
+
+    isReloadingRef.current = true
+    cleanContentMap.set(path, result.content)
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: result.content },
+    })
+    isReloadingRef.current = false
+    setDirty(path, false)
+    publishContent(path, result.content)
+  }
+
+  // Subscribe to file watcher events for external change detection
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+
+    const unsub = window.api.onFsWatchEvent(async (events) => {
+      const relevant = events.filter((e) => e.path === filePath && !e.isDirectory)
+      if (relevant.length === 0) return
+
+      const hasDelete = relevant.some((e) => e.type === 'delete')
+      const hasUpdate = relevant.some((e) => e.type === 'update' || e.type === 'create')
+
+      if (hasDelete && !hasUpdate) {
+        showToast('File was deleted externally')
+        setDirty(filePath, true)
+        return
+      }
+
+      if (!hasUpdate) return
+
+      // Read current disk content
+      const result = await window.api.readFile(filePath)
+      if ('error' in result) return
+
+      // Skip if content matches what we already have (e.g., we just saved)
+      if (result.content === cleanContentMap.get(filePath)) return
+
+      if (isDirty(filePath)) {
+        // File has unsaved changes — prompt user
+        showToast('File changed on disk', {
+          label: 'Reload',
+          onClick: () => reloadFromDisk(filePath),
+        })
+      } else {
+        // Clean file — silent reload
+        reloadFromDisk(filePath)
+      }
+    })
+
+    return unsub
+  }, [filePath, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hot-swap theme when it changes
   useEffect(() => {

@@ -7,7 +7,7 @@ import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
-import { registerFileWatcherHandlers, startWatcher, stopWatcher } from './fileWatcher'
+import { registerFileWatcherHandlers, startWatcher, startWatchers, stopWatcher } from './fileWatcher'
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
 import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
 import { startSearch, cancelSearch } from './ripgrepSearch'
@@ -192,7 +192,7 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   const selected = result.filePaths[0]
   store.set('workspaceRoot', selected)
   store.set('activeWorktree', null)
-  await startWatcher(selected)
+  await startWatchers('default', [selected])
   const getWc = () => contentView?.webContents ?? null
   await startGitPolling(selected, getWc)
   await startWorktreePolling(selected, getWc, store)
@@ -419,10 +419,13 @@ app.whenReady().then(async () => {
   // Auto-start watcher if we have a persisted workspace
   const savedRoot = store.get('workspaceRoot')
   if (savedRoot && existsSync(savedRoot)) {
-    // Use active worktree root for file watcher and git polling if set
+    // Watch both repo root and active worktree (if set) so changes in either are detected
     const activeWorktree = store.get('activeWorktree')
-    const effectiveRoot = activeWorktree && existsSync(activeWorktree) ? activeWorktree : savedRoot
-    await startWatcher(effectiveRoot)
+    const hasWorktree = activeWorktree && existsSync(activeWorktree)
+    const watchRoots = hasWorktree ? [savedRoot, activeWorktree] : [savedRoot]
+    await startWatchers('default', watchRoots)
+    // Git polling uses the effective root for status
+    const effectiveRoot = hasWorktree ? activeWorktree : savedRoot
     await startGitPolling(effectiveRoot, getWebContents)
     await startWorktreePolling(savedRoot, getWebContents, store)
   } else if (savedRoot) {

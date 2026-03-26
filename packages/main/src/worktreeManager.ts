@@ -7,7 +7,7 @@ import { IpcChannels } from '@aide/shared'
 import type { WorktreeInfo, WorktreeCreateOpts, AppSettings } from '@aide/shared'
 import type Store from 'electron-store'
 import { startGitPolling } from './gitStatus'
-import { startWatcher } from './fileWatcher'
+import { startWatchers } from './fileWatcher'
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let cachedList: WorktreeInfo[] = []
@@ -200,7 +200,7 @@ export function registerWorktreeHandlers(
         if (active === worktreePath) {
           store.set('activeWorktree', null)
           // Restart file watcher and git polling on main repo root
-          await startWatcher(currentRepoRoot)
+          await startWatchers('default', [currentRepoRoot])
           await startGitPolling(currentRepoRoot, getWebContents)
         }
 
@@ -222,10 +222,15 @@ export function registerWorktreeHandlers(
     async (_event, worktreePath: string | null): Promise<void> => {
       store.set('activeWorktree', worktreePath)
 
-      // Switch file watcher and git polling to the new root
+      // Watch both repo root and active worktree (or just repo root if null)
+      const roots = worktreePath
+        ? [currentRepoRoot!, worktreePath]
+        : [currentRepoRoot!]
+      await startWatchers('default', roots)
+
+      // Git polling uses the effective root for status
       const effectiveRoot = worktreePath || currentRepoRoot
       if (effectiveRoot) {
-        await startWatcher(effectiveRoot)
         await startGitPolling(effectiveRoot, getWebContents)
       }
 

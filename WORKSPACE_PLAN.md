@@ -751,6 +751,24 @@ Workspace switch should feel instant (<200ms perceived). Strategy:
 | Same folder opened as two workspaces | Allowed but discouraged. File watchers deduplicate. State files are per-machine anyway |
 | Rapid switching (Cmd+1, Cmd+2, Cmd+3 fast) | Debounce: cancel in-flight save/load if a new switch arrives within 100ms |
 
+### 5.4 File Watcher Scoping (Implemented)
+
+The file watcher system is already built with workspace-scoped multi-root support. Key design:
+
+- **Scoped watcher map:** `activeScopes: Map<scopeId, { roots: string[]; watchers: FSWatcher[] }>` — each scope can watch multiple roots independently.
+- **`scopeId` on events:** Every `FsWatchEvent` includes a `scopeId` field, so the renderer can filter events by active workspace.
+- **Current state:** All watchers use `'default'` as the sole scope ID. Worktree switching watches both repo root and active worktree simultaneously.
+- **Editor integration:** `EditorPane` subscribes to `onFsWatchEvent` and auto-reloads clean files, prompts for dirty files, and detects external deletions.
+
+**When workspaces land (Phase C/D):**
+- Each workspace gets its own scope (e.g., `workspace-{uuid}`).
+- `WorkspaceManager.switchTo()` calls `startWatchers(workspaceId, roots)` instead of tearing down and rebuilding.
+- Inactive workspace watchers can be paused (analogous to `SIGSTOP` for LSP servers) or kept alive for workspaces with active background agents/tasks.
+- The renderer filters events by `scopeId` matching the active workspace — no wasted processing of events from inactive workspaces.
+- The `startWatchers` diff algorithm (close removed roots, start new, leave existing) means workspace switching only touches changed roots, not the full set.
+
+**Cross-workspace agent scenario:** When agents run in background workspaces (each with their own worktrees), those workspaces keep their watcher scopes alive. The agent's file mutations are detected and queued. When the user switches back, the editor reloads from disk using the already-delivered events.
+
 ---
 
 ## 6. Ribbon UI
@@ -865,7 +883,7 @@ This workspace system is built incrementally, interleaved with the command syste
 1. State serializer: Dockview layout + editor tabs → `.aide/local/state.json`
 2. State deserializer: `.aide/local/state.json` → restore layout + tabs
 3. Terminal state save/restore (cwd, not full scrollback)
-4. `WorkspaceSwitcher.switchTo(id)` — full save/clear/load/focus cycle
+4. `WorkspaceSwitcher.switchTo(id)` — full save/clear/load/focus cycle (file watcher scoping infrastructure already exists — call `startWatchers(workspaceId, roots)` per Section 5.4)
 5. Debounced rapid-switch handling
 6. Auto-save on interval (every 30s write state to disk as crash safety net)
 

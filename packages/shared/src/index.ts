@@ -89,6 +89,7 @@ export interface FsWatchEvent {
   type: FsEventType
   path: string
   isDirectory: boolean
+  scopeId: string
 }
 
 export type GitFileStatus = 'M' | 'A' | '?' | 'D' | 'C'
