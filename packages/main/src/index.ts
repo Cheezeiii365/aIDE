@@ -1,14 +1,16 @@
 import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell, session } from 'electron'
-import { join, dirname } from 'path'
-import { existsSync } from 'fs'
+import { join, dirname, relative } from 'path'
+import { existsSync, readdirSync, statSync } from 'fs'
+import { execFile } from 'child_process'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
-import type { AppSettings, ThemeName, DirEntry } from '@aide/shared'
+import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
 import { registerFileWatcherHandlers, startWatcher, stopWatcher } from './fileWatcher'
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
 import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
+import { startSearch, cancelSearch } from './ripgrepSearch'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 
@@ -320,6 +322,88 @@ ipcMain.handle(IpcChannels.FS_RENAME, async (_event, oldPath: string, newPath: s
 // Reveal in Finder / file manager
 ipcMain.on(IpcChannels.FS_REVEAL_IN_FINDER, (_event, filePath: string) => {
   shell.showItemInFolder(filePath)
+})
+
+// List all files (quick open) — uses `git ls-files` for speed, falls back to recursive readdir
+ipcMain.handle(IpcChannels.FS_LIST_ALL_FILES, async (_event, rootPath: string): Promise<string[]> => {
+  // Try git ls-files first (fast, respects .gitignore)
+  if (existsSync(join(rootPath, '.git'))) {
+    try {
+      const files = await new Promise<string[]>((resolve, reject) => {
+        execFile('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: rootPath, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+          if (err) return reject(err)
+          resolve(stdout.trim().split('\n').filter(Boolean))
+        })
+      })
+      return files
+    } catch {
+      // fall through to readdir
+    }
+  }
+
+  // Fallback: recursive readdir
+  const SKIP = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'out', '__pycache__'])
+  const results: string[] = []
+
+  function walk(dir: string) {
+    let entries
+    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else {
+        results.push(relative(rootPath, full))
+      }
+    }
+  }
+
+  walk(rootPath)
+  return results
+})
+
+// Search (find in files) — ripgrep-backed
+ipcMain.handle(IpcChannels.SEARCH_START, (_event, opts: SearchOpts) => {
+  startSearch(
+    opts,
+    (results) => contentView?.webContents.send(IpcChannels.SEARCH_RESULTS, results),
+    (summary) => contentView?.webContents.send(IpcChannels.SEARCH_COMPLETE, summary),
+  )
+})
+
+ipcMain.on(IpcChannels.SEARCH_CANCEL, () => {
+  cancelSearch()
+})
+
+ipcMain.handle(IpcChannels.SEARCH_REPLACE, async (_event, opts: ReplaceOpts) => {
+  try {
+    const content = await readFile(opts.filePath, 'utf-8')
+    const lines = content.split('\n')
+
+    // Apply replacements in reverse order to preserve line/column positions
+    const sorted = [...opts.replacements].sort((a, b) => {
+      if (a.line !== b.line) return b.line - a.line
+      return b.column - a.column
+    })
+
+    for (const rep of sorted) {
+      const lineIdx = rep.line - 1
+      if (lineIdx < 0 || lineIdx >= lines.length) continue
+      const line = lines[lineIdx]
+      const colIdx = rep.column - 1
+      if (colIdx < 0 || colIdx > line.length) continue
+      const before = line.slice(0, colIdx)
+      const after = line.slice(colIdx + rep.matchText.length)
+      lines[lineIdx] = before + rep.replaceText + after
+    }
+
+    await fsWriteFile(opts.filePath, lines.join('\n'))
+    return { success: true as const }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return { error: message }
+  }
 })
 
 app.whenReady().then(async () => {

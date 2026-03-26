@@ -5,6 +5,7 @@ import { EditorPane } from './panes/EditorPane'
 import { EditorTab } from './panes/EditorTab'
 import { TerminalPane } from './panes/TerminalPane'
 import { MarkdownPreviewPane } from './panes/MarkdownPreviewPane'
+import { FindInFilesPane } from './panes/FindInFilesPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
@@ -13,6 +14,7 @@ const components = {
   editorPane: EditorPane,
   terminalPane: TerminalPane,
   markdownPreview: MarkdownPreviewPane,
+  findInFiles: FindInFilesPane,
 }
 
 const tabComponents = {

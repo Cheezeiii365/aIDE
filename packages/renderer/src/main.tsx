@@ -12,6 +12,8 @@ import './styles/editor-pane.css'
 import './styles/sidebar-section.css'
 import './styles/worktree-panel.css'
 import './styles/modal.css'
+import './styles/search-panel.css'
+import './styles/find-in-files.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

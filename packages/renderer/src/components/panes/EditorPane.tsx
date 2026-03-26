@@ -15,6 +15,8 @@ import { useTheme } from '../../hooks/useTheme'
 
 interface EditorPaneParams {
   filePath: string
+  jumpToLine?: number
+  jumpToColumn?: number
 }
 
 // Tracks the "clean" (last-saved) content per file so we know the baseline
@@ -168,6 +170,21 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       effects: themeCompartment.reconfigure(getThemeExtension(theme)),
     })
   }, [theme])
+
+  // Jump to line/column when requested via params
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !params.jumpToLine) return
+    const lineNum = Math.min(params.jumpToLine, view.state.doc.lines)
+    const line = view.state.doc.line(lineNum)
+    const col = Math.min((params.jumpToColumn ?? 1) - 1, line.length)
+    const pos = line.from + col
+    view.dispatch({
+      selection: { anchor: pos },
+      scrollIntoView: true,
+    })
+    view.focus()
+  }, [params.jumpToLine, params.jumpToColumn])
 
   // Update Dockview tab title when dirty state changes
   useEffect(() => {
