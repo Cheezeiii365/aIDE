@@ -56,6 +56,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@vscode/ripgrep",
       "electron",
       "esbuild",
       "node-pty"
