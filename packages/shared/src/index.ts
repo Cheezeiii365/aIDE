@@ -477,7 +477,7 @@ export interface WindowApi {
   onSearchResults: (callback: (results: SearchFileResult[]) => void) => () => void
   onSearchComplete: (callback: (summary: { totalMatches: number; totalFiles: number }) => void) => () => void
   searchCancel: () => void
-  searchReplace: (opts: ReplaceOpts) => Promise<{ success: true } | { error: string }>
+  searchReplace: (opts: ReplaceOpts) => Promise<{ success: true; skipped: number } | { error: string }>
 
   // .aide project folder
   aideInit: () => Promise<AideInitResult | { error: string }>

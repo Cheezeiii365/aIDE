@@ -148,16 +148,23 @@ export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParam
   }
 
   const handleReplaceAll = async () => {
+    const remaining: typeof results = []
+    let removedCount = 0
     for (const group of results) {
-      await window.api.searchReplace({
+      const result = await window.api.searchReplace({
         filePath: group.filePath,
         replacements: group.matches.map((m) => ({
           line: m.line, column: m.column, matchText: m.matchText, replaceText,
         })),
       })
+      if ('success' in result) {
+        removedCount += group.matches.length
+      } else {
+        remaining.push(group)
+      }
     }
-    setResults([])
-    setTotalMatches(0)
+    setResults(remaining)
+    setTotalMatches((c) => c - removedCount)
   }
 
   const relPath = (fp: string) => {

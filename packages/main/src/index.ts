@@ -724,19 +724,23 @@ ipcMain.handle(IpcChannels.SEARCH_REPLACE, async (_event, opts: ReplaceOpts) => 
       return b.column - a.column
     })
 
+    let skipped = 0
+
     for (const rep of sorted) {
       const lineIdx = rep.line - 1
-      if (lineIdx < 0 || lineIdx >= lines.length) continue
+      if (lineIdx < 0 || lineIdx >= lines.length) { skipped++; continue }
       const line = lines[lineIdx]
       const colIdx = rep.column - 1
-      if (colIdx < 0 || colIdx > line.length) continue
+      if (colIdx < 0 || colIdx > line.length) { skipped++; continue }
+      const actual = line.slice(colIdx, colIdx + rep.matchText.length)
+      if (actual !== rep.matchText) { skipped++; continue }
       const before = line.slice(0, colIdx)
       const after = line.slice(colIdx + rep.matchText.length)
       lines[lineIdx] = before + rep.replaceText + after
     }
 
     await fsWriteFile(opts.filePath, lines.join('\n'))
-    return { success: true as const }
+    return { success: true as const, skipped }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return { error: message }
