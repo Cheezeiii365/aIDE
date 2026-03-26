@@ -63,7 +63,7 @@ const api: WindowApi = {
   },
 
   // Terminal
-  ptyCreate: (opts?: { cwd?: string; shell?: string }) =>
+  ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) =>
     ipcRenderer.invoke(IpcChannels.PTY_CREATE, opts),
   ptyWrite: (id: string, data: string) =>
     ipcRenderer.send(IpcChannels.PTY_DATA_IN, id, data),
@@ -71,6 +71,8 @@ const api: WindowApi = {
     ipcRenderer.send(IpcChannels.PTY_RESIZE, id, cols, rows),
   ptyKill: (id: string) =>
     ipcRenderer.send(IpcChannels.PTY_KILL, id),
+  ptyKillWorkspace: (workspaceId: string) =>
+    ipcRenderer.send(IpcChannels.PTY_KILL_WORKSPACE, workspaceId),
   onPtyData: (callback: (id: string, data: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, id: string, data: string) =>
       callback(id, data)

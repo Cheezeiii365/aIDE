@@ -20,7 +20,8 @@ import { registerDefaultCommands } from '../lib/defaultCommands'
 import { useTasks } from '../hooks/useTasks'
 import { useWorkspaces } from '../hooks/useWorkspaces'
 import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspaceSwitcher'
-import type { GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
+import { createTerminalPanelParams, getTerminalParams, serializeTerminalState } from '../lib/terminalState'
+import type { AideTask, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
 
 /**
  * Top-level application shell that manages workspace state, dockview panels, shortcuts, and the main UI layout.
@@ -36,6 +37,8 @@ export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
   const sidebarWidthRef = useRef(220)
   const prevWorkspaceRootRef = useRef<string | null>(null)
+  const prevWorkspaceIdRef = useRef<string | null>(null)
+  const preservedTerminalIdsRef = useRef(new Set<string>())
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
@@ -62,6 +65,12 @@ export function AppShell() {
   const workspaceRoot = activeWorkspace?.rootPath ?? null
   const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
 
+  const persistTerminalState = useCallback((rootPath: string | null = workspaceRoot) => {
+    const api = dockviewApiRef.current
+    if (!api || !rootPath) return
+    window.api.saveTerminalState(rootPath, serializeTerminalState(api)).catch(() => {})
+  }, [workspaceRoot])
+
   const handleOpenFolder = useCallback(async () => {
     // If in a blank workspace (no rootPath), set root instead of creating new
     if (activeWorkspace && !activeWorkspace.rootPath) {
@@ -78,12 +87,23 @@ export function AppShell() {
     await window.api.createBlankWorkspace()
   }, [])
 
+  const handleCloseWorkspace = useCallback(async (id: string) => {
+    const workspace = workspaces.find((entry) => entry.id === id)
+    if (workspace?.rootPath) {
+      window.api.saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null }).catch(() => {})
+    }
+    window.api.ptyKillWorkspace(id)
+    await closeWorkspace(id)
+  }, [closeWorkspace, workspaces])
+
   // Full Dockview clear + restore when workspace changes
   useEffect(() => {
     const api = dockviewApiRef.current
     if (!api) return
     const prevRoot = prevWorkspaceRootRef.current
+    const prevWorkspaceId = prevWorkspaceIdRef.current
     prevWorkspaceRootRef.current = workspaceRoot
+    prevWorkspaceIdRef.current = activeWorkspaceId
 
     // Transition to no workspace — save then show welcome layout
     if (!workspaceRoot && prevRoot) {
@@ -96,12 +116,13 @@ export function AppShell() {
     }
 
     if (!workspaceRoot) return
-    if (prevRoot === workspaceRoot) return
-    if (prevRoot === null) return // first load — DockviewContainer handles initial layout
+    if (prevRoot === workspaceRoot && prevWorkspaceId === activeWorkspaceId) return
 
     doSwitchWorkspace({
       dockviewApi: api,
+      currentWorkspaceId: prevWorkspaceId,
       currentRootPath: prevRoot,
+      targetWorkspaceId: activeWorkspaceId ?? '',
       targetRootPath: workspaceRoot,
       sidebarWidth: sidebarWidthRef.current,
       sidebarCollapsed,
@@ -109,8 +130,19 @@ export function AppShell() {
         sidebarWidthRef.current = width
         setSidebarCollapsed(collapsed)
       },
+      onBeforeClearPanels: () => {
+        preservedTerminalIdsRef.current = new Set(
+          api.panels
+            .map((panel) => getTerminalParams(panel)?.terminalId)
+            .filter((id): id is string => !!id),
+        )
+      },
+      onAfterRestorePanels: () => {
+        preservedTerminalIdsRef.current.clear()
+        persistTerminalState(workspaceRoot)
+      },
     })
-  }, [workspaceRoot]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId, persistTerminalState, sidebarCollapsed, workspaceRoot]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for gitignore audit results from main process and command palette
   useEffect(() => {
@@ -138,7 +170,7 @@ export function AppShell() {
 
   // Listen for task input requests
   useEffect(() => {
-    const unsub = window.api.onTaskRequestInput((request) => {
+    const unsub = window.api.onTaskRequestInput((request: TaskInputRequest) => {
       setTaskInputRequest(request)
     })
     return unsub
@@ -146,7 +178,7 @@ export function AppShell() {
 
   // Listen for task auto-detect results (offer to generate tasks.json)
   useEffect(() => {
-    const unsub = window.api.onTaskAutoDetect((tasks) => {
+    const unsub = window.api.onTaskAutoDetect((tasks: AideTask[]) => {
       showToast(
         `Detected ${tasks.length} task${tasks.length !== 1 ? 's' : ''} from project config`,
         {
@@ -191,7 +223,7 @@ export function AppShell() {
   // Cmd+Shift+W close, Cmd+Shift+N new blank, Cmd+O open folder
   useEffect(() => {
     const handleClose = () => {
-      if (activeWorkspaceId) closeWorkspace(activeWorkspaceId)
+      if (activeWorkspaceId) handleCloseWorkspace(activeWorkspaceId)
     }
     const handleNewBlank = () => handleNewBlankWorkspace()
     const handleOpenFolderEvt = () => handleOpenFolder()
@@ -204,7 +236,7 @@ export function AppShell() {
       window.removeEventListener('aide:workspace-new-blank', handleNewBlank)
       window.removeEventListener('aide:workspace-open-folder', handleOpenFolderEvt)
     }
-  }, [activeWorkspaceId, closeWorkspace, handleOpenFolder, handleNewBlankWorkspace])
+  }, [activeWorkspaceId, handleCloseWorkspace, handleOpenFolder, handleNewBlankWorkspace])
 
   // Keep sidebarVisible context key in sync
   useEffect(() => {
@@ -233,10 +265,11 @@ export function AppShell() {
         sidebarWidthRef.current,
         sidebarCollapsed,
       )
+      persistTerminalState(workspaceRoot)
       window.api.lifecycleSaveComplete()
     })
     return unsub
-  }, [workspaceRoot, sidebarCollapsed])
+  }, [persistTerminalState, sidebarCollapsed, workspaceRoot])
 
   // Handle crash recovery notification
   useEffect(() => {
@@ -254,6 +287,15 @@ export function AppShell() {
       const previewId = `preview:${event.id}`
       const preview = api.panels.find((p) => p.id === previewId)
       if (preview) preview.api.close()
+
+      const terminalParams = getTerminalParams(event)
+      if (terminalParams?.terminalId) {
+        const shouldPreserve = preservedTerminalIdsRef.current.has(terminalParams.terminalId)
+        if (!shouldPreserve) {
+          window.api.ptyKill(terminalParams.terminalId)
+          persistTerminalState()
+        }
+      }
     })
 
     // Track which pane type is focused
@@ -270,7 +312,7 @@ export function AppShell() {
     })
 
     registerDefaultCommands(api)
-  }, [])
+  }, [persistTerminalState])
 
   // Register app-wide action dispatch layer
   useEffect(() => {
@@ -301,9 +343,10 @@ export function AppShell() {
       id,
       component: 'terminalPane',
       title: 'Terminal',
-      params: { worktreePath: activeRoot },
+      params: createTerminalPanelParams(activeWorkspaceId ?? undefined, activeRoot ?? undefined, 'Terminal'),
       position,
     })
+    persistTerminalState()
   })
 
   // Cmd+B — toggle sidebar
@@ -470,7 +513,7 @@ export function AppShell() {
         onSwitch={switchWorkspace}
         onOpenFolder={handleOpenFolder}
         onNewWorkspace={handleNewBlankWorkspace}
-        onCloseWorkspace={closeWorkspace}
+        onCloseWorkspace={handleCloseWorkspace}
         onReorder={reorderWorkspaces}
         onContextMenu={(id, x, y) => setWsContextMenu({ id, x, y })}
       />
@@ -498,9 +541,14 @@ export function AppShell() {
                       id,
                       component: 'terminalPane',
                       title: branch ? `Terminal (${branch})` : 'Terminal',
-                      params: { worktreePath },
+                      params: createTerminalPanelParams(
+                        activeWorkspaceId ?? undefined,
+                        worktreePath,
+                        branch ? `Terminal (${branch})` : 'Terminal',
+                      ),
                       position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
                     })
+                    persistTerminalState()
                   }}
                 />
               </SidebarSection>
@@ -563,7 +611,7 @@ export function AppShell() {
             },
             {
               label: 'Close Workspace',
-              onClick: () => closeWorkspace(wsContextMenu.id),
+              onClick: () => handleCloseWorkspace(wsContextMenu.id),
             },
             {
               label: 'Remove Workspace',

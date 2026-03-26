@@ -53,6 +53,7 @@ export const IpcChannels = {
   PTY_DATA_OUT: 'pty:data-out',
   PTY_RESIZE: 'pty:resize',
   PTY_KILL: 'pty:kill',
+  PTY_KILL_WORKSPACE: 'pty:kill-workspace',
   PTY_EXIT: 'pty:exit',
 
   // Worktrees
@@ -295,6 +296,7 @@ export interface AideLocalState {
 
 export interface TerminalState {
   id: string
+  workspaceId: string
   cwd: string
   shell?: string
   title?: string
@@ -450,10 +452,11 @@ export interface WindowApi {
   onGitBranchChanged: (callback: (branch: string) => void) => () => void
 
   // Terminal
-  ptyCreate: (opts?: { cwd?: string; shell?: string }) => Promise<{ id: string }>
+  ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) => Promise<{ id: string; scrollback: string }>
   ptyWrite: (id: string, data: string) => void
   ptyResize: (id: string, cols: number, rows: number) => void
   ptyKill: (id: string) => void
+  ptyKillWorkspace: (workspaceId: string) => void
   onPtyData: (callback: (id: string, data: string) => void) => () => void
   onPtyExit: (callback: (id: string, exitCode: number) => void) => () => void
 
