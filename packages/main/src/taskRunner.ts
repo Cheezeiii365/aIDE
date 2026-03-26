@@ -350,6 +350,11 @@ export class TaskRunner {
         clearTimeout(runningTask.timeoutTimer)
       }
 
+      if (execution.status === 'killed') {
+        execution.exitCode = exitCode
+        return
+      }
+
       const finalStatus: TaskExecutionStatus = exitCode === 0 ? 'succeeded' : 'failed'
       execution.status = finalStatus
       execution.exitCode = exitCode
