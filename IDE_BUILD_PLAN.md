@@ -68,6 +68,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Workspace onboarding wizard — auto-detect project type, Python interpreter, `package.json` scripts, `CLAUDE.md`/`.agentconfig`, git remote, dev server command/port. Surface as a checklist of suggestions on first open
 - [ ] Agent project memory — track which files agent has seen, maintain auto-generated `project-summary.md`, surface "unseen files" in agent panel for context priming
 - [ ] Linked workspace groups — related workspaces (e.g. frontend + backend), cross-workspace terminal, shared env references
+- [ ] Worktree color coding — assign a distinct accent color to each worktree and apply it to terminal tabs, editor tabs, and pane borders so it's immediately clear which worktree a tab belongs to
 - [ ] Custom user themes beyond light/dark defaults
 - [ ] Editor minimap (community CodeMirror extension or custom build)
 - [ ] Auto-update via `electron-updater` — notify + prompt (never silent restart). Compile-from-source only for MVP
@@ -472,6 +473,9 @@ view.webContents.loadURL('https://github.com');
 
 **No Chrome extension support in v1.** Electron's `session.loadExtension()` does not support password manager APIs (`chrome.identity`, `chrome.action`, `chrome.storage.sync`). Plan to handle authentication by staying logged in via persistent sessions — don't promise Chrome extension support to users.
 
+**Fullscreen browser toggle (`Cmd+R`):**
+A keyboard shortcut (`Cmd+\``) expands the active browser/dev server pane to fill the entire app window (hiding sidebar, ribbon, other panes). Pressing it again restores the previous layout. This makes it easy to preview a web app at full size without leaving the IDE. Implementation: toggle between `view.setBounds(fullWindowBounds)` and the original Dockview-managed bounds. The browser chrome (URL bar, back/forward) stays visible as an overlay. State: `isFullscreenBrowser: boolean` on the workspace. Keyboard shortcut is user-configurable via the shortcut system.
+
 ### 6.4 Editor (CodeMirror 6)
 
 **Extensions to configure at initialization:**
@@ -595,9 +599,42 @@ for await (const event of query({
 
 This enables the structured agent panel UI: file-by-file progress, diff previews before applying, pause/resume, and cost tracking.
 
-### 6.7 File Tree
+### 6.7 Customizable Sidebar
 
-**Architecture decision: Fixed left sidebar** (outside Dockview, always present). The file tree is special — it's the navigation root. This avoids the problem of users accidentally closing it with no obvious way to get it back, and simplifies `WebContentsView` overlay positioning (overlays can never overlap the sidebar).
+**Architecture decision: Fixed left sidebar** (outside Dockview, always present). The sidebar is the navigation root — always accessible, never accidentally closable. This simplifies `WebContentsView` overlay positioning (overlays never overlap the sidebar).
+
+**Icon rail + panel system:**
+The sidebar has a VS Code-style icon rail on the far left. Each icon opens a corresponding panel. Default icons (top-to-bottom):
+
+| Icon | Panel | Contents |
+|---|---|---|
+| 📁 Folder | **Explorer** | File tree (see below) + git worktree list |
+| 🔀 Git branch | **Source Control** | Staging UI (stage/unstage hunks/files, commit message, commit button), git graph (commit history DAG), open PR list (fetch from GitHub API, show status checks) |
+| 🧪 Beaker | **Testing / Debug** | Test runner UI (discover + run tests, show pass/fail), debugger controls (breakpoints, call stack, variables) |
+
+**Customization model:**
+- Users can **reorder**, **add**, **remove**, or **replace** sidebar icons and their associated panels
+- Each icon maps to a panel component (built-in or plugin-provided in v2+)
+- Two layers of configuration:
+  - **User default** — stored in global settings, applied when opening any new workspace that doesn't have its own config
+  - **Workspace override** — stored per-workspace, overrides user default for that workspace only. Useful for project-specific panels (e.g. a monorepo might add a "Services" panel)
+- Settings UI: drag-to-reorder icon list, toggle visibility, pick icon from a set, assign panel type
+- Config shape (stored in settings / workspace config):
+```typescript
+SidebarConfig {
+  icons: SidebarIconEntry[]  // ordered list
+}
+
+SidebarIconEntry {
+  id: string           // e.g. 'explorer', 'source-control', 'testing'
+  icon: string         // icon identifier (built-in set or custom SVG path)
+  label: string        // tooltip / accessibility label
+  panelType: string    // component key to render in the panel area
+  enabled: boolean     // toggle visibility without removing
+}
+```
+
+### 6.8 File Tree
 
 **Features:**
 - Virtual list (TanStack Virtual) for large directories without DOM bloat
@@ -619,7 +656,7 @@ const status = await git.status();
 // status.modified, status.staged, status.not_added, etc.
 ```
 
-### 6.8 Search
+### 6.9 Search
 
 **Find in files (`Cmd+Shift+F`):**
 One of the most-used IDE features — especially critical for the AI workflow where you want to search for what the agent just wrote. Uses bundled ripgrep (`@vscode/ripgrep`) for speed and `.gitignore` awareness.
@@ -1133,6 +1170,9 @@ These need a decision before or during the relevant phase.
 | Q7 | **Linked workspace groups?** | v2+ | Related workspaces (frontend + backend) that share context: cross-workspace terminal, shared env references. Interesting concept — needs design |
 | Q8 | **Agent project memory / context generation?** | v2+ | Auto-generate `project-summary.md`, track agent-seen files, surface unseen files for context priming. Design data model in v1 to not block this |
 | Q9 | **Ghostty libghostty-vt WASM as xterm.js parser replacement?** | v2+ | Ghostty is open source (MIT/Zig). DIY WASM build is possible but heavy — needs system API stubs, JS bridge to xterm.js renderer, and ongoing fork maintenance. Wait for official WASM build unless xterm.js parsing causes real issues. See Terminal section notes |
+| Q10 | ~~**Best keybinding for fullscreen browser toggle?**~~ | 3 | **Resolved:** `Cmd+\`` — no common IDE conflicts, has a natural "toggle/switch" feel consistent with macOS `Cmd+\`` window cycling |
+| Q11 | **Source Control panel: embed git graph or link to a Dockview pane?** | v2+ | Git graph (commit DAG) can get complex. Options: simplified inline graph in sidebar, or clicking "Git Graph" opens a full Dockview pane. Sidebar space is limited — lean toward a summary view in sidebar + full pane for detail |
+| Q12 | **PR list data source: GitHub API only, or also GitLab/Bitbucket?** | v2+ | Start with GitHub (octokit). Abstract behind a provider interface so other forges can be added via plugins |
 
 ---
 
