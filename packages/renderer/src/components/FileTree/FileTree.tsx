@@ -215,8 +215,14 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     return unsub
   }, [])
 
-  // Subscribe to git status updates
+  // Subscribe to git status updates — clear immediately on rootPath change
+  // to avoid showing stale indicators from the previous workspace
   useEffect(() => {
+    setGitStatus({})
+    setIgnoredPaths(new Set())
+
+    if (!rootPath) return
+
     window.api.getGitStatus().then((result) => {
       if (result) {
         setGitStatus(result.files)

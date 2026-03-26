@@ -13,7 +13,14 @@ import { useWorktrees } from '../hooks/useWorktrees'
 import { ToastContainer, showToast } from './Toast'
 import { CommandPalette } from './CommandPalette'
 import { QuickOpen } from './QuickOpen'
+import { GitignoreReviewModal } from './GitignoreReviewModal'
+import { TaskInputModal } from './TaskInputModal'
+import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { registerDefaultCommands } from '../lib/defaultCommands'
+import { useTasks } from '../hooks/useTasks'
+import { useWorkspaces } from '../hooks/useWorkspaces'
+import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspaceSwitcher'
+import type { GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
 
 /**
  * Top-level application shell that manages workspace state, dockview panels, shortcuts, and the main UI layout.
@@ -27,26 +34,176 @@ import { registerDefaultCommands } from '../lib/defaultCommands'
  */
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
+  const sidebarWidthRef = useRef(220)
+  const prevWorkspaceRootRef = useRef<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
+  const [gitignoreAudit, setGitignoreAudit] = useState<GitignoreAuditResult | null>(null)
+  const [gitignoreModalOpen, setGitignoreModalOpen] = useState(false)
+  const [taskInputRequest, setTaskInputRequest] = useState<TaskInputRequest | null>(null)
+  const [wsContextMenu, setWsContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const { runningTasks } = useTasks()
+
+  // Workspace registry
+  const {
+    workspaces,
+    activeWorkspaceId,
+    activeWorkspace,
+    switchWorkspace,
+    createWorkspace,
+    closeWorkspace,
+    removeWorkspace,
+    updateWorkspace,
+    reorderWorkspaces,
+  } = useWorkspaces()
+
+  // Derive workspaceRoot from active workspace for existing consumers
+  const workspaceRoot = activeWorkspace?.rootPath ?? null
   const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
 
-  // Load persisted workspace root on mount
+  // Full Dockview clear + restore when workspace changes
   useEffect(() => {
-    window.api.getWorkspaceRoot().then(setWorkspaceRoot)
+    const api = dockviewApiRef.current
+    if (!api || !workspaceRoot) return
+    // Skip on initial mount (no previous workspace to save)
+    const prevRoot = prevWorkspaceRootRef.current
+    prevWorkspaceRootRef.current = workspaceRoot
+    if (prevRoot === workspaceRoot) return
+    if (prevRoot === null) return // first load — DockviewContainer handles initial layout
+
+    doSwitchWorkspace({
+      dockviewApi: api,
+      currentRootPath: prevRoot,
+      targetRootPath: workspaceRoot,
+      sidebarWidth: sidebarWidthRef.current,
+      sidebarCollapsed,
+      onSidebarRestore: (width, collapsed) => {
+        sidebarWidthRef.current = width
+        setSidebarCollapsed(collapsed)
+      },
+    })
+  }, [workspaceRoot]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for gitignore audit results from main process and command palette
+  useEffect(() => {
+    const handleAudit = (result: GitignoreAuditResult) => {
+      setGitignoreAudit(result)
+      showToast(
+        `Found ${result.missing.length} missing .gitignore pattern${result.missing.length !== 1 ? 's' : ''} for sensitive files`,
+        { label: 'Review', onClick: () => setGitignoreModalOpen(true) },
+      )
+    }
+
+    const unsub = window.api.onGitignoreAuditResult(handleAudit)
+
+    // Also listen for command-palette-triggered audits
+    const handleCustom = (e: Event) => {
+      handleAudit((e as CustomEvent<GitignoreAuditResult>).detail)
+    }
+    window.addEventListener('aide:gitignore-audit', handleCustom)
+
+    return () => {
+      unsub()
+      window.removeEventListener('aide:gitignore-audit', handleCustom)
+    }
   }, [])
+
+  // Listen for task input requests
+  useEffect(() => {
+    const unsub = window.api.onTaskRequestInput((request) => {
+      setTaskInputRequest(request)
+    })
+    return unsub
+  }, [])
+
+  // Listen for task auto-detect results (offer to generate tasks.json)
+  useEffect(() => {
+    const unsub = window.api.onTaskAutoDetect((tasks) => {
+      showToast(
+        `Detected ${tasks.length} task${tasks.length !== 1 ? 's' : ''} from project config`,
+        {
+          label: 'Generate tasks.json',
+          onClick: async () => {
+            const result = await window.api.generateTasks()
+            if ('error' in result) {
+              showToast(result.error)
+            } else {
+              showToast('Generated .aide/tasks.json')
+            }
+          },
+        },
+      )
+    })
+    return unsub
+  }, [])
+
+  // Cmd+1-9 and Cmd+Shift+[/] workspace switching
+  useEffect(() => {
+    const handleSwitch = (e: Event) => {
+      const { index } = (e as CustomEvent<{ index: number }>).detail
+      if (index < workspaces.length) {
+        switchWorkspace(workspaces[index].id)
+      }
+    }
+    const handleCycle = (e: Event) => {
+      const { direction } = (e as CustomEvent<{ direction: number }>).detail
+      if (workspaces.length === 0 || !activeWorkspaceId) return
+      const currentIdx = workspaces.findIndex((w) => w.id === activeWorkspaceId)
+      const nextIdx = (currentIdx + direction + workspaces.length) % workspaces.length
+      switchWorkspace(workspaces[nextIdx].id)
+    }
+    window.addEventListener('aide:workspace-switch', handleSwitch)
+    window.addEventListener('aide:workspace-cycle', handleCycle)
+    return () => {
+      window.removeEventListener('aide:workspace-switch', handleSwitch)
+      window.removeEventListener('aide:workspace-cycle', handleCycle)
+    }
+  }, [workspaces, activeWorkspaceId, switchWorkspace])
 
   // Keep sidebarVisible context key in sync
   useEffect(() => {
     setContext('sidebarVisible', !sidebarCollapsed)
   }, [sidebarCollapsed])
 
-  const handleOpenFolder = useCallback(async () => {
-    const selected = await window.api.openWorkspaceDialog()
-    if (selected) setWorkspaceRoot(selected)
+  // Auto-save workspace state every 30 seconds (crash safety net)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      autoSave(
+        dockviewApiRef.current,
+        workspaceRoot,
+        sidebarWidthRef.current,
+        sidebarCollapsed,
+      )
+    }, 30_000)
+    return () => clearInterval(interval)
+  }, [workspaceRoot, sidebarCollapsed])
+
+  // Handle quit save request from main process
+  useEffect(() => {
+    const unsub = window.api.onLifecycleRequestSave(() => {
+      autoSave(
+        dockviewApiRef.current,
+        workspaceRoot,
+        sidebarWidthRef.current,
+        sidebarCollapsed,
+      )
+      window.api.lifecycleSaveComplete()
+    })
+    return unsub
+  }, [workspaceRoot, sidebarCollapsed])
+
+  // Handle crash recovery notification
+  useEffect(() => {
+    const unsub = window.api.onCrashDetected(() => {
+      showToast('aIDE recovered from an unexpected shutdown. Some recent changes may not have been saved.')
+    })
+    return unsub
   }, [])
+
+  const handleOpenFolder = useCallback(async () => {
+    await createWorkspace()
+  }, [createWorkspace])
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
@@ -266,7 +423,14 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <WorkspaceRibbon />
+      <WorkspaceRibbon
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSwitch={switchWorkspace}
+        onCreateWorkspace={handleOpenFolder}
+        onReorder={reorderWorkspaces}
+        onContextMenu={(id, x, y) => setWsContextMenu({ id, x, y })}
+      />
       <div className="app-middle">
         <Sidebar
           onFileOpen={onFileOpen}
@@ -304,7 +468,7 @@ export function AppShell() {
           <DockviewContainer onApiReady={onApiReady} />
         </div>
       </div>
-      <StatusBar />
+      <StatusBar runningTasks={runningTasks} />
       <ToastContainer />
       {commandPaletteOpen && (
         <CommandPalette onClose={() => setCommandPaletteOpen(false)} />
@@ -313,6 +477,57 @@ export function AppShell() {
         <QuickOpen
           onClose={() => setQuickOpenOpen(false)}
           workspaceRoot={activeRoot}
+        />
+      )}
+      {gitignoreModalOpen && gitignoreAudit && (
+        <GitignoreReviewModal
+          auditResult={gitignoreAudit}
+          onClose={() => {
+            setGitignoreModalOpen(false)
+            setGitignoreAudit(null)
+          }}
+        />
+      )}
+      {taskInputRequest && (
+        <TaskInputModal
+          request={taskInputRequest}
+          onClose={() => setTaskInputRequest(null)}
+        />
+      )}
+      {wsContextMenu && (
+        <WorkspaceContextMenu
+          x={wsContextMenu.x}
+          y={wsContextMenu.y}
+          onClose={() => setWsContextMenu(null)}
+          items={[
+            {
+              label: 'Rename',
+              onClick: () => {
+                const ws = workspaces.find((w) => w.id === wsContextMenu.id)
+                if (!ws) return
+                const newName = prompt('Rename workspace:', ws.name)
+                if (newName && newName !== ws.name) {
+                  updateWorkspace(wsContextMenu.id, { name: newName })
+                }
+              },
+            },
+            {
+              label: 'Reveal in Finder',
+              onClick: () => {
+                const ws = workspaces.find((w) => w.id === wsContextMenu.id)
+                if (ws) window.api.revealInFinder(ws.rootPath)
+              },
+            },
+            {
+              label: 'Close Workspace',
+              onClick: () => closeWorkspace(wsContextMenu.id),
+            },
+            {
+              label: 'Remove Workspace',
+              danger: true,
+              onClick: () => removeWorkspace(wsContextMenu.id),
+            },
+          ]}
         />
       )}
     </div>

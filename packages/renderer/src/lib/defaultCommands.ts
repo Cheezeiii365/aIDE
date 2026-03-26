@@ -45,28 +45,86 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     },
   )
 
-  // Cmd+1 through Cmd+9 — workspace switching (placeholder)
+  // Cmd+1 through Cmd+9 — workspace switching
   for (let n = 1; n <= 9; n++) {
     registerCommand(
       { id: `workspace.switchTo${n}`, label: `Switch to Workspace ${n}`, keybinding: `Cmd+${n}`, category: 'Workspace' },
-      () => showToast(`Workspace switching is not yet available`),
+      () => window.dispatchEvent(new CustomEvent('aide:workspace-switch', { detail: { index: n - 1 } })),
     )
   }
 
-  // Cmd+Shift+] / Cmd+Shift+[ — cycle workspace tabs (placeholder)
+  // Cmd+Shift+] / Cmd+Shift+[ — cycle workspace tabs
   registerCommand(
-    { id: 'workspace.cycleTabNext', label: 'Next Tab', keybinding: 'Cmd+Shift+]', category: 'Workspace' },
-    () => showToast('Tab cycling is not yet available'),
+    { id: 'workspace.cycleTabNext', label: 'Next Workspace', keybinding: 'Cmd+Shift+]', category: 'Workspace' },
+    () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: 1 } })),
   )
 
   registerCommand(
-    { id: 'workspace.cycleTabPrev', label: 'Previous Tab', keybinding: 'Cmd+Shift+[', category: 'Workspace' },
-    () => showToast('Tab cycling is not yet available'),
+    { id: 'workspace.cycleTabPrev', label: 'Previous Workspace', keybinding: 'Cmd+Shift+[', category: 'Workspace' },
+    () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: -1 } })),
   )
 
   // Cmd+T — symbol search (placeholder, awaiting LSP)
   registerCommand(
     { id: 'editor.symbolSearch', label: 'Go to Symbol', keybinding: 'Cmd+T', category: 'Editor' },
     () => showToast('Symbol search requires LSP (coming in Phase 3)'),
+  )
+
+  // Gitignore security audit — on-demand via command palette
+  registerCommand(
+    { id: 'gitignore.audit', label: 'Audit .gitignore Security', category: 'aIDE' },
+    async () => {
+      const result = await window.api.auditGitignore()
+      if (result.missing.length === 0) {
+        showToast('All security patterns are present in .gitignore')
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('aide:gitignore-audit', { detail: result }),
+        )
+      }
+    },
+  )
+
+  // Task system commands
+  registerCommand(
+    { id: 'task.run', label: 'Run Task...', category: 'Task', keybinding: 'Cmd+Shift+B' },
+    async () => {
+      const { tasks, compounds } = await window.api.listTasks()
+      const allItems = [
+        ...tasks.map((t) => ({ id: t.id, label: t.label, group: t.group })),
+        ...compounds.map((c) => ({ id: c.id, label: c.label, group: undefined })),
+      ]
+      if (allItems.length === 0) {
+        showToast('No tasks defined. Create .aide/tasks.json to add tasks.')
+        return
+      }
+      // Dispatch to command palette for task selection
+      window.dispatchEvent(
+        new CustomEvent('aide:task-picker', { detail: allItems }),
+      )
+    },
+  )
+
+  registerCommand(
+    { id: 'task.runLast', label: 'Run Last Task', category: 'Task', keybinding: 'Cmd+Shift+R' },
+    () => {
+      // Dispatch event — AppShell handles via useTasks
+      window.dispatchEvent(new CustomEvent('aide:task-run-last'))
+    },
+  )
+
+  registerCommand(
+    { id: 'task.terminate', label: 'Terminate Task...', category: 'Task', keybinding: 'Cmd+Shift+X' },
+    () => {
+      window.dispatchEvent(new CustomEvent('aide:task-terminate'))
+    },
+  )
+
+  registerCommand(
+    { id: 'task.reloadTasks', label: 'Reload Tasks', category: 'Task' },
+    async () => {
+      await window.api.reloadTasks()
+      showToast('Tasks reloaded')
+    },
   )
 }

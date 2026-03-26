@@ -20,3 +20,11 @@ export function onDirtyChange(callback: (filePath: string, dirty: boolean) => vo
   listeners.add(callback)
   return () => { listeners.delete(callback) }
 }
+
+export function getAllDirty(): Map<string, boolean> {
+  return new Map(dirtyMap)
+}
+
+export function clearAllDirty(): void {
+  dirtyMap.clear()
+}

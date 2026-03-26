@@ -11,8 +11,18 @@ import { registerFileWatcherHandlers, startWatcher, startWatchers, stopWatcher }
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
 import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
 import { startSearch, cancelSearch } from './ripgrepSearch'
+import { ensureAideFolder } from './aideInit'
+import { resolveSettings } from './settingsResolver'
+import { auditGitignore, appendToGitignore, isAuditDismissed, dismissAudit } from './gitignoreAudit'
+import { TaskRunner } from './taskRunner'
+import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
+import { WorkspaceRegistry } from './workspaceRegistry'
+import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './stateSerializer'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
+const workspaceRegistry = new WorkspaceRegistry()
+
+let taskRunner: TaskRunner | null = null
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -184,22 +194,221 @@ ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_SET, (_event, width: number) => {
 })
 
 // Workspace IPC handlers
+// Open folder dialog — now delegates to workspace registry
 ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   })
   if (result.canceled || result.filePaths.length === 0) return null
   const selected = result.filePaths[0]
-  store.set('workspaceRoot', selected)
-  store.set('activeWorktree', null)
-  await startWatchers('default', [selected])
-  const getWc = () => contentView?.webContents ?? null
-  await startGitPolling(selected, getWc)
-  await startWorktreePolling(selected, getWc, store)
+
+  // Create workspace entry and activate it (handles .aide init, watchers, etc.)
+  const entry = workspaceRegistry.create(selected)
+  await activateWorkspace(entry.id)
+
+  // Auto-detect tasks (non-blocking)
+  if (!hasTasksFile(selected)) {
+    detectTasks(selected).then((tasks) => {
+      if (tasks.length > 0) {
+        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, tasks)
+      }
+    })
+  }
+
+  // Gitignore audit (non-blocking)
+  isAuditDismissed(selected).then(async (dismissed) => {
+    if (dismissed) return
+    const auditResult = await auditGitignore(selected)
+    if (auditResult.missing.length > 0) {
+      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
+    }
+  })
+
   return selected
 })
 
 ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, () => store.get('workspaceRoot'))
+
+// Workspace registry IPC handlers
+function broadcastWorkspaceRegistry(): void {
+  const workspaces = workspaceRegistry.getAll()
+  contentView?.webContents.send(IpcChannels.WORKSPACE_REGISTRY_CHANGED, workspaces)
+}
+
+async function activateWorkspace(id: string): Promise<void> {
+  const entry = workspaceRegistry.get(id)
+  if (!entry) return
+
+  workspaceRegistry.setActive(id)
+  store.set('workspaceRoot', entry.rootPath)
+  store.set('activeWorktree', null)
+
+  await ensureAideFolder(entry.rootPath)
+  initTaskRunner(entry.rootPath)
+
+  // Stop old pollers before starting new ones to prevent stale data broadcasts
+  stopGitPolling()
+  stopWorktreePolling()
+
+  await startWatchers('default', [entry.rootPath])
+  const getWc = () => contentView?.webContents ?? null
+  // startGitPolling does an initial fetch and sends the result immediately
+  await startGitPolling(entry.rootPath, getWc)
+  await startWorktreePolling(entry.rootPath, getWc, store)
+
+  broadcastWorkspaceRegistry()
+}
+
+ipcMain.handle(IpcChannels.WORKSPACE_LIST, () => {
+  return workspaceRegistry.getAll()
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_CREATE, async (_event, rootPath: string) => {
+  const entry = workspaceRegistry.create(rootPath)
+  await activateWorkspace(entry.id)
+
+  // Auto-detect tasks (non-blocking)
+  if (!hasTasksFile(rootPath)) {
+    detectTasks(rootPath).then((tasks) => {
+      if (tasks.length > 0) {
+        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, tasks)
+      }
+    })
+  }
+
+  // Gitignore audit (non-blocking)
+  isAuditDismissed(rootPath).then(async (dismissed) => {
+    if (dismissed) return
+    const auditResult = await auditGitignore(rootPath)
+    if (auditResult.missing.length > 0) {
+      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
+    }
+  })
+
+  return entry
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_REMOVE, (_event, id: string) => {
+  workspaceRegistry.remove(id)
+  broadcastWorkspaceRegistry()
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_CLOSE, (_event, id: string) => {
+  workspaceRegistry.close(id)
+  broadcastWorkspaceRegistry()
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_SWITCH, async (_event, id: string) => {
+  await activateWorkspace(id)
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_UPDATE, (_event, id: string, patch: Partial<{ name: string; icon: string; color: string }>) => {
+  workspaceRegistry.update(id, patch)
+  broadcastWorkspaceRegistry()
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_REORDER, (_event, ids: string[]) => {
+  workspaceRegistry.reorder(ids)
+  broadcastWorkspaceRegistry()
+})
+
+ipcMain.handle(IpcChannels.WORKSPACE_GET_ACTIVE, () => {
+  return workspaceRegistry.getActiveId()
+})
+
+// State persistence IPC handlers
+ipcMain.handle(IpcChannels.STATE_SAVE, async (_event, rootPath: string, state: import('@aide/shared').AideLocalState) => {
+  await saveWorkspaceState(rootPath, state)
+})
+
+ipcMain.handle(IpcChannels.STATE_LOAD, async (_event, rootPath: string) => {
+  return loadWorkspaceState(rootPath)
+})
+
+ipcMain.handle(IpcChannels.STATE_SAVE_TERMINALS, async (_event, rootPath: string, state: import('@aide/shared').AideLocalTerminals) => {
+  await saveTerminalState(rootPath, state)
+})
+
+ipcMain.handle(IpcChannels.STATE_LOAD_TERMINALS, async (_event, rootPath: string) => {
+  return loadTerminalState(rootPath)
+})
+
+// .aide settings IPC handler
+ipcMain.handle(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return null
+  return resolveSettings(rootPath, store)
+})
+
+// Gitignore security audit IPC handlers
+ipcMain.handle(IpcChannels.GITIGNORE_AUDIT, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return { missing: [], total: 0 }
+  return auditGitignore(rootPath)
+})
+
+ipcMain.handle(IpcChannels.GITIGNORE_APPEND, async (_event, patterns: string[]) => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return
+  await appendToGitignore(rootPath, patterns)
+})
+
+ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return
+  await dismissAudit(rootPath)
+})
+
+// Task system IPC handlers
+function initTaskRunner(rootPath: string): void {
+  const getWc = () => contentView?.webContents ?? null
+  taskRunner = new TaskRunner(rootPath, {
+    onStatusChanged: (execution) => getWc()?.send(IpcChannels.TASK_STATUS_CHANGED, execution),
+    onRequestInput: (request) => getWc()?.send(IpcChannels.TASK_REQUEST_INPUT, request),
+    onDiagnostics: (diagnostics) => getWc()?.send(IpcChannels.TASK_DIAGNOSTICS, diagnostics),
+    onPtyData: (ptyId, data) => getWc()?.send(IpcChannels.PTY_DATA_OUT, ptyId, data),
+    onPtyExit: (ptyId, exitCode) => getWc()?.send(IpcChannels.PTY_EXIT, ptyId, exitCode),
+  })
+  taskRunner.loadTasks()
+}
+
+ipcMain.handle(IpcChannels.TASK_LIST, async () => {
+  if (!taskRunner) return { tasks: [], compounds: [] }
+  await taskRunner.loadTasks()
+  return { tasks: taskRunner.getTasks(), compounds: taskRunner.getCompounds() }
+})
+
+ipcMain.handle(IpcChannels.TASK_RUN, async (_event, taskId: string) => {
+  if (!taskRunner) return { error: 'No workspace open' }
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return { error: 'No workspace open' }
+
+  const ctx = {
+    workspaceRoot: rootPath,
+    workspaceName: rootPath.split('/').pop() ?? rootPath,
+  }
+  return taskRunner.run(taskId, ctx)
+})
+
+ipcMain.on(IpcChannels.TASK_KILL, (_event, executionId: string) => {
+  taskRunner?.kill(executionId)
+})
+
+ipcMain.handle(IpcChannels.TASK_RELOAD, async () => {
+  await taskRunner?.loadTasks()
+})
+
+ipcMain.on(IpcChannels.TASK_PROVIDE_INPUT, (_event, requestId: string, value: string | null) => {
+  taskRunner?.provideInput(requestId, value)
+})
+
+ipcMain.handle(IpcChannels.TASK_GENERATE, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return { error: 'No workspace open' }
+  const tasks = await detectTasks(rootPath)
+  if (tasks.length === 0) return { error: 'No tasks detected' }
+  return generateTasksFile(rootPath, tasks)
+})
 
 // Filesystem IPC handlers
 const HIDDEN_FILES = new Set(['.DS_Store', 'Thumbs.db'])
@@ -407,6 +616,19 @@ ipcMain.handle(IpcChannels.SEARCH_REPLACE, async (_event, opts: ReplaceOpts) => 
 })
 
 app.whenReady().then(async () => {
+  // Handle --clean flag: clear session but keep registry
+  const isClean = process.argv.includes('--clean')
+  if (isClean) {
+    console.log('[startup] --clean flag detected, clearing session')
+    workspaceRegistry.setSessionWorkspaces([])
+    store.set('workspaceRoot', null)
+    store.set('activeWorktree', null)
+  }
+
+  // Detect crash from previous session
+  const wasCleanShutdown = store.get('cleanShutdown')
+  store.set('cleanShutdown', false)
+
   buildAppMenu()
   createWindow()
   registerPtyHandlers(() => contentView?.webContents ?? null, store)
@@ -416,31 +638,83 @@ app.whenReady().then(async () => {
   registerGitStatusHandlers(getWebContents)
   registerWorktreeHandlers(getWebContents, store)
 
-  // Auto-start watcher if we have a persisted workspace
-  const savedRoot = store.get('workspaceRoot')
-  if (savedRoot && existsSync(savedRoot)) {
-    // Watch both repo root and active worktree (if set) so changes in either are detected
-    const activeWorktree = store.get('activeWorktree')
-    const hasWorktree = activeWorktree && existsSync(activeWorktree)
-    const watchRoots = hasWorktree ? [savedRoot, activeWorktree] : [savedRoot]
-    await startWatchers('default', watchRoots)
-    // Git polling uses the effective root for status
-    const effectiveRoot = hasWorktree ? activeWorktree : savedRoot
-    await startGitPolling(effectiveRoot, getWebContents)
-    await startWorktreePolling(savedRoot, getWebContents, store)
-  } else if (savedRoot) {
-    console.warn(`[startup] Persisted workspace root no longer exists: ${savedRoot}`)
-    store.set('workspaceRoot', '')
-    store.set('activeWorktree', '')
+  // Notify renderer of crash recovery after window loads
+  if (wasCleanShutdown === false && !isClean) {
+    contentView?.webContents.once('did-finish-load', () => {
+      getWebContents()?.send(IpcChannels.LIFECYCLE_CRASH_DETECTED)
+    })
+  }
+
+  // Restore last session workspaces from registry
+  const sessionIds = workspaceRegistry.getSessionWorkspaces()
+  const staleIds = workspaceRegistry.validatePaths()
+
+  if (staleIds.length > 0) {
+    console.warn(`[startup] Removing ${staleIds.length} workspace(s) with missing paths`)
+    for (const id of staleIds) {
+      workspaceRegistry.remove(id)
+    }
+  }
+
+  // Activate the last active workspace (if it still exists in session)
+  const activeId = workspaceRegistry.getActiveId()
+  const validSessionIds = sessionIds.filter((id) => !staleIds.includes(id))
+
+  if (activeId && validSessionIds.includes(activeId)) {
+    await activateWorkspace(activeId)
+  } else if (validSessionIds.length > 0) {
+    await activateWorkspace(validSessionIds[0])
+  } else {
+    // No workspaces — renderer shows welcome tab (default Dockview layout)
+    store.set('workspaceRoot', null)
+    store.set('activeWorktree', null)
   }
 })
 
-app.on('before-quit', async () => {
+// Graceful quit: request renderer to save state, then clean up
+let isQuitting = false
+
+app.on('before-quit', (event) => {
+  if (isQuitting) return // Already in quit sequence
+
+  event.preventDefault()
+  isQuitting = true
+
+  const wc = contentView?.webContents ?? null
+
+  if (wc) {
+    // Ask renderer to save current workspace state
+    wc.send(IpcChannels.LIFECYCLE_REQUEST_SAVE)
+
+    // Wait for renderer to confirm save, or timeout after 2s
+    const saveTimeout = setTimeout(() => finishQuit(), 2000)
+
+    ipcMain.once(IpcChannels.LIFECYCLE_SAVE_COMPLETE, () => {
+      clearTimeout(saveTimeout)
+      finishQuit()
+    })
+  } else {
+    finishQuit()
+  }
+})
+
+function finishQuit(): void {
+  // Save session state to registry
+  const sessionWorkspaces = workspaceRegistry.getAll().map((w) => w.id)
+  workspaceRegistry.setSessionWorkspaces(sessionWorkspaces)
+
+  // Mark clean shutdown
+  store.set('cleanShutdown', true)
+
+  // Clean up resources
+  taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()
   stopWorktreePolling()
-  await stopWatcher()
-})
+  stopWatcher()
+
+  app.quit()
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

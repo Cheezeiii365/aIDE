@@ -1,13 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useEditorStatus } from '../hooks/useEditorStatus'
+import type { TaskExecution } from '@aide/shared'
 
-/**
- * Render an inline SVG icon representing a Git branch.
- *
- * The icon uses `currentColor` for its strokes, has a `0 0 16 16` viewBox, and is composed of three circles connected by a path to depict a branch.
- *
- * @returns A React element containing the SVG for the Git branch icon.
- */
 function GitBranchIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -19,14 +13,19 @@ function GitBranchIcon() {
   )
 }
 
-/**
- * Displays editor and git status in a footer-oriented status bar.
- *
- * Performs an initial fetch of the current Git branch and subscribes to branch updates while mounted; the subscription is removed on unmount.
- *
- * @returns The footer JSX element showing the Git branch (with icon), current line and column, file encoding, and language.
- */
-export function StatusBar() {
+function TaskSpinner() {
+  return (
+    <svg className="status-bar__spinner" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M8 2a6 6 0 1 1-4.24 1.76" />
+    </svg>
+  )
+}
+
+interface StatusBarProps {
+  runningTasks?: TaskExecution[]
+}
+
+export function StatusBar({ runningTasks = [] }: StatusBarProps) {
   const { status } = useEditorStatus()
   const [branch, setBranch] = useState('main')
 
@@ -45,6 +44,15 @@ export function StatusBar() {
           <GitBranchIcon />
           {branch}
         </span>
+        {runningTasks.length > 0 && (
+          <>
+            <div className="status-bar__separator" />
+            <span className="status-bar__item status-bar__item--tasks">
+              <TaskSpinner />
+              {runningTasks.length} task{runningTasks.length !== 1 ? 's' : ''}
+            </span>
+          </>
+        )}
         <div className="status-bar__separator" />
         <span className="status-bar__item">Ln {status.line}, Col {status.col}</span>
       </div>

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, WindowApi } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -118,6 +118,109 @@ const api: WindowApi = {
   },
   searchCancel: () => ipcRenderer.send(IpcChannels.SEARCH_CANCEL),
   searchReplace: (opts: ReplaceOpts) => ipcRenderer.invoke(IpcChannels.SEARCH_REPLACE, opts),
+
+  // .aide project folder
+  getResolvedSettings: (): Promise<ResolvedSettings> =>
+    ipcRenderer.invoke(IpcChannels.AIDE_GET_RESOLVED_SETTINGS),
+  onAideInitResult: (callback: (result: AideInitResult) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, result: AideInitResult) => callback(result)
+    ipcRenderer.on(IpcChannels.AIDE_INIT_RESULT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.AIDE_INIT_RESULT, handler)
+  },
+
+  // Gitignore security audit
+  auditGitignore: (): Promise<GitignoreAuditResult> =>
+    ipcRenderer.invoke(IpcChannels.GITIGNORE_AUDIT),
+  appendToGitignore: (patterns: string[]): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.GITIGNORE_APPEND, patterns),
+  dismissGitignoreAudit: (): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.GITIGNORE_DISMISS),
+  onGitignoreAuditResult: (callback: (result: GitignoreAuditResult) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, result: GitignoreAuditResult) => callback(result)
+    ipcRenderer.on(IpcChannels.GITIGNORE_AUDIT_RESULT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.GITIGNORE_AUDIT_RESULT, handler)
+  },
+
+  // Task system
+  listTasks: (): Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }> =>
+    ipcRenderer.invoke(IpcChannels.TASK_LIST),
+  runTask: (taskId: string): Promise<{ executionId: string } | { error: string }> =>
+    ipcRenderer.invoke(IpcChannels.TASK_RUN, taskId),
+  killTask: (executionId: string) =>
+    ipcRenderer.send(IpcChannels.TASK_KILL, executionId),
+  reloadTasks: (): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.TASK_RELOAD),
+  generateTasks: (): Promise<{ success: true } | { error: string }> =>
+    ipcRenderer.invoke(IpcChannels.TASK_GENERATE),
+  provideTaskInput: (requestId: string, value: string | null) =>
+    ipcRenderer.send(IpcChannels.TASK_PROVIDE_INPUT, requestId, value),
+  onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, execution: TaskExecution) => callback(execution)
+    ipcRenderer.on(IpcChannels.TASK_STATUS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.TASK_STATUS_CHANGED, handler)
+  },
+  onTaskRequestInput: (callback: (request: TaskInputRequest) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: TaskInputRequest) => callback(request)
+    ipcRenderer.on(IpcChannels.TASK_REQUEST_INPUT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.TASK_REQUEST_INPUT, handler)
+  },
+  onTaskDiagnostics: (callback: (diagnostics: TaskDiagnostic[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, diagnostics: TaskDiagnostic[]) => callback(diagnostics)
+    ipcRenderer.on(IpcChannels.TASK_DIAGNOSTICS, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.TASK_DIAGNOSTICS, handler)
+  },
+  onTaskAutoDetect: (callback: (tasks: AideTask[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, tasks: AideTask[]) => callback(tasks)
+    ipcRenderer.on(IpcChannels.TASK_AUTO_DETECT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.TASK_AUTO_DETECT, handler)
+  },
+
+  // Workspace registry
+  listWorkspaces: (): Promise<WorkspaceEntry[]> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_LIST),
+  createWorkspace: (rootPath: string): Promise<WorkspaceEntry> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_CREATE, rootPath),
+  removeWorkspace: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_REMOVE, id),
+  closeWorkspace: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_CLOSE, id),
+  switchWorkspace: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_SWITCH, id),
+  updateWorkspace: (id: string, patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_UPDATE, id, patch),
+  reorderWorkspaces: (ids: string[]): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_REORDER, ids),
+  getActiveWorkspaceId: (): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_GET_ACTIVE),
+  onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaces: WorkspaceEntry[]) => callback(workspaces)
+    ipcRenderer.on(IpcChannels.WORKSPACE_REGISTRY_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.WORKSPACE_REGISTRY_CHANGED, handler)
+  },
+
+  // State persistence
+  saveWorkspaceState: (rootPath: string, state: AideLocalState): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.STATE_SAVE, rootPath, state),
+  loadWorkspaceState: (rootPath: string): Promise<AideLocalState | null> =>
+    ipcRenderer.invoke(IpcChannels.STATE_LOAD, rootPath),
+  saveTerminalState: (rootPath: string, state: AideLocalTerminals): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.STATE_SAVE_TERMINALS, rootPath, state),
+  loadTerminalState: (rootPath: string): Promise<AideLocalTerminals | null> =>
+    ipcRenderer.invoke(IpcChannels.STATE_LOAD_TERMINALS, rootPath),
+
+  // App lifecycle
+  onLifecycleRequestSave: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IpcChannels.LIFECYCLE_REQUEST_SAVE, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.LIFECYCLE_REQUEST_SAVE, handler)
+  },
+  lifecycleSaveComplete: () =>
+    ipcRenderer.send(IpcChannels.LIFECYCLE_SAVE_COMPLETE),
+  onCrashDetected: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IpcChannels.LIFECYCLE_CRASH_DETECTED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.LIFECYCLE_CRASH_DETECTED, handler)
+  },
 
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,
