@@ -42,6 +42,7 @@ interface RunningTask {
 export class TaskRunner {
   private tasksFile: AideTasksFile | null = null
   private running = new Map<string, RunningTask>()
+  private completedExitCodes = new Map<string, number>()
   private lastTaskId: string | null = null
   private rootPath: string
   private callbacks: TaskRunnerCallbacks
@@ -344,6 +345,7 @@ export class TaskRunner {
     // Exit handler
     pty.onExit(({ exitCode }) => {
       this.callbacks.onPtyExit(ptyId, exitCode)
+      this.completedExitCodes.set(execution.executionId, exitCode)
       this.running.delete(execution.executionId)
 
       if (runningTask.timeoutTimer) {
@@ -461,10 +463,15 @@ export class TaskRunner {
   private waitForCompletion(executionId: string): Promise<number> {
     return new Promise<number>((resolve) => {
       const check = () => {
+        const completed = this.completedExitCodes.get(executionId)
+        if (completed !== undefined) {
+          this.completedExitCodes.delete(executionId)
+          resolve(completed)
+          return
+        }
         const running = this.running.get(executionId)
         if (!running) {
-          // Already finished — find the exit code from the execution
-          resolve(0) // If not found, assume success
+          resolve(1)
           return
         }
         if (running.execution.status !== 'running') {
