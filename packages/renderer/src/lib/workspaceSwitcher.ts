@@ -9,17 +9,22 @@ import type { DockviewApi } from 'dockview-react'
 import type { AideLocalState } from '@aide/shared'
 import { clearCache } from './editorStateCache'
 import { clearAllDirty } from './editorDirtyState'
+import { createTerminalPanelParams, serializeTerminalState } from './terminalState'
 import { serializeWorkspaceState } from './workspaceStateSerializer'
 
 let switchGeneration = 0
 
 interface SwitchContext {
   dockviewApi: DockviewApi
+  currentWorkspaceId: string | null
   currentRootPath: string | null
+  targetWorkspaceId: string
   targetRootPath: string
   sidebarWidth: number
   sidebarCollapsed: boolean
   onSidebarRestore: (width: number, collapsed: boolean) => void
+  onBeforeClearPanels?: () => void
+  onAfterRestorePanels?: () => void
 }
 
 /**
@@ -40,6 +45,7 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
     )
     // Fire-and-forget — don't block the switch
     window.api.saveWorkspaceState(ctx.currentRootPath, state).catch(() => {})
+    window.api.saveTerminalState(ctx.currentRootPath, serializeTerminalState(ctx.dockviewApi)).catch(() => {})
   }
 
   // Check if superseded
@@ -48,6 +54,7 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
   // 2. CLEAR current UI
   clearCache()
   clearAllDirty()
+  ctx.onBeforeClearPanels?.()
 
   // Remove all panels from Dockview
   const panels = [...ctx.dockviewApi.panels]
@@ -72,11 +79,13 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
       ctx.dockviewApi.fromJSON(savedState.layout as Parameters<DockviewApi['fromJSON']>[0])
     } catch {
       // Layout restore failed — use default
-      createDefaultLayout(ctx.dockviewApi, ctx.targetRootPath)
+      createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath)
     }
   } else {
-    createDefaultLayout(ctx.dockviewApi, ctx.targetRootPath)
+    createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath)
   }
+  ctx.onAfterRestorePanels?.()
+  window.api.saveTerminalState(ctx.targetRootPath, serializeTerminalState(ctx.dockviewApi)).catch(() => {})
 
   // 5. RESTORE sidebar
   if (savedState) {
@@ -99,7 +108,7 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
 /**
  * Create the default 3-pane layout when no saved state exists.
  */
-function createDefaultLayout(api: DockviewApi, workspaceRoot: string): void {
+function createDefaultLayout(api: DockviewApi, workspaceId: string, workspaceRoot: string): void {
   api.addPanel({
     id: 'editor',
     component: 'placeholder',
@@ -110,7 +119,7 @@ function createDefaultLayout(api: DockviewApi, workspaceRoot: string): void {
     id: 'terminal',
     component: 'terminalPane',
     title: 'Terminal',
-    params: { worktreePath: workspaceRoot },
+    params: createTerminalPanelParams(workspaceId, workspaceRoot, 'Terminal'),
     position: { referencePanel: 'editor', direction: 'below' },
     initialHeight: 200,
   })
@@ -129,4 +138,5 @@ export function autoSave(
 
   const state = serializeWorkspaceState(dockviewApi, sidebarWidth, sidebarCollapsed)
   window.api.saveWorkspaceState(rootPath, state).catch(() => {})
+  window.api.saveTerminalState(rootPath, serializeTerminalState(dockviewApi)).catch(() => {})
 }

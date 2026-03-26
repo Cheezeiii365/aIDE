@@ -6,14 +6,11 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { WorktreeInfo } from '@aide/shared'
 import { getXtermTheme } from '../../lib/terminalTheme'
+import { type TerminalPanelParams } from '../../lib/terminalState'
 import { getAppActions } from '../../lib/appActions'
 import { useTheme } from '../../hooks/useTheme'
 import '@xterm/xterm/css/xterm.css'
 import '../../styles/terminal-pane.css'
-
-interface TerminalParams {
-  worktreePath?: string
-}
 
 interface ContextMenuState {
   x: number
@@ -33,15 +30,25 @@ interface ContextMenuState {
  * @param params.worktreePath - If provided, used as the PTY's initial working directory.
  * @returns The React element representing the terminal pane.
  */
-export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalParams>) {
+export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const ptyIdRef = useRef<string | null>(null)
+  const terminalIdRef = useRef<string>(params?.terminalId || globalThis.crypto?.randomUUID?.() || `terminal-${Date.now()}`)
   const { theme } = useTheme()
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
   const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (params?.terminalId) return
+    api.updateParameters({
+      ...params,
+      terminalId: terminalIdRef.current,
+      title: params?.title ?? 'Terminal',
+    })
+  }, [api, params])
 
   // Create terminal on mount
   useEffect(() => {
@@ -77,24 +84,30 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalParams
 
     async function init() {
       const cwd = params?.worktreePath || undefined
-      const { id } = await window.api.ptyCreate(cwd ? { cwd } : undefined)
-      if (destroyed) {
-        window.api.ptyKill(id)
-        return
-      }
+      const { id, scrollback } = await window.api.ptyCreate({
+        id: terminalIdRef.current,
+        workspaceId: params?.workspaceId,
+        cwd,
+        shell: params?.shell,
+        title: params?.title ?? 'Terminal',
+      })
+      if (destroyed) return
 
       ptyIdRef.current = id
+      if (scrollback) {
+        term.write(scrollback)
+      }
       window.api.ptyResize(id, term.cols, term.rows)
 
       term.onData((data) => {
         window.api.ptyWrite(id, data)
       })
 
-      cleanupData = window.api.onPtyData((incomingId, data) => {
+      cleanupData = window.api.onPtyData((incomingId: string, data: string) => {
         if (incomingId === id) term.write(data)
       })
 
-      cleanupExit = window.api.onPtyExit((incomingId, exitCode) => {
+      cleanupExit = window.api.onPtyExit((incomingId: string, exitCode: number) => {
         if (incomingId === id) {
           term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
         }
@@ -121,7 +134,6 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalParams
       if (resizeTimer) clearTimeout(resizeTimer)
       cleanupData?.()
       cleanupExit?.()
-      if (ptyIdRef.current) window.api.ptyKill(ptyIdRef.current)
       term.dispose()
       termRef.current = null
       fitRef.current = null
@@ -181,8 +193,14 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalParams
     if (ptyId) {
       window.api.ptyWrite(ptyId, `cd ${path}\n`)
     }
+    api.updateParameters({
+      ...params,
+      terminalId: terminalIdRef.current,
+      worktreePath: path,
+      title: params?.title ?? 'Terminal',
+    })
     closeContextMenu()
-  }, [closeContextMenu])
+  }, [api, closeContextMenu, params])
 
   return (
     <>
