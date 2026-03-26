@@ -672,11 +672,18 @@ ipcMain.handle(IpcChannels.FS_LIST_ALL_FILES, async (_event, rootPath: string): 
 })
 
 // Search (find in files) — ripgrep-backed
-ipcMain.handle(IpcChannels.SEARCH_START, (_event, opts: SearchOpts) => {
+ipcMain.handle(IpcChannels.SEARCH_START, async (_event, opts: SearchOpts) => {
+  const resolved = await resolveSettings(opts.rootPath, store)
+  const excludeMap = { ...resolved.filesExclude, ...resolved.searchExclude }
+  const excludeGlobs = Object.entries(excludeMap)
+    .filter(([, enabled]) => enabled)
+    .map(([pattern]) => pattern)
+
   startSearch(
     opts,
     (results) => contentView?.webContents.send(IpcChannels.SEARCH_RESULTS, results),
     (summary) => contentView?.webContents.send(IpcChannels.SEARCH_COMPLETE, summary),
+    excludeGlobs,
   )
 })
 

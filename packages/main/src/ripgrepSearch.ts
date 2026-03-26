@@ -33,6 +33,7 @@ export function startSearch(
   opts: SearchOpts,
   onResults: (results: SearchFileResult[]) => void,
   onComplete: (summary: { totalMatches: number; totalFiles: number }) => void,
+  excludeGlobs?: string[],
 ): void {
   cancelSearch()
 
@@ -42,6 +43,11 @@ export function startSearch(
   if (opts.wholeWord) args.push('--word-regexp')
   if (!opts.isRegex) args.push('--fixed-strings')
   if (opts.fileGlob) args.push('--glob', opts.fileGlob)
+  if (excludeGlobs) {
+    for (const glob of excludeGlobs) {
+      args.push('--glob', `!${glob}`)
+    }
+  }
 
   args.push('--', opts.query, opts.rootPath)
 
