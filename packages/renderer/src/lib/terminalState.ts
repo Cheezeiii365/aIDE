@@ -7,6 +7,7 @@ export interface TerminalPanelParams {
   worktreePath?: string
   shell?: string
   title?: string
+  zoomFactor?: number
 }
 
 /**
@@ -36,6 +37,7 @@ export function createTerminalPanelParams(
     workspaceId,
     worktreePath,
     title,
+    zoomFactor: 1,
   }
 }
 
@@ -62,6 +64,7 @@ export function createRestoredTerminalPanelParams(
     worktreePath,
     title,
     shell,
+    zoomFactor: 1,
   }
 }
 

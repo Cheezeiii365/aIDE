@@ -41,6 +41,9 @@ const browserPaneManager = new BrowserPaneManager({
  */
 function buildAppMenu(): void {
   const isMac = process.platform === 'darwin'
+  const sendZoomCommand = (target: 'panel', action: 'in' | 'out' | 'reset') => {
+    contentView?.webContents.send(IpcChannels.APP_ZOOM_COMMAND, { target, action })
+  }
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -73,9 +76,21 @@ function buildAppMenu(): void {
     {
       label: 'View',
       submenu: [
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { role: 'resetZoom' },
+        {
+          label: 'Zoom In',
+          accelerator: process.platform === 'darwin' ? 'Cmd+=' : 'Ctrl+=',
+          click: () => sendZoomCommand('panel', 'in'),
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: process.platform === 'darwin' ? 'Cmd+-' : 'Ctrl+-',
+          click: () => sendZoomCommand('panel', 'out'),
+        },
+        {
+          label: 'Actual Size',
+          accelerator: process.platform === 'darwin' ? 'Cmd+0' : 'Ctrl+0',
+          click: () => sendZoomCommand('panel', 'reset'),
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' },
         { type: 'separator' },
@@ -197,6 +212,14 @@ ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_GET, () => store.get('sidebarWidth'))
 ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_SET, (_event, width: number) => {
   store.set('sidebarWidth', width)
 })
+
+ipcMain.handle(IpcChannels.BROWSER_ZOOM_GET, (_event, paneId: string) => browserPaneManager.getZoom(paneId))
+ipcMain.handle(IpcChannels.BROWSER_ZOOM_SET, (_event, paneId: string, zoomFactor: number) =>
+  browserPaneManager.setZoom(paneId, zoomFactor),
+)
+ipcMain.handle(IpcChannels.BROWSER_ZOOM_ADJUST, (_event, paneId: string, delta: number) =>
+  browserPaneManager.adjustZoom(paneId, delta),
+)
 
 // Workspace IPC handlers
 // Open folder dialog — now delegates to workspace registry

@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from 'dockview-react'
 import { showToast } from '../Toast'
 import type { BrowserCanNavigatePayload, BrowserDidNavigatePayload, BrowserLoadingPayload, BrowserPageTitlePayload } from '@aide/shared'
 import type { BrowserPanelParams } from '../../lib/browserState'
+import { adjustZoomFactor, resetZoomFactor, zoomFactorToPercent } from '@aide/shared'
 import '../../styles/browser-pane.css'
 
 function titleForUrl(url: string): string {
@@ -31,6 +32,7 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
   const [loading, setLoading] = useState(false)
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
+  const [zoomFactor, setZoomFactor] = useState(params?.zoomFactor ?? 1)
 
   const paneId = params?.paneId ?? 'browser-pane'
   const workspaceId = params?.workspaceId ?? ''
@@ -76,6 +78,19 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
     })
   }, [api, paneId, workspaceId])
 
+  const updateZoomFactor = useCallback(async (nextZoom: number) => {
+    const currentParams = paramsRef.current
+    if (!currentParams) return
+    const appliedZoom = await window.api.setBrowserZoom(paneId, nextZoom)
+    setZoomFactor(appliedZoom)
+    api.updateParameters({
+      ...currentParams,
+      paneId,
+      workspaceId,
+      zoomFactor: appliedZoom,
+    })
+  }, [api, paneId, workspaceId])
+
   const commitNavigation = useCallback(async (rawUrl: string, retryCount = 0) => {
     const value = rawUrl.trim()
     const result = await window.api.browserNavigate(paneId, value)
@@ -98,7 +113,8 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
   useEffect(() => {
     setUrlInput(params?.url ?? '')
     setCurrentUrl(params?.url ?? '')
-  }, [params?.url])
+    setZoomFactor(params?.zoomFactor ?? 1)
+  }, [params?.url, params?.zoomFactor])
 
   const requestInitialLoad = useCallback(() => {
     const host = hostRef.current
@@ -122,6 +138,7 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
         return
       }
       browserReadyRef.current = true
+      void window.api.setBrowserZoom(paneId, params.zoomFactor ?? 1)
       lastHostUpdateRef.current = ''
       pushHostUpdate()
       requestInitialLoad()
@@ -130,6 +147,13 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
       browserReadyRef.current = false
     }
   }, [paneId, params?.sessionMode, pushHostUpdate, requestInitialLoad, workspaceId])
+
+  useEffect(() => {
+    if (!browserReadyRef.current) return
+    const nextZoom = params?.zoomFactor ?? 1
+    void window.api.setBrowserZoom(paneId, nextZoom)
+    setZoomFactor(nextZoom)
+  }, [paneId, params?.zoomFactor])
 
   useEffect(() => {
     const unsubNavigate = window.api.onBrowserDidNavigate((payload: BrowserDidNavigatePayload) => {
@@ -273,6 +297,32 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
             placeholder="Enter URL"
           />
         </form>
+        <div className="browser-pane__zoom">
+          <button
+            className="browser-pane__nav-btn"
+            type="button"
+            onClick={() => void updateZoomFactor(adjustZoomFactor(zoomFactor, -0.1))}
+            aria-label="Zoom out page"
+          >
+            -
+          </button>
+          <button
+            className="browser-pane__zoom-readout"
+            type="button"
+            onClick={() => void updateZoomFactor(resetZoomFactor())}
+            title="Reset page zoom"
+          >
+            {zoomFactorToPercent(zoomFactor)}%
+          </button>
+          <button
+            className="browser-pane__nav-btn"
+            type="button"
+            onClick={() => void updateZoomFactor(adjustZoomFactor(zoomFactor, 0.1))}
+            aria-label="Zoom in page"
+          >
+            +
+          </button>
+        </div>
         <div className={`browser-pane__status${loading ? ' browser-pane__status--loading' : ''}`}>
           {loading ? 'Loading' : pageTitle || titleForUrl(currentUrl)}
         </div>

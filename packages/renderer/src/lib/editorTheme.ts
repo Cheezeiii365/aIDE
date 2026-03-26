@@ -7,17 +7,49 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import type { ThemeName } from '@aide/shared'
 
 export const themeCompartment = new Compartment()
+export const editorMetricsCompartment = new Compartment()
 
 const baseTheme = EditorView.theme({
   '&': {
     height: '100%',
-    fontSize: '13px',
     fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace",
   },
   '.cm-scroller': {
     overflow: 'auto',
   },
 })
+
+export function getEditorMetrics(fontSize: number): { fontSize: number; lineHeight: string } {
+  return {
+    fontSize,
+    lineHeight: `${Math.round(fontSize * 1.6)}px`,
+  }
+}
+
+export function getEditorMetricsExtension(fontSize: number): Extension {
+  const metrics = getEditorMetrics(fontSize)
+  return EditorView.theme({
+    '&': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-content': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-line': {
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-gutters': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-gutterElement': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+  })
+}
 
 /* ─── Atom One Light — CodeMirror theme ────────────────────── */
 const oneLightTheme = EditorView.theme(

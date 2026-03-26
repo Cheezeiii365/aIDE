@@ -8,6 +8,7 @@ import type { WorktreeInfo } from '@aide/shared'
 import { getXtermTheme } from '../../lib/terminalTheme'
 import { type TerminalPanelParams } from '../../lib/terminalState'
 import { getAppActions } from '../../lib/appActions'
+import { getPanelZoomFactor } from '../../lib/panelZoom'
 import { useTheme } from '../../hooks/useTheme'
 import '@xterm/xterm/css/xterm.css'
 import '../../styles/terminal-pane.css'
@@ -16,6 +17,8 @@ interface ContextMenuState {
   x: number
   y: number
 }
+
+const TERMINAL_BASE_FONT_SIZE = 13
 
 /**
  * Render a terminal pane hosting an xterm.js terminal connected to a backend PTY and offering an in-terminal context menu for switching worktrees.
@@ -154,6 +157,19 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       termRef.current.options.theme = getXtermTheme()
     }
   }, [theme])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.fontSize = Math.round(TERMINAL_BASE_FONT_SIZE * getPanelZoomFactor(params))
+    fitRef.current?.fit()
+    const ptyId = ptyIdRef.current
+    if (ptyId) {
+      window.requestAnimationFrame(() => {
+        if (ptyIdRef.current) window.api.ptyResize(ptyId, term.cols, term.rows)
+      })
+    }
+  }, [params])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -22,6 +22,16 @@ const api: WindowApi = {
     const handler = (_event: Electron.IpcRendererEvent, isFullscreen: boolean) => callback(isFullscreen)
     ipcRenderer.on(IpcChannels.FULLSCREEN_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.FULLSCREEN_CHANGED, handler)
+  },
+
+  // Zoom
+  getBrowserZoom: (paneId: string) => ipcRenderer.invoke(IpcChannels.BROWSER_ZOOM_GET, paneId),
+  setBrowserZoom: (paneId: string, zoomFactor: number) => ipcRenderer.invoke(IpcChannels.BROWSER_ZOOM_SET, paneId, zoomFactor),
+  adjustBrowserZoom: (paneId: string, delta: number) => ipcRenderer.invoke(IpcChannels.BROWSER_ZOOM_ADJUST, paneId, delta),
+  onZoomCommand: (callback: (payload: ZoomCommandPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ZoomCommandPayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.APP_ZOOM_COMMAND, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.APP_ZOOM_COMMAND, handler)
   },
 
   // Sidebar width

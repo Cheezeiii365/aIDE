@@ -5,6 +5,7 @@ import { getAppActions } from '../../lib/appActions'
 
 interface FindInFilesParams {
   workspaceRoot: string
+  zoomFactor?: number
 }
 
 interface FileGroup {
@@ -175,7 +176,7 @@ export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParam
   }
 
   return (
-    <div className="find-in-files">
+    <div className="find-in-files" style={{ ['--panel-zoom' as string]: String(params.zoomFactor ?? 1) }}>
       <div className="fif-controls">
         <div className="fif-row">
           <input

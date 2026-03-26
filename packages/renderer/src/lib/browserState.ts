@@ -7,6 +7,7 @@ export interface BrowserPanelParams {
   sessionMode: BrowserSessionMode
   url: string
   hasLoadedOnce: boolean
+  zoomFactor: number
 }
 
 function randomId(): string {
@@ -24,6 +25,7 @@ export function createBrowserPanelParams(
     sessionMode,
     url,
     hasLoadedOnce: false,
+    zoomFactor: 1,
   }
 }
 
@@ -52,5 +54,6 @@ export function serializeBrowserPaneState(
       sessionMode: params.sessionMode,
       url: params.url,
       hasLoadedOnce: params.hasLoadedOnce,
+      zoomFactor: params.zoomFactor,
     }))
 }

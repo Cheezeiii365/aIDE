@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { ThemeProvider } from '@renderer/hooks/useTheme'
 import { EditorStatusProvider } from '@renderer/hooks/useEditorStatus'
 import { App } from '@renderer/App'
@@ -15,6 +15,10 @@ const mockApi: WindowApi = {
   setTheme: vi.fn().mockResolvedValue(undefined),
   onThemeChanged: vi.fn().mockReturnValue(() => {}),
   onFullscreenChanged: vi.fn().mockReturnValue(() => {}),
+  getBrowserZoom: vi.fn().mockResolvedValue(1),
+  setBrowserZoom: vi.fn().mockResolvedValue(1),
+  adjustBrowserZoom: vi.fn().mockResolvedValue(1),
+  onZoomCommand: vi.fn().mockReturnValue(() => {}),
   getSidebarWidth: vi.fn().mockResolvedValue(220),
   setSidebarWidth: vi.fn().mockResolvedValue(undefined),
   openWorkspaceDialog: vi.fn().mockResolvedValue(null),
@@ -133,34 +137,39 @@ beforeEach(() => {
   })
 })
 
-function renderApp() {
-  return render(
-    <ThemeProvider>
-      <EditorStatusProvider>
-        <App />
-      </EditorStatusProvider>
-    </ThemeProvider>,
-  )
+async function renderApp() {
+  let result: ReturnType<typeof render> | undefined
+  await act(async () => {
+    result = render(
+      <ThemeProvider>
+        <EditorStatusProvider>
+          <App />
+        </EditorStatusProvider>
+      </ThemeProvider>,
+    )
+    await Promise.resolve()
+  })
+  return result!
 }
 
 describe('App', () => {
-  it('renders the app shell layout', () => {
-    const { container } = renderApp()
+  it('renders the app shell layout', async () => {
+    const { container } = await renderApp()
     expect(container.querySelector('.app-shell')).toBeInTheDocument()
   })
 
-  it('renders the workspace ribbon with drag region', () => {
-    const { container } = renderApp()
+  it('renders the workspace ribbon with drag region', async () => {
+    const { container } = await renderApp()
     expect(container.querySelector('.workspace-ribbon')).toBeInTheDocument()
   })
 
-  it('renders the sidebar', () => {
-    const { container } = renderApp()
+  it('renders the sidebar', async () => {
+    const { container } = await renderApp()
     expect(container.querySelector('.sidebar')).toBeInTheDocument()
   })
 
-  it('renders the status bar', () => {
-    renderApp()
+  it('renders the status bar', async () => {
+    await renderApp()
     expect(screen.getByText('UTF-8')).toBeInTheDocument()
   })
 })

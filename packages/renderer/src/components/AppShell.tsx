@@ -23,12 +23,14 @@ import { useWorkspaces } from '../hooks/useWorkspaces'
 import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspaceSwitcher'
 import { createTerminalPanelParams, getTerminalParams } from '../lib/terminalState'
 import { createBrowserPanelParams, getBrowserParams } from '../lib/browserState'
+import { getPanelZoomFactor, updatePanelZoomParams } from '../lib/panelZoom'
 import {
   captureWorkspaceRuntimeSnapshot,
   clearWorkspaceRuntimeSnapshot,
   saveWorkspaceRuntimeSnapshot,
 } from '../lib/workspaceRuntimeSnapshots'
 import type { AideTask, BrowserSessionMode, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
+import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
 
 /**
  * Top-level application shell coordinating workspace lifecycle, Dockview panels, keyboard commands, and primary UI.
@@ -55,6 +57,7 @@ export function AppShell() {
   const [wsContextMenu, setWsContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [newBrowserPaneOpen, setNewBrowserPaneOpen] = useState(false)
   const [activeBrowserPaneId, setActiveBrowserPaneId] = useState<string | null>(null)
+  const [activePanelId, setActivePanelId] = useState<string | null>(null)
   const { runningTasks } = useTasks()
 
   // Workspace registry
@@ -356,6 +359,43 @@ export function AppShell() {
     return unsub
   }, [])
 
+  const updateActivePanelZoom = useCallback(async (nextZoom: number) => {
+    const api = dockviewApiRef.current
+    if (!api || !activePanelId) return
+    const activePanel = api.panels.find((panel) => panel.id === activePanelId)
+    if (!activePanel) return
+
+    const browserParams = getBrowserParams(activePanel)
+    if (browserParams) {
+      const appliedZoom = await window.api.setBrowserZoom(browserParams.paneId, nextZoom)
+      activePanel.api.updateParameters({ ...browserParams, zoomFactor: appliedZoom })
+      persistWorkspaceRuntime()
+      return
+    }
+
+    activePanel.api.updateParameters(updatePanelZoomParams(
+      (activePanel.params as Record<string, unknown> | undefined),
+      nextZoom,
+    ))
+    persistWorkspaceRuntime()
+  }, [activePanelId, persistWorkspaceRuntime])
+
+  const handleZoomCommand = useCallback((action: 'in' | 'out' | 'reset', _target: 'panel') => {
+    const activePanel = dockviewApiRef.current?.panels.find((panel) => panel.id === activePanelId)
+    if (!activePanel) return
+    const currentZoom = getPanelZoomFactor(activePanel.params)
+    const nextZoom = action === 'reset'
+      ? resetZoomFactor()
+      : adjustZoomFactor(currentZoom, action === 'in' ? 0.1 : -0.1)
+    void updateActivePanelZoom(nextZoom)
+  }, [activePanelId, updateActivePanelZoom])
+
+  useEffect(() => {
+    return window.api.onZoomCommand(({ action, target }) => {
+      handleZoomCommand(action, target)
+    })
+  }, [handleZoomCommand])
+
   // Auto-save workspace state every 30 seconds (crash safety net)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -423,12 +463,14 @@ export function AppShell() {
     // Track which pane type is focused
     api.onDidActivePanelChange((panel) => {
       if (!panel) {
+        setActivePanelId(null)
         setContext('editorFocused', false)
         setContext('terminalFocused', false)
         setContext('browserFocused', false)
         return
       }
       const id = panel.id
+      setActivePanelId(id)
       const isTerminal = id === 'terminal' || id.startsWith('terminal-')
       const browserParams = getBrowserParams(panel)
       const isBrowser = !!browserParams

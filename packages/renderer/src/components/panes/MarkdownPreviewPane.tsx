@@ -37,6 +37,7 @@ hljs.registerLanguage('md', markdown)
 
 interface MarkdownPreviewParams {
   filePath: string
+  zoomFactor?: number
 }
 
 /**
@@ -114,7 +115,11 @@ export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPrev
   }, [])
 
   return (
-    <div className="markdown-preview" ref={scrollRef}>
+    <div
+      className="markdown-preview"
+      ref={scrollRef}
+      style={{ ['--panel-zoom' as string]: String(params.zoomFactor ?? 1) }}
+    >
       {/* Safe: all HTML is sanitized through DOMPurify above */}
       {/* Links are intercepted via handleLinkClick and routed through openUrl */}
       <div

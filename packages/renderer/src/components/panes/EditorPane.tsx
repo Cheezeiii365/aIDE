@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
-import { EditorState } from '@codemirror/state'
+import { EditorState, StateEffect } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { getLanguageExtension, getLanguageName } from '../../lib/languageExtension'
-import { themeCompartment, getThemeExtension } from '../../lib/editorTheme'
+import { themeCompartment, editorMetricsCompartment, getThemeExtension, getEditorMetricsExtension } from '../../lib/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editorWrap'
 import { getCachedState, setCachedState } from '../../lib/editorStateCache'
 import { isDirty, setDirty, onDirtyChange } from '../../lib/editorDirtyState'
 import { publishContent, clearContent } from '../../lib/editorContentBus'
+import { getPanelZoomFactor } from '../../lib/panelZoom'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 import { showToast } from '../Toast'
@@ -18,7 +19,10 @@ interface EditorPaneParams {
   filePath: string
   jumpToLine?: number
   jumpToColumn?: number
+  zoomFactor?: number
 }
+
+const EDITOR_BASE_FONT_SIZE = 13
 
 // Tracks the "clean" (last-saved) content per file so we know the baseline
 const cleanContentMap = new Map<string, string>()
@@ -81,6 +85,9 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         const extensions = [
           basicSetup,
           themeCompartment.of(getThemeExtension(theme)),
+          editorMetricsCompartment.of(
+            getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(params))),
+          ),
           wrapCompartment.of(getWrapExtension(false)),
           indentationMarkers(),
           EditorView.updateListener.of((update) => {
@@ -140,6 +147,16 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         state,
         parent: hostRef.current,
       })
+
+      if (cached) {
+        view.dispatch({
+          effects: StateEffect.appendConfig.of([
+            editorMetricsCompartment.of(
+              getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(params))),
+            ),
+          ]),
+        })
+      }
 
       viewRef.current = view
       publishContent(filePath, state.doc.toString())
@@ -242,6 +259,17 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       effects: themeCompartment.reconfigure(getThemeExtension(theme)),
     })
   }, [theme])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: editorMetricsCompartment.reconfigure(
+        getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(params))),
+      ),
+    })
+    view.requestMeasure()
+  }, [params])
 
   // Jump to line/column when requested via params
   useEffect(() => {

@@ -27,7 +27,13 @@ interface Props {
  * @param worktreeSection - Optional React node rendered after the explorer section when `activeRoot` is set
  * @returns The sidebar UI element when visible; `null` when collapsed
  */
-export function Sidebar({ onFileOpen, collapsed = false, activeRoot, onOpenFolder, worktreeSection }: Props) {
+export function Sidebar({
+  onFileOpen,
+  collapsed = false,
+  activeRoot,
+  onOpenFolder,
+  worktreeSection,
+}: Props) {
   const [width, setWidth] = useState(220) // fallback until loaded
   const [filter, setFilter] = useState('')
   const dragging = useRef(false)

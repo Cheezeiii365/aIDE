@@ -4,6 +4,16 @@
  */
 
 export type { CommandDefinition } from './commands'
+export {
+  adjustZoomFactor,
+  clampZoomFactor,
+  resetZoomFactor,
+  roundZoomFactor,
+  stepZoomFactor,
+  zoomFactorToCssValue,
+  zoomFactorToPercent,
+  zoomLimits,
+} from './zoom'
 
 // IPC channel names — both main and renderer import these
 // to ensure channel strings stay in sync.
@@ -20,6 +30,12 @@ export const IpcChannels = {
 
   // Fullscreen
   FULLSCREEN_CHANGED: 'fullscreen:changed',
+
+  // Zoom
+  BROWSER_ZOOM_GET: 'browser-zoom:get',
+  BROWSER_ZOOM_SET: 'browser-zoom:set',
+  BROWSER_ZOOM_ADJUST: 'browser-zoom:adjust',
+  APP_ZOOM_COMMAND: 'app:zoom-command',
 
   // Sidebar width persistence
   SIDEBAR_WIDTH_GET: 'sidebar-width:get',
@@ -333,6 +349,7 @@ export interface BrowserPaneState {
   sessionMode: BrowserSessionMode
   url: string
   hasLoadedOnce: boolean
+  zoomFactor?: number
 }
 
 export interface BrowserHostUpdate {
@@ -367,6 +384,13 @@ export interface BrowserCanNavigatePayload {
 export interface BrowserFocusPayload {
   paneId: string
   focused: boolean
+}
+
+export type ZoomCommandAction = 'in' | 'out' | 'reset'
+
+export interface ZoomCommandPayload {
+  target: 'panel'
+  action: ZoomCommandAction
 }
 
 // ─── Task System ─────────────────────────────────
@@ -486,6 +510,12 @@ export interface WindowApi {
 
   // Fullscreen
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void
+
+  // Zoom
+  getBrowserZoom: (paneId: string) => Promise<number>
+  setBrowserZoom: (paneId: string, zoomFactor: number) => Promise<number>
+  adjustBrowserZoom: (paneId: string, delta: number) => Promise<number>
+  onZoomCommand: (callback: (payload: ZoomCommandPayload) => void) => () => void
 
   // Sidebar width
   getSidebarWidth: () => Promise<number>

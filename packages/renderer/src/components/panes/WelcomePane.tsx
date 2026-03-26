@@ -5,12 +5,12 @@ import type { IDockviewPanelProps } from 'dockview-react'
  *
  * @returns A React element containing the welcome pane UI
  */
-export function WelcomePane(_props: IDockviewPanelProps) {
+export function WelcomePane({ params }: IDockviewPanelProps<{ zoomFactor?: number }>) {
   const isMac = navigator.platform.includes('Mac')
   const mod = isMac ? '\u2318' : 'Ctrl'
 
   return (
-    <div className="welcome-pane">
+    <div className="welcome-pane" style={{ ['--panel-zoom' as string]: String(params?.zoomFactor ?? 1) }}>
       <div className="welcome-pane__content">
         <h1 className="welcome-pane__title">aIDE</h1>
         <p className="welcome-pane__subtitle">Multi-agent IDE</p>

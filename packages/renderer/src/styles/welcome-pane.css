@@ -1,4 +1,5 @@
 .welcome-pane {
+  --panel-zoom: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6,6 +7,7 @@
   background: var(--bg-base);
   color: var(--text-primary);
   user-select: none;
+  font-size: calc(1rem * var(--panel-zoom));
 }
 
 .welcome-pane__content {
@@ -17,7 +19,7 @@
 }
 
 .welcome-pane__title {
-  font-size: 32px;
+  font-size: calc(32px * var(--panel-zoom));
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
@@ -25,7 +27,7 @@
 }
 
 .welcome-pane__subtitle {
-  font-size: 14px;
+  font-size: calc(14px * var(--panel-zoom));
   color: var(--text-muted);
   margin: -16px 0 0;
 }
@@ -48,7 +50,7 @@
   border-radius: 6px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: calc(13px * var(--panel-zoom));
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
@@ -79,7 +81,7 @@
   padding: 2px 6px;
   border-radius: 3px;
   background: rgba(0, 0, 0, 0.2);
-  font-size: 11px;
+  font-size: calc(11px * var(--panel-zoom));
   font-family: inherit;
   color: inherit;
   opacity: 0.7;
@@ -103,7 +105,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--panel-zoom));
   color: var(--text-secondary);
 }
 

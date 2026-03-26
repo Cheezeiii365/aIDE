@@ -1,5 +1,5 @@
 import { BaseWindow, WebContentsView, shell, session as electronSession } from 'electron'
-import { IpcChannels } from '@aide/shared'
+import { IpcChannels, adjustZoomFactor, clampZoomFactor } from '@aide/shared'
 import type {
   BrowserCanNavigatePayload,
   BrowserDidNavigatePayload,
@@ -19,6 +19,7 @@ interface ManagedBrowserPane {
   desiredVisible: boolean
   appliedVisible: boolean
   hasLoadedOnce: boolean
+  zoomFactor: number
 }
 
 interface BrowserPaneManagerOptions {
@@ -87,6 +88,7 @@ export class BrowserPaneManager {
       desiredVisible: false,
       appliedVisible: false,
       hasLoadedOnce: false,
+      zoomFactor: 1,
     }
 
     this.panes.set(paneId, managed)
@@ -166,6 +168,8 @@ export class BrowserPaneManager {
       } satisfies BrowserFocusPayload)
     })
 
+    view.webContents.setZoomFactor(1)
+
     return { success: true }
   }
 
@@ -232,6 +236,25 @@ export class BrowserPaneManager {
 
   reload(paneId: string): void {
     this.panes.get(paneId)?.view.webContents.reload()
+  }
+
+  getZoom(paneId: string): number {
+    return this.panes.get(paneId)?.zoomFactor ?? 1
+  }
+
+  setZoom(paneId: string, zoomFactor: number): number {
+    const managed = this.panes.get(paneId)
+    if (!managed) return 1
+    const nextZoom = clampZoomFactor(zoomFactor)
+    managed.zoomFactor = nextZoom
+    managed.view.webContents.setZoomFactor(nextZoom)
+    return nextZoom
+  }
+
+  adjustZoom(paneId: string, delta: number): number {
+    const managed = this.panes.get(paneId)
+    if (!managed) return 1
+    return this.setZoom(paneId, adjustZoomFactor(managed.zoomFactor, delta))
   }
 
   handleHostUpdate(update: BrowserHostUpdate): void {

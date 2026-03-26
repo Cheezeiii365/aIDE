@@ -1214,6 +1214,7 @@ Track milestone completion here. Update as you go.
 | 3.3 typescript-language-server | ⬜ Not started | |
 | 3.4 Browser pane — auth sessions | ⬜ Not started | |
 | 3.5 Browser pane — dev server preview | ⬜ Not started | |
+| 3.6 Per-panel zoom | ✅ Complete | Shared `@aide/shared` zoom helpers (`adjustZoomFactor`, `clampZoomFactor`, `resetZoomFactor`, `zoomFactorToPercent`) with 0.5×–2× range. Menu-bar Cmd+=/Cmd+-/Cmd+0 zooms the active Dockview panel via `APP_ZOOM_COMMAND` IPC. Editor & terminal panes scale font size (base 13px × zoom factor) via CodeMirror `editorMetricsCompartment` and xterm.js `fontSize` option. Browser panes zoom via native `webContents.setZoomFactor()` with toolbar ±/readout controls and `BROWSER_ZOOM_GET/SET/ADJUST` IPC. CSS-based panes (welcome, find-in-files, markdown preview, placeholder) use `--panel-zoom` CSS variable with `calc()` font scaling. Zoom state persisted per-panel in Dockview params and workspace runtime snapshots. |
 
 ### Phase 4: Workspace System (Weeks 11–13)
 | Milestone | Status | Notes |
