@@ -616,6 +616,19 @@ ipcMain.handle(IpcChannels.SEARCH_REPLACE, async (_event, opts: ReplaceOpts) => 
 })
 
 app.whenReady().then(async () => {
+  // Handle --clean flag: clear session but keep registry
+  const isClean = process.argv.includes('--clean')
+  if (isClean) {
+    console.log('[startup] --clean flag detected, clearing session')
+    workspaceRegistry.setSessionWorkspaces([])
+    store.set('workspaceRoot', null)
+    store.set('activeWorktree', null)
+  }
+
+  // Detect crash from previous session
+  const wasCleanShutdown = store.get('cleanShutdown')
+  store.set('cleanShutdown', false)
+
   buildAppMenu()
   createWindow()
   registerPtyHandlers(() => contentView?.webContents ?? null, store)
@@ -625,38 +638,83 @@ app.whenReady().then(async () => {
   registerGitStatusHandlers(getWebContents)
   registerWorktreeHandlers(getWebContents, store)
 
-  // Auto-start watcher if we have a persisted workspace
-  const savedRoot = store.get('workspaceRoot')
-  if (savedRoot && existsSync(savedRoot)) {
-    // Ensure .aide folder exists on startup
-    await ensureAideFolder(savedRoot)
+  // Notify renderer of crash recovery after window loads
+  if (wasCleanShutdown === false && !isClean) {
+    contentView?.webContents.once('did-finish-load', () => {
+      getWebContents()?.send(IpcChannels.LIFECYCLE_CRASH_DETECTED)
+    })
+  }
 
-    // Initialize task runner
-    initTaskRunner(savedRoot)
+  // Restore last session workspaces from registry
+  const sessionIds = workspaceRegistry.getSessionWorkspaces()
+  const staleIds = workspaceRegistry.validatePaths()
 
-    // Watch both repo root and active worktree (if set) so changes in either are detected
-    const activeWorktree = store.get('activeWorktree')
-    const hasWorktree = activeWorktree && existsSync(activeWorktree)
-    const watchRoots = hasWorktree ? [savedRoot, activeWorktree] : [savedRoot]
-    await startWatchers('default', watchRoots)
-    // Git polling uses the effective root for status
-    const effectiveRoot = hasWorktree ? activeWorktree : savedRoot
-    await startGitPolling(effectiveRoot, getWebContents)
-    await startWorktreePolling(savedRoot, getWebContents, store)
-  } else if (savedRoot) {
-    console.warn(`[startup] Persisted workspace root no longer exists: ${savedRoot}`)
-    store.set('workspaceRoot', '')
-    store.set('activeWorktree', '')
+  if (staleIds.length > 0) {
+    console.warn(`[startup] Removing ${staleIds.length} workspace(s) with missing paths`)
+    for (const id of staleIds) {
+      workspaceRegistry.remove(id)
+    }
+  }
+
+  // Activate the last active workspace (if it still exists in session)
+  const activeId = workspaceRegistry.getActiveId()
+  const validSessionIds = sessionIds.filter((id) => !staleIds.includes(id))
+
+  if (activeId && validSessionIds.includes(activeId)) {
+    await activateWorkspace(activeId)
+  } else if (validSessionIds.length > 0) {
+    await activateWorkspace(validSessionIds[0])
+  } else {
+    // No workspaces — renderer shows welcome tab (default Dockview layout)
+    store.set('workspaceRoot', null)
+    store.set('activeWorktree', null)
   }
 })
 
-app.on('before-quit', async () => {
+// Graceful quit: request renderer to save state, then clean up
+let isQuitting = false
+
+app.on('before-quit', (event) => {
+  if (isQuitting) return // Already in quit sequence
+
+  event.preventDefault()
+  isQuitting = true
+
+  const wc = contentView?.webContents ?? null
+
+  if (wc) {
+    // Ask renderer to save current workspace state
+    wc.send(IpcChannels.LIFECYCLE_REQUEST_SAVE)
+
+    // Wait for renderer to confirm save, or timeout after 2s
+    const saveTimeout = setTimeout(() => finishQuit(), 2000)
+
+    ipcMain.once(IpcChannels.LIFECYCLE_SAVE_COMPLETE, () => {
+      clearTimeout(saveTimeout)
+      finishQuit()
+    })
+  } else {
+    finishQuit()
+  }
+})
+
+function finishQuit(): void {
+  // Save session state to registry
+  const sessionWorkspaces = workspaceRegistry.getAll().map((w) => w.id)
+  workspaceRegistry.setSessionWorkspaces(sessionWorkspaces)
+
+  // Mark clean shutdown
+  store.set('cleanShutdown', true)
+
+  // Clean up resources
   taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()
   stopWorktreePolling()
-  await stopWatcher()
-})
+  stopWatcher()
+
+  app.quit()
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

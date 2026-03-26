@@ -208,6 +208,20 @@ const api: WindowApi = {
   loadTerminalState: (rootPath: string): Promise<AideLocalTerminals | null> =>
     ipcRenderer.invoke(IpcChannels.STATE_LOAD_TERMINALS, rootPath),
 
+  // App lifecycle
+  onLifecycleRequestSave: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IpcChannels.LIFECYCLE_REQUEST_SAVE, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.LIFECYCLE_REQUEST_SAVE, handler)
+  },
+  lifecycleSaveComplete: () =>
+    ipcRenderer.send(IpcChannels.LIFECYCLE_SAVE_COMPLETE),
+  onCrashDetected: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IpcChannels.LIFECYCLE_CRASH_DETECTED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.LIFECYCLE_CRASH_DETECTED, handler)
+  },
+
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,
 }

@@ -1218,6 +1218,7 @@ Track milestone completion here. Update as you go.
 | 4.2 Workspace switching + state persistence | ✅ Complete | `stateSerializer.ts`, `workspaceStateSerializer.ts`, `workspaceSwitcher.ts`, 30s auto-save, atomic writes, worktree sync fix |
 | 4.3 Agent status in ribbon | ⬜ Not started | |
 | 4.4 Workspace management UI | ⬜ Not started | |
+| 4.5 App lifecycle (Phase E) | ✅ Complete | Session restore, graceful quit with async save, crash recovery toast, `--clean` flag, welcome tab on empty session |
 
 ### Phase 5: Agent Integration (Weeks 14–17)
 | Milestone | Status | Notes |

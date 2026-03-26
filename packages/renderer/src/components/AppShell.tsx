@@ -179,6 +179,28 @@ export function AppShell() {
     return () => clearInterval(interval)
   }, [workspaceRoot, sidebarCollapsed])
 
+  // Handle quit save request from main process
+  useEffect(() => {
+    const unsub = window.api.onLifecycleRequestSave(() => {
+      autoSave(
+        dockviewApiRef.current,
+        workspaceRoot,
+        sidebarWidthRef.current,
+        sidebarCollapsed,
+      )
+      window.api.lifecycleSaveComplete()
+    })
+    return unsub
+  }, [workspaceRoot, sidebarCollapsed])
+
+  // Handle crash recovery notification
+  useEffect(() => {
+    const unsub = window.api.onCrashDetected(() => {
+      showToast('aIDE recovered from an unexpected shutdown. Some recent changes may not have been saved.')
+    })
+    return unsub
+  }, [])
+
   const handleOpenFolder = useCallback(async () => {
     await createWorkspace()
   }, [createWorkspace])

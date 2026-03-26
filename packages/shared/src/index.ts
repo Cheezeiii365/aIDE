@@ -113,6 +113,11 @@ export const IpcChannels = {
   STATE_LOAD: 'state:load',
   STATE_SAVE_TERMINALS: 'state:save-terminals',
   STATE_LOAD_TERMINALS: 'state:load-terminals',
+
+  // App lifecycle
+  LIFECYCLE_REQUEST_SAVE: 'lifecycle:request-save',
+  LIFECYCLE_SAVE_COMPLETE: 'lifecycle:save-complete',
+  LIFECYCLE_CRASH_DETECTED: 'lifecycle:crash-detected',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -160,6 +165,7 @@ export interface AppSettings {
   workspaceRoot: string | null
   activeWorktree: string | null
   editorDefaults?: Partial<AideProjectSettings>
+  cleanShutdown?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -506,6 +512,11 @@ export interface WindowApi {
   loadWorkspaceState: (rootPath: string) => Promise<AideLocalState | null>
   saveTerminalState: (rootPath: string, state: AideLocalTerminals) => Promise<void>
   loadTerminalState: (rootPath: string) => Promise<AideLocalTerminals | null>
+
+  // App lifecycle
+  onLifecycleRequestSave: (callback: () => void) => () => void
+  lifecycleSaveComplete: () => void
+  onCrashDetected: (callback: () => void) => () => void
 
   // Platform info
   platform: NodeJS.Platform
