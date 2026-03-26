@@ -2,13 +2,17 @@ import { useEffect, useRef } from 'react'
 
 // ── Types ──────────────────────────────────────
 
-interface ShortcutEntry {
-  id: string
-  key: string // normalised lowercase letter, e.g. 'b', 't', 'w'
-  meta: boolean // Cmd (macOS) or Ctrl (Linux/Windows)
+interface ShortcutParts {
+  key: string
+  meta: boolean
   shift: boolean
   alt: boolean
-  handler: () => unknown // return true = handled
+}
+
+interface ShortcutEntry {
+  id: string
+  parts: ShortcutParts[] // length 1 = single, length 2 = chord
+  handler: () => unknown
 }
 
 // ── Platform detection ─────────────────────────
@@ -27,6 +31,10 @@ function initPlatform() {
 const shortcuts: Map<string, ShortcutEntry> = new Map()
 let listening = false
 
+// Chord state
+let pendingChord: { parts: ShortcutParts; timestamp: number } | null = null
+const CHORD_TIMEOUT = 1500
+
 function ensureListener() {
   if (listening) return
   initPlatform()
@@ -36,39 +44,100 @@ function ensureListener() {
 
 // ── Shortcut string parser ─────────────────────
 
-/**
- * Parses a shortcut string like "Cmd+Shift+T" into its parts.
- * "Cmd" is normalised per-platform (metaKey on macOS, ctrlKey elsewhere).
- */
-function parse(shortcut: string): Pick<ShortcutEntry, 'key' | 'meta' | 'shift' | 'alt'> {
-  const parts = shortcut
+function parseSingle(segment: string): ShortcutParts {
+  const tokens = segment
     .split('+')
     .map((p) => p.trim().toLowerCase())
 
   return {
-    meta: parts.includes('cmd') || parts.includes('ctrl'),
-    shift: parts.includes('shift'),
-    alt: parts.includes('alt') || parts.includes('opt'),
-    key: parts.filter((p) => !['cmd', 'ctrl', 'shift', 'alt', 'opt'].includes(p))[0] ?? '',
+    meta: tokens.includes('cmd') || tokens.includes('ctrl'),
+    shift: tokens.includes('shift'),
+    alt: tokens.includes('alt') || tokens.includes('opt'),
+    key: tokens.filter((p) => !['cmd', 'ctrl', 'shift', 'alt', 'opt'].includes(p))[0] ?? '',
   }
+}
+
+/**
+ * Parses a shortcut string into parts.
+ * Supports single ("Cmd+B") and chord ("Cmd+K Cmd+S") formats.
+ */
+function parse(shortcut: string): ShortcutParts[] {
+  const segments = shortcut.split(/\s+/)
+  return segments.map(parseSingle)
+}
+
+function partsMatch(parts: ShortcutParts, e: KeyboardEvent): boolean {
+  const modKey = isMac ? e.metaKey : e.ctrlKey
+  return (
+    parts.meta === modKey &&
+    parts.shift === e.shiftKey &&
+    parts.alt === e.altKey &&
+    parts.key === e.key.toLowerCase()
+  )
 }
 
 // ── Keydown handler ────────────────────────────
 
 function handleKeyDown(e: KeyboardEvent) {
-  const modKey = isMac ? e.metaKey : e.ctrlKey
+  // Check chord continuation first
+  if (pendingChord) {
+    const elapsed = Date.now() - pendingChord.timestamp
+    if (elapsed < CHORD_TIMEOUT) {
+      // Try to match second part of any chord that started with pendingChord
+      for (const entry of shortcuts.values()) {
+        if (entry.parts.length !== 2) continue
+        if (!partsEqual(entry.parts[0], pendingChord.parts)) continue
+        if (partsMatch(entry.parts[1], e)) {
+          e.preventDefault()
+          e.stopPropagation()
+          pendingChord = null
+          entry.handler()
+          return
+        }
+      }
+    }
+    // Chord timed out or no match — clear and fall through to single-key matching
+    pendingChord = null
+  }
 
+  // Check if this keystroke is the first part of any chord
   for (const entry of shortcuts.values()) {
-    if (
-      entry.meta === modKey &&
-      entry.shift === e.shiftKey &&
-      entry.alt === e.altKey &&
-      entry.key === e.key.toLowerCase()
-    ) {
+    if (entry.parts.length !== 2) continue
+    if (partsMatch(entry.parts[0], e)) {
+      e.preventDefault()
+      e.stopPropagation()
+      pendingChord = { parts: entry.parts[0], timestamp: Date.now() }
+      return
+    }
+  }
+
+  // Single-key shortcut matching
+  for (const entry of shortcuts.values()) {
+    if (entry.parts.length !== 1) continue
+    if (partsMatch(entry.parts[0], e)) {
       e.preventDefault()
       e.stopPropagation()
       entry.handler()
       return
+    }
+  }
+}
+
+function partsEqual(a: ShortcutParts, b: ShortcutParts): boolean {
+  return a.key === b.key && a.meta === b.meta && a.shift === b.shift && a.alt === b.alt
+}
+
+// ── Conflict detection ─────────────────────────
+
+function checkConflict(id: string, newParts: ShortcutParts[]) {
+  for (const entry of shortcuts.values()) {
+    if (entry.id === id) continue
+    if (entry.parts.length !== newParts.length) continue
+    const allMatch = entry.parts.every((p, i) => partsEqual(p, newParts[i]))
+    if (allMatch) {
+      console.warn(
+        `[ShortcutManager] Keybinding conflict: "${id}" overrides "${entry.id}"`,
+      )
     }
   }
 }
@@ -81,8 +150,9 @@ export function registerShortcut(
   handler: () => unknown,
 ) {
   ensureListener()
-  const parsed = parse(shortcut)
-  shortcuts.set(id, { id, ...parsed, handler })
+  const parts = parse(shortcut)
+  checkConflict(id, parts)
+  shortcuts.set(id, { id, parts, handler })
 }
 
 export function unregisterShortcut(id: string) {

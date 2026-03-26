@@ -1,5 +1,10 @@
+export interface OpenFileOpts {
+  line?: number
+  column?: number
+}
+
 export interface AppActions {
-  openFile: (filePath: string) => void
+  openFile: (filePath: string, opts?: OpenFileOpts) => void
   openUrl: (url: string) => void
 }
 

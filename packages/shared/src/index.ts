@@ -3,6 +3,8 @@
  * IPC channel definitions go here for type-safe communication.
  */
 
+export type { CommandDefinition } from './commands'
+
 // IPC channel names — both main and renderer import these
 // to ensure channel strings stay in sync.
 export const IpcChannels = {
@@ -61,6 +63,16 @@ export const IpcChannels = {
   WORKTREE_GET_ACTIVE: 'worktree:get-active',
   WORKTREE_LIST_CHANGED: 'worktree:list-changed',
   WORKTREE_LIST_BRANCHES: 'worktree:list-branches',
+
+  // File listing (quick open)
+  FS_LIST_ALL_FILES: 'fs:list-all-files',
+
+  // Search (find in files)
+  SEARCH_START: 'search:start',
+  SEARCH_RESULTS: 'search:results',
+  SEARCH_COMPLETE: 'search:complete',
+  SEARCH_CANCEL: 'search:cancel',
+  SEARCH_REPLACE: 'search:replace',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -113,6 +125,33 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarWidth: 220,
   workspaceRoot: null,
   activeWorktree: null,
+}
+
+// Search types (find in files)
+export interface SearchOpts {
+  query: string
+  rootPath: string
+  isRegex: boolean
+  caseSensitive: boolean
+  wholeWord: boolean
+  fileGlob?: string
+}
+
+export interface SearchMatch {
+  line: number
+  column: number
+  lineText: string
+  matchText: string
+}
+
+export interface SearchFileResult {
+  filePath: string
+  matches: SearchMatch[]
+}
+
+export interface ReplaceOpts {
+  filePath: string
+  replacements: { line: number; column: number; matchText: string; replaceText: string }[]
 }
 
 /** Single source of truth for the preload bridge API shape. */
@@ -172,6 +211,16 @@ export interface WindowApi {
   getActiveWorktree: () => Promise<string | null>
   onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => () => void
   listBranches: () => Promise<string[]>
+
+  // File listing (quick open)
+  listAllFiles: (rootPath: string) => Promise<string[]>
+
+  // Search (find in files)
+  searchStart: (opts: SearchOpts) => Promise<void>
+  onSearchResults: (callback: (results: SearchFileResult[]) => void) => () => void
+  onSearchComplete: (callback: (summary: { totalMatches: number; totalFiles: number }) => void) => () => void
+  searchCancel: () => void
+  searchReplace: (opts: ReplaceOpts) => Promise<{ success: true } | { error: string }>
 
   // Platform info
   platform: NodeJS.Platform

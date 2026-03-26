@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, WindowApi } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, WindowApi } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -100,6 +100,24 @@ const api: WindowApi = {
     return () => ipcRenderer.removeListener(IpcChannels.WORKTREE_LIST_CHANGED, handler)
   },
   listBranches: () => ipcRenderer.invoke(IpcChannels.WORKTREE_LIST_BRANCHES),
+
+  // File listing (quick open)
+  listAllFiles: (rootPath: string) => ipcRenderer.invoke(IpcChannels.FS_LIST_ALL_FILES, rootPath),
+
+  // Search (find in files)
+  searchStart: (opts: SearchOpts) => ipcRenderer.invoke(IpcChannels.SEARCH_START, opts),
+  onSearchResults: (callback: (results: SearchFileResult[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, results: SearchFileResult[]) => callback(results)
+    ipcRenderer.on(IpcChannels.SEARCH_RESULTS, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.SEARCH_RESULTS, handler)
+  },
+  onSearchComplete: (callback: (summary: { totalMatches: number; totalFiles: number }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, summary: { totalMatches: number; totalFiles: number }) => callback(summary)
+    ipcRenderer.on(IpcChannels.SEARCH_COMPLETE, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.SEARCH_COMPLETE, handler)
+  },
+  searchCancel: () => ipcRenderer.send(IpcChannels.SEARCH_CANCEL),
+  searchReplace: (opts: ReplaceOpts) => ipcRenderer.invoke(IpcChannels.SEARCH_REPLACE, opts),
 
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,
