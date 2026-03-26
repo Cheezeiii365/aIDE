@@ -55,3 +55,16 @@ playwright-report/
 # Temp Files
 *.mjs
 tmp.md
+
+# Security patterns added by aIDE
+.env.local
+.env.*.local
+*.pfx
+serviceAccountKey.json
+**/service-account*.json
+.aws/
+.gcp/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+.aide/local/

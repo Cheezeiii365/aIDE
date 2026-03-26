@@ -5,6 +5,13 @@
 
 ---
 
+## TODO
+- Move worktree storage from `../.aide-worktrees/` to `<repoRoot>/.aide/worktrees/` (match Claude Code convention, add `.aide/` to `.gitignore`)
+- Add `@` prefix in Quick Open (Cmd+P) to go to symbol, `:` prefix to go to line (VS Code-style)
+- Clicking the line number indicator in the status bar should open the go-to-line command palette (`:` mode)
+
+---
+
 ## Table of Contents
 
 1. [Project Vision](#1-project-vision)
