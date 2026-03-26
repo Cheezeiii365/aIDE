@@ -58,8 +58,12 @@ export function GitignoreReviewModal({ auditResult, onClose }: Props) {
     const patterns = Array.from(checked)
     if (patterns.length === 0) return
     setSubmitting(true)
-    await window.api.appendToGitignore(patterns)
-    onClose()
+    try {
+      await window.api.appendToGitignore(patterns)
+      onClose()
+    } catch {
+      setSubmitting(false)
+    }
   }, [checked, onClose])
 
   const handleDismiss = useCallback(async () => {
