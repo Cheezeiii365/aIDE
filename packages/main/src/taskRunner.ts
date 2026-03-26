@@ -403,6 +403,9 @@ export class TaskRunner {
         if (!depTask) return { error: `Dependency task not found: ${depId}` }
 
         const depExec = await this.runSingle(depTask, ctx)
+        if (depExec.status === 'killed') {
+          return { error: `Dependency "${depTask.label}" was cancelled` }
+        }
         // Wait for dependency to complete
         if (depExec.ptyId) {
           const exitCode = await this.waitForCompletion(depExec.executionId)
@@ -445,6 +448,9 @@ export class TaskRunner {
     for (const taskId of compound.tasks) {
       lastExec = await this.run(taskId, ctx)
       if ('error' in lastExec) return lastExec
+      if (lastExec.status === 'killed') {
+        return { error: `Task "${lastExec.taskLabel}" was cancelled in sequence` }
+      }
 
       // Wait for completion before next
       if (lastExec.ptyId) {
