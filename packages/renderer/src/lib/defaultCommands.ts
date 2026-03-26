@@ -122,7 +122,9 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     { id: 'gitignore.audit', label: 'Audit .gitignore Security', category: 'aIDE' },
     async () => {
       const result = await window.api.auditGitignore()
-      if (result.missing.length === 0) {
+      if ('error' in result) {
+        showToast(result.error)
+      } else if (result.missing.length === 0) {
         showToast('All security patterns are present in .gitignore')
       } else {
         window.dispatchEvent(
