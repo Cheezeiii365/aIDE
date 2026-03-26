@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "dev",
+      "label": "dev (pnpm)",
+      "command": "pnpm dev",
+      "group": "dev",
+      "isBackground": true,
+      "autoRestart": false
+    },
+    {
+      "id": "build",
+      "label": "build (pnpm)",
+      "command": "pnpm build",
+      "group": "build",
+      "isBackground": false
+    },
+    {
+      "id": "preview",
+      "label": "preview (pnpm)",
+      "command": "pnpm preview",
+      "isBackground": false
+    },
+    {
+      "id": "lint",
+      "label": "lint (pnpm)",
+      "command": "pnpm lint",
+      "group": "lint",
+      "isBackground": false
+    },
+    {
+      "id": "format",
+      "label": "format (pnpm)",
+      "command": "pnpm format",
+      "isBackground": false
+    },
+    {
+      "id": "typecheck",
+      "label": "typecheck (pnpm)",
+      "command": "pnpm typecheck",
+      "isBackground": false,
+      "problemMatcher": "tsc"
+    },
+    {
+      "id": "test",
+      "label": "test (pnpm)",
+      "command": "pnpm test",
+      "group": "test",
+      "isBackground": false
+    },
+    {
+      "id": "test:watch",
+      "label": "test:watch (pnpm)",
+      "command": "pnpm test:watch",
+      "group": "test",
+      "isBackground": true,
+      "autoRestart": false
+    },
+    {
+      "id": "test:e2e",
+      "label": "test:e2e (pnpm)",
+      "command": "pnpm test:e2e",
+      "group": "test",
+      "isBackground": false
+    },
+    {
+      "id": "test:ci",
+      "label": "test:ci (pnpm)",
+      "command": "pnpm test:ci",
+      "group": "test",
+      "isBackground": false
+    },
+    {
+      "id": "dist",
+      "label": "dist (pnpm)",
+      "command": "pnpm dist",
+      "isBackground": false
+    },
+    {
+      "id": "dist:linux",
+      "label": "dist:linux (pnpm)",
+      "command": "pnpm dist:linux",
+      "isBackground": false
+    },
+    {
+      "id": "dist:win",
+      "label": "dist:win (pnpm)",
+      "command": "pnpm dist:win",
+      "isBackground": false
+    },
+    {
+      "id": "dist:publish",
+      "label": "dist:publish (pnpm)",
+      "command": "pnpm dist:publish",
+      "isBackground": false
+    },
+    {
+      "id": "postinstall",
+      "label": "postinstall (pnpm)",
+      "command": "pnpm postinstall",
+      "isBackground": false
+    }
+  ]
+}
