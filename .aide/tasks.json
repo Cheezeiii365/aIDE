@@ -2,6 +2,14 @@
   "version": 1,
   "tasks": [
     {
+      "id": "dev:clean",
+      "label": "dev (clean start)",
+      "command": "pnpm dev:clean",
+      "group": "dev",
+      "isBackground": true,
+      "autoRestart": false
+    },
+    {
       "id": "dev",
       "label": "dev (pnpm)",
       "command": "pnpm dev",
