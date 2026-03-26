@@ -37,7 +37,7 @@ export function captureWorkspaceRuntimeSnapshot(
   return {
     workspaceId,
     rootPath,
-    state: serializeWorkspaceState(dockviewApi, sidebarWidth, sidebarCollapsed),
+    state: serializeWorkspaceState(dockviewApi, workspaceId, sidebarWidth, sidebarCollapsed),
     terminals: serializeTerminalState(dockviewApi),
     activePanelId: dockviewApi.activePanel?.id ?? null,
     panelParams,

@@ -117,6 +117,23 @@ export const IpcChannels = {
   STATE_SAVE_TERMINALS: 'state:save-terminals',
   STATE_LOAD_TERMINALS: 'state:load-terminals',
 
+  // Browser panes
+  BROWSER_CREATE: 'browser:create',
+  BROWSER_DESTROY: 'browser:destroy',
+  BROWSER_DESTROY_WORKSPACE: 'browser:destroy-workspace',
+  BROWSER_NAVIGATE: 'browser:navigate',
+  BROWSER_GO_BACK: 'browser:go-back',
+  BROWSER_GO_FORWARD: 'browser:go-forward',
+  BROWSER_RELOAD: 'browser:reload',
+  BROWSER_HOST_UPDATE: 'browser:host-update',
+  BROWSER_SUPPRESS_OVERLAYS: 'browser:suppress-overlays',
+  BROWSER_UNSUPPRESS_OVERLAYS: 'browser:unsuppress-overlays',
+  BROWSER_DID_NAVIGATE: 'browser:did-navigate',
+  BROWSER_PAGE_TITLE_UPDATED: 'browser:page-title-updated',
+  BROWSER_LOADING_CHANGED: 'browser:loading-changed',
+  BROWSER_CAN_NAVIGATE_CHANGED: 'browser:can-navigate-changed',
+  BROWSER_FOCUS_CHANGED: 'browser:focus-changed',
+
   // App lifecycle
   LIFECYCLE_REQUEST_SAVE: 'lifecycle:request-save',
   LIFECYCLE_SAVE_COMPLETE: 'lifecycle:save-complete',
@@ -292,6 +309,7 @@ export interface AideLocalState {
   sidebarWidth: number
   sidebarCollapsed: boolean
   sidebarSections: Record<string, boolean>
+  browserPanes?: BrowserPaneState[]
 }
 
 export interface TerminalState {
@@ -305,6 +323,50 @@ export interface TerminalState {
 export interface AideLocalTerminals {
   terminals: TerminalState[]
   activeTerminalId: string | null
+}
+
+export type BrowserSessionMode = 'shared-auth' | 'workspace' | 'temporary'
+
+export interface BrowserPaneState {
+  paneId: string
+  workspaceId: string
+  sessionMode: BrowserSessionMode
+  url: string
+  hasLoadedOnce: boolean
+}
+
+export interface BrowserHostUpdate {
+  paneId: string
+  workspaceId: string
+  bounds: { x: number; y: number; width: number; height: number }
+  visible: boolean
+  chromeHeight: number
+}
+
+export interface BrowserDidNavigatePayload {
+  paneId: string
+  url: string
+}
+
+export interface BrowserPageTitlePayload {
+  paneId: string
+  title: string
+}
+
+export interface BrowserLoadingPayload {
+  paneId: string
+  loading: boolean
+}
+
+export interface BrowserCanNavigatePayload {
+  paneId: string
+  canGoBack: boolean
+  canGoForward: boolean
+}
+
+export interface BrowserFocusPayload {
+  paneId: string
+  focused: boolean
 }
 
 // ─── Task System ─────────────────────────────────
@@ -520,6 +582,23 @@ export interface WindowApi {
   loadWorkspaceState: (rootPath: string) => Promise<AideLocalState | null>
   saveTerminalState: (rootPath: string, state: AideLocalTerminals) => Promise<void>
   loadTerminalState: (rootPath: string) => Promise<AideLocalTerminals | null>
+
+  // Browser panes
+  browserCreate: (paneId: string, workspaceId: string, sessionMode: BrowserSessionMode) => Promise<{ success: true } | { error: string }>
+  browserDestroy: (paneId: string) => void
+  browserDestroyWorkspace: (workspaceId: string) => void
+  browserNavigate: (paneId: string, url: string) => Promise<{ success: true; url: string } | { error: string }>
+  browserGoBack: (paneId: string) => void
+  browserGoForward: (paneId: string) => void
+  browserReload: (paneId: string) => void
+  browserHostUpdate: (update: BrowserHostUpdate) => void
+  browserSuppressOverlays: () => void
+  browserUnsuppressOverlays: () => void
+  onBrowserDidNavigate: (callback: (payload: BrowserDidNavigatePayload) => void) => () => void
+  onBrowserTitleUpdated: (callback: (payload: BrowserPageTitlePayload) => void) => () => void
+  onBrowserLoadingChanged: (callback: (payload: BrowserLoadingPayload) => void) => () => void
+  onBrowserCanNavigateChanged: (callback: (payload: BrowserCanNavigatePayload) => void) => () => void
+  onBrowserFocusChanged: (callback: (payload: BrowserFocusPayload) => void) => () => void
 
   // App lifecycle
   onLifecycleRequestSave: (callback: () => void) => () => void

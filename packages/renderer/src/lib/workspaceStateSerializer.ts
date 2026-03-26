@@ -10,6 +10,7 @@ import type { DockviewApi } from 'dockview-react'
 import type { AideLocalState, TabState } from '@aide/shared'
 import { getCachedState, getAllCachedPaths } from './editorStateCache'
 import { isDirty } from './editorDirtyState'
+import { serializeBrowserPaneState } from './browserState'
 
 /**
  * Build an AideLocalState representing the current workspace layout, open editor tabs, active tab, and sidebar settings.
@@ -21,6 +22,7 @@ import { isDirty } from './editorDirtyState'
  */
 export function serializeWorkspaceState(
   dockviewApi: DockviewApi | null,
+  workspaceId: string | null,
   sidebarWidth: number,
   sidebarCollapsed: boolean,
 ): AideLocalState {
@@ -73,6 +75,7 @@ export function serializeWorkspaceState(
     sidebarWidth,
     sidebarCollapsed,
     sidebarSections: {},
+    browserPanes: serializeBrowserPaneState(dockviewApi, workspaceId),
   }
 }
 

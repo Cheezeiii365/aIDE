@@ -18,6 +18,7 @@ import { TaskRunner } from './taskRunner'
 import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
 import { WorkspaceRegistry } from './workspaceRegistry'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './stateSerializer'
+import { BrowserPaneManager } from './browserPaneManager'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -26,6 +27,10 @@ let taskRunner: TaskRunner | null = null
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
+const browserPaneManager = new BrowserPaneManager({
+  getWindow: () => mainWindow,
+  getRendererWebContents: () => contentView?.webContents ?? null,
+})
 
 /**
  * Builds and installs the application's native menu with platform-appropriate entries.
@@ -411,6 +416,47 @@ ipcMain.handle(IpcChannels.STATE_SAVE_TERMINALS, async (_event, rootPath: string
 
 ipcMain.handle(IpcChannels.STATE_LOAD_TERMINALS, async (_event, rootPath: string) => {
   return loadTerminalState(rootPath)
+})
+
+// Browser pane IPC handlers
+ipcMain.handle(IpcChannels.BROWSER_CREATE, (_event, paneId: string, workspaceId: string, sessionMode: import('@aide/shared').BrowserSessionMode) => {
+  return browserPaneManager.create(paneId, workspaceId, sessionMode)
+})
+
+ipcMain.on(IpcChannels.BROWSER_DESTROY, (_event, paneId: string) => {
+  browserPaneManager.destroy(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_DESTROY_WORKSPACE, (_event, workspaceId: string) => {
+  browserPaneManager.destroyWorkspace(workspaceId)
+})
+
+ipcMain.handle(IpcChannels.BROWSER_NAVIGATE, async (_event, paneId: string, url: string) => {
+  return browserPaneManager.navigate(paneId, url)
+})
+
+ipcMain.on(IpcChannels.BROWSER_GO_BACK, (_event, paneId: string) => {
+  browserPaneManager.goBack(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_GO_FORWARD, (_event, paneId: string) => {
+  browserPaneManager.goForward(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_RELOAD, (_event, paneId: string) => {
+  browserPaneManager.reload(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_HOST_UPDATE, (_event, update: import('@aide/shared').BrowserHostUpdate) => {
+  browserPaneManager.handleHostUpdate(update)
+})
+
+ipcMain.on(IpcChannels.BROWSER_SUPPRESS_OVERLAYS, () => {
+  browserPaneManager.suppressOverlays()
+})
+
+ipcMain.on(IpcChannels.BROWSER_UNSUPPRESS_OVERLAYS, () => {
+  browserPaneManager.unsuppressOverlays()
 })
 
 // Full .aide initialization (on-demand from command palette)

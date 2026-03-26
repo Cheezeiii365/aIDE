@@ -1,0 +1,71 @@
+.browser-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+}
+
+.browser-pane__chrome {
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr) minmax(120px, 180px);
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-base));
+}
+
+.browser-pane__nav-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.browser-pane__nav-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.browser-pane__url-form {
+  min-width: 0;
+}
+
+.browser-pane__url-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.browser-pane__url-input:focus {
+  border-color: var(--accent);
+}
+
+.browser-pane__status {
+  min-width: 0;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.browser-pane__status--loading {
+  color: var(--accent);
+}
+
+.browser-pane__host {
+  flex: 1;
+  min-height: 0;
+  background:
+    radial-gradient(circle at top left, rgba(82, 139, 255, 0.14), transparent 28%),
+    linear-gradient(180deg, var(--bg-base), var(--bg-sunken));
+}
