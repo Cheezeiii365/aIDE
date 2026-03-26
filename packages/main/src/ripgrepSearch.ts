@@ -55,6 +55,7 @@ export function startSearch(
   activeSearch = proc
 
   let totalMatches = 0
+  const seenFiles = new Set<string>()
   const fileMap = new Map<string, SearchMatch[]>()
   let buffer = ''
   let flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -99,6 +100,7 @@ export function startSearch(
               matchText: sub.match.text,
             }
             totalMatches++
+            seenFiles.add(filePath)
 
             let list = fileMap.get(filePath)
             if (!list) {
@@ -121,10 +123,7 @@ export function startSearch(
       flushTimer = null
     }
     flush()
-    const totalFiles = new Set<string>()
-    // totalFiles count comes from what we've already sent — track externally
-    // For simplicity, we just report totalMatches; the renderer tracks file count
-    onComplete({ totalMatches, totalFiles: totalFiles.size })
+    onComplete({ totalMatches, totalFiles: seenFiles.size })
     if (activeSearch === proc) activeSearch = null
   })
 
