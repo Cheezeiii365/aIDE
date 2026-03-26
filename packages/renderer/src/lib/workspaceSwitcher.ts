@@ -6,11 +6,15 @@
  */
 
 import type { DockviewApi } from 'dockview-react'
-import type { AideLocalState } from '@aide/shared'
+import type { AideLocalState, AideLocalTerminals } from '@aide/shared'
 import { clearCache } from './editorStateCache'
 import { clearAllDirty } from './editorDirtyState'
-import { createTerminalPanelParams, serializeTerminalState } from './terminalState'
-import { serializeWorkspaceState } from './workspaceStateSerializer'
+import { createRestoredTerminalPanelParams, createTerminalPanelParams } from './terminalState'
+import {
+  captureWorkspaceRuntimeSnapshot,
+  getWorkspaceRuntimeSnapshot,
+  saveWorkspaceRuntimeSnapshot,
+} from './workspaceRuntimeSnapshots'
 
 let switchGeneration = 0
 
@@ -19,12 +23,13 @@ interface SwitchContext {
   currentWorkspaceId: string | null
   currentRootPath: string | null
   targetWorkspaceId: string
-  targetRootPath: string
+  targetRootPath: string | null
   sidebarWidth: number
   sidebarCollapsed: boolean
   onSidebarRestore: (width: number, collapsed: boolean) => void
   onBeforeClearPanels?: () => void
   onAfterRestorePanels?: () => void
+  skipCurrentSave?: boolean
 }
 
 /**
@@ -37,15 +42,18 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
   const gen = ++switchGeneration
 
   // 1. SAVE current workspace state
-  if (ctx.currentRootPath) {
-    const state = serializeWorkspaceState(
+  if (ctx.currentWorkspaceId && !ctx.skipCurrentSave) {
+    const snapshot = saveWorkspaceRuntimeSnapshot(captureWorkspaceRuntimeSnapshot(
       ctx.dockviewApi,
+      ctx.currentWorkspaceId,
+      ctx.currentRootPath,
       ctx.sidebarWidth,
       ctx.sidebarCollapsed,
-    )
-    // Fire-and-forget — don't block the switch
-    window.api.saveWorkspaceState(ctx.currentRootPath, state).catch(() => {})
-    window.api.saveTerminalState(ctx.currentRootPath, serializeTerminalState(ctx.dockviewApi)).catch(() => {})
+    ))
+    if (snapshot.rootPath) {
+      window.api.saveWorkspaceState(snapshot.rootPath, snapshot.state).catch(() => {})
+      window.api.saveTerminalState(snapshot.rootPath, snapshot.terminals).catch(() => {})
+    }
   }
 
   // Check if superseded
@@ -69,7 +77,21 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
   if (gen !== switchGeneration) return false
 
   // 3. LOAD target workspace state
-  const savedState = await window.api.loadWorkspaceState(ctx.targetRootPath)
+  let savedState: AideLocalState | null = null
+  let savedTerminals: AideLocalTerminals | null = null
+  let activePanelId: string | null = null
+
+  const runtimeSnapshot = getWorkspaceRuntimeSnapshot(ctx.targetWorkspaceId)
+  if (runtimeSnapshot) {
+    savedState = runtimeSnapshot.state
+    savedTerminals = runtimeSnapshot.terminals
+    activePanelId = runtimeSnapshot.activePanelId
+  } else if (ctx.targetRootPath) {
+    [savedState, savedTerminals] = await Promise.all([
+      window.api.loadWorkspaceState(ctx.targetRootPath),
+      window.api.loadTerminalState(ctx.targetRootPath),
+    ])
+  }
 
   if (gen !== switchGeneration) return false
 
@@ -79,17 +101,18 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
       ctx.dockviewApi.fromJSON(savedState.layout as Parameters<DockviewApi['fromJSON']>[0])
     } catch {
       // Layout restore failed — use default
-      createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath)
+      createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
     }
   } else {
-    createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath)
+    createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
   }
   ctx.onAfterRestorePanels?.()
-  window.api.saveTerminalState(ctx.targetRootPath, serializeTerminalState(ctx.dockviewApi)).catch(() => {})
 
   // 5. RESTORE sidebar
+  const restoredSidebarWidth = savedState?.sidebarWidth ?? ctx.sidebarWidth
+  const restoredSidebarCollapsed = savedState?.sidebarCollapsed ?? ctx.sidebarCollapsed
   if (savedState) {
-    ctx.onSidebarRestore(savedState.sidebarWidth, savedState.sidebarCollapsed)
+    ctx.onSidebarRestore(restoredSidebarWidth, restoredSidebarCollapsed)
   }
 
   // 6. FOCUS last active tab
@@ -100,7 +123,22 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
     if (panel) {
       panel.api.setActive()
     }
+  } else if (activePanelId) {
+    ctx.dockviewApi.panels.find((panel) => panel.id === activePanelId)?.api.setActive()
+  } else if (savedTerminals?.activeTerminalId) {
+    ctx.dockviewApi.panels.find((panel) => {
+      const params = (panel.params as Record<string, unknown> | undefined) ?? {}
+      return params.terminalId === savedTerminals?.activeTerminalId
+    })?.api.setActive()
   }
+
+  saveWorkspaceRuntimeSnapshot(captureWorkspaceRuntimeSnapshot(
+    ctx.dockviewApi,
+    ctx.targetWorkspaceId,
+    ctx.targetRootPath,
+    restoredSidebarWidth,
+    restoredSidebarCollapsed,
+  ))
 
   return true
 }
@@ -108,20 +146,54 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
 /**
  * Create the default 3-pane layout when no saved state exists.
  */
-function createDefaultLayout(api: DockviewApi, workspaceId: string, workspaceRoot: string): void {
-  api.addPanel({
+function createDefaultLayout(
+  api: DockviewApi,
+  workspaceId: string,
+  workspaceRoot: string | null,
+  savedTerminals: AideLocalTerminals | null,
+): void {
+  const editorPanel = api.addPanel({
     id: 'editor',
     component: 'placeholder',
-    title: 'Welcome',
+    title: 'Workspace',
   })
 
+  const terminals = savedTerminals?.terminals.filter((terminal) => terminal.workspaceId === workspaceId) ?? []
+
+  if (terminals.length > 0) {
+    terminals.forEach((terminal, index) => {
+      api.addPanel({
+        id: index === 0 ? 'terminal' : `terminal-${terminal.id}`,
+        component: 'terminalPane',
+        title: terminal.title || 'Terminal',
+        params: createRestoredTerminalPanelParams(
+          terminal.id,
+          workspaceId,
+          terminal.cwd || workspaceRoot || undefined,
+          terminal.title || 'Terminal',
+          terminal.shell,
+        ),
+        position: { referencePanel: editorPanel, direction: 'below' },
+        initialHeight: 200,
+      })
+    })
+  } else {
+    api.addPanel({
+      id: 'terminal',
+      component: 'terminalPane',
+      title: 'Terminal',
+      params: createTerminalPanelParams(workspaceId, workspaceRoot || undefined, 'Terminal'),
+      position: { referencePanel: editorPanel, direction: 'below' },
+      initialHeight: 200,
+    })
+  }
+
   api.addPanel({
-    id: 'terminal',
-    component: 'terminalPane',
-    title: 'Terminal',
-    params: createTerminalPanelParams(workspaceId, workspaceRoot, 'Terminal'),
-    position: { referencePanel: 'editor', direction: 'below' },
-    initialHeight: 200,
+    id: 'agent',
+    component: 'placeholder',
+    params: { title: 'Agent' },
+    position: { referencePanel: editorPanel, direction: 'right' },
+    initialWidth: 350,
   })
 }
 
@@ -130,13 +202,23 @@ function createDefaultLayout(api: DockviewApi, workspaceId: string, workspaceRoo
  */
 export function autoSave(
   dockviewApi: DockviewApi | null,
+  workspaceId: string | null,
   rootPath: string | null,
   sidebarWidth: number,
   sidebarCollapsed: boolean,
 ): void {
-  if (!dockviewApi || !rootPath) return
+  if (!dockviewApi || !workspaceId) return
 
-  const state = serializeWorkspaceState(dockviewApi, sidebarWidth, sidebarCollapsed)
-  window.api.saveWorkspaceState(rootPath, state).catch(() => {})
-  window.api.saveTerminalState(rootPath, serializeTerminalState(dockviewApi)).catch(() => {})
+  const snapshot = saveWorkspaceRuntimeSnapshot(captureWorkspaceRuntimeSnapshot(
+    dockviewApi,
+    workspaceId,
+    rootPath,
+    sidebarWidth,
+    sidebarCollapsed,
+  ))
+
+  if (snapshot.rootPath) {
+    window.api.saveWorkspaceState(snapshot.rootPath, snapshot.state).catch(() => {})
+    window.api.saveTerminalState(snapshot.rootPath, snapshot.terminals).catch(() => {})
+  }
 }

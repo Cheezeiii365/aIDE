@@ -20,7 +20,12 @@ import { registerDefaultCommands } from '../lib/defaultCommands'
 import { useTasks } from '../hooks/useTasks'
 import { useWorkspaces } from '../hooks/useWorkspaces'
 import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspaceSwitcher'
-import { createTerminalPanelParams, getTerminalParams, serializeTerminalState } from '../lib/terminalState'
+import { createTerminalPanelParams, getTerminalParams } from '../lib/terminalState'
+import {
+  captureWorkspaceRuntimeSnapshot,
+  clearWorkspaceRuntimeSnapshot,
+  saveWorkspaceRuntimeSnapshot,
+} from '../lib/workspaceRuntimeSnapshots'
 import type { AideTask, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
 
 /**
@@ -39,6 +44,7 @@ export function AppShell() {
   const prevWorkspaceRootRef = useRef<string | null>(null)
   const prevWorkspaceIdRef = useRef<string | null>(null)
   const preservedTerminalIdsRef = useRef(new Set<string>())
+  const destroyedWorkspaceIdsRef = useRef(new Set<string>())
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
@@ -63,13 +69,28 @@ export function AppShell() {
 
   // Derive workspaceRoot from active workspace for existing consumers
   const workspaceRoot = activeWorkspace?.rootPath ?? null
-  const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
+  const { worktrees, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
 
-  const persistTerminalState = useCallback((rootPath: string | null = workspaceRoot) => {
+  const persistWorkspaceRuntime = useCallback((
+    workspaceId: string | null = activeWorkspaceId,
+    rootPath: string | null = workspaceRoot,
+  ) => {
     const api = dockviewApiRef.current
-    if (!api || !rootPath) return
-    window.api.saveTerminalState(rootPath, serializeTerminalState(api)).catch(() => {})
-  }, [workspaceRoot])
+    if (!api || !workspaceId) return
+
+    const snapshot = saveWorkspaceRuntimeSnapshot(captureWorkspaceRuntimeSnapshot(
+      api,
+      workspaceId,
+      rootPath,
+      sidebarWidthRef.current,
+      sidebarCollapsed,
+    ))
+
+    if (snapshot.rootPath) {
+      window.api.saveWorkspaceState(snapshot.rootPath, snapshot.state).catch(() => {})
+      window.api.saveTerminalState(snapshot.rootPath, snapshot.terminals).catch(() => {})
+    }
+  }, [activeWorkspaceId, sidebarCollapsed, workspaceRoot])
 
   const handleOpenFolder = useCallback(async () => {
     // If in a blank workspace (no rootPath), set root instead of creating new
@@ -89,6 +110,8 @@ export function AppShell() {
 
   const handleCloseWorkspace = useCallback(async (id: string) => {
     const workspace = workspaces.find((entry) => entry.id === id)
+    destroyedWorkspaceIdsRef.current.add(id)
+    clearWorkspaceRuntimeSnapshot(id)
     if (workspace?.rootPath) {
       window.api.saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null }).catch(() => {})
     }
@@ -96,27 +119,80 @@ export function AppShell() {
     await closeWorkspace(id)
   }, [closeWorkspace, workspaces])
 
+  const handleRemoveWorkspace = useCallback(async (id: string) => {
+    const workspace = workspaces.find((entry) => entry.id === id)
+    destroyedWorkspaceIdsRef.current.add(id)
+    clearWorkspaceRuntimeSnapshot(id)
+    if (workspace?.rootPath) {
+      window.api.saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null }).catch(() => {})
+    }
+    window.api.ptyKillWorkspace(id)
+    await removeWorkspace(id)
+  }, [removeWorkspace, workspaces])
+
+  const showWelcomeLayout = useCallback((api: DockviewApi) => {
+    const panels = [...api.panels]
+    for (const panel of panels) {
+      try {
+        panel.api.close()
+      } catch {
+        // Panel may already be disposed.
+      }
+    }
+    api.addPanel({ id: 'welcome', component: 'welcomePane', params: {} })
+  }, [])
+
   // Full Dockview clear + restore when workspace changes
   useEffect(() => {
     const api = dockviewApiRef.current
     if (!api) return
     const prevRoot = prevWorkspaceRootRef.current
     const prevWorkspaceId = prevWorkspaceIdRef.current
-    prevWorkspaceRootRef.current = workspaceRoot
-    prevWorkspaceIdRef.current = activeWorkspaceId
+    const wasDestroyed = prevWorkspaceId ? destroyedWorkspaceIdsRef.current.has(prevWorkspaceId) : false
 
-    // Transition to no workspace — save then show welcome layout
-    if (!workspaceRoot && prevRoot) {
-      autoSave(api, prevRoot, sidebarWidthRef.current, sidebarCollapsed)
-      // Clear all panels and show welcome
-      const panels = [...api.panels]
-      for (const panel of panels) panel.api.close()
-      api.addPanel({ id: 'welcome', component: 'welcomePane', params: {} })
+    if (!activeWorkspaceId) {
+      if (prevWorkspaceId && !wasDestroyed) {
+        autoSave(api, prevWorkspaceId, prevRoot, sidebarWidthRef.current, sidebarCollapsed)
+      }
+      showWelcomeLayout(api)
+      if (prevWorkspaceId) destroyedWorkspaceIdsRef.current.delete(prevWorkspaceId)
+      prevWorkspaceRootRef.current = workspaceRoot
+      prevWorkspaceIdRef.current = activeWorkspaceId
       return
     }
 
-    if (!workspaceRoot) return
-    if (prevRoot === workspaceRoot && prevWorkspaceId === activeWorkspaceId) return
+    if (prevWorkspaceId === activeWorkspaceId) {
+      if (prevRoot !== workspaceRoot) {
+        persistWorkspaceRuntime(activeWorkspaceId, workspaceRoot)
+      } else if (api.panels.length === 0) {
+        doSwitchWorkspace({
+          dockviewApi: api,
+          currentWorkspaceId: null,
+          currentRootPath: null,
+          targetWorkspaceId: activeWorkspaceId,
+          targetRootPath: workspaceRoot,
+          sidebarWidth: sidebarWidthRef.current,
+          sidebarCollapsed,
+          onSidebarRestore: (width, collapsed) => {
+            sidebarWidthRef.current = width
+            setSidebarCollapsed(collapsed)
+          },
+          onBeforeClearPanels: () => {
+            preservedTerminalIdsRef.current = new Set(
+              api.panels
+                .map((panel) => getTerminalParams(panel)?.terminalId)
+                .filter((id): id is string => !!id),
+            )
+          },
+          onAfterRestorePanels: () => {
+            preservedTerminalIdsRef.current.clear()
+          },
+        })
+      }
+      prevWorkspaceRootRef.current = workspaceRoot
+      prevWorkspaceIdRef.current = activeWorkspaceId
+      return
+    }
 
     doSwitchWorkspace({
       dockviewApi: api,
@@ -126,6 +202,7 @@ export function AppShell() {
       targetRootPath: workspaceRoot,
       sidebarWidth: sidebarWidthRef.current,
       sidebarCollapsed,
+      skipCurrentSave: wasDestroyed,
       onSidebarRestore: (width, collapsed) => {
         sidebarWidthRef.current = width
         setSidebarCollapsed(collapsed)
@@ -139,10 +216,12 @@ export function AppShell() {
       },
       onAfterRestorePanels: () => {
         preservedTerminalIdsRef.current.clear()
-        persistTerminalState(workspaceRoot)
       },
     })
-  }, [activeWorkspaceId, persistTerminalState, sidebarCollapsed, workspaceRoot]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (prevWorkspaceId) destroyedWorkspaceIdsRef.current.delete(prevWorkspaceId)
+    prevWorkspaceRootRef.current = workspaceRoot
+    prevWorkspaceIdRef.current = activeWorkspaceId
+  }, [activeWorkspaceId, persistWorkspaceRuntime, showWelcomeLayout, sidebarCollapsed, workspaceRoot])
 
   // Listen for gitignore audit results from main process and command palette
   useEffect(() => {
@@ -248,28 +327,29 @@ export function AppShell() {
     const interval = setInterval(() => {
       autoSave(
         dockviewApiRef.current,
+        activeWorkspaceId,
         workspaceRoot,
         sidebarWidthRef.current,
         sidebarCollapsed,
       )
     }, 30_000)
     return () => clearInterval(interval)
-  }, [workspaceRoot, sidebarCollapsed])
+  }, [activeWorkspaceId, workspaceRoot, sidebarCollapsed])
 
   // Handle quit save request from main process
   useEffect(() => {
     const unsub = window.api.onLifecycleRequestSave(() => {
       autoSave(
         dockviewApiRef.current,
+        activeWorkspaceId,
         workspaceRoot,
         sidebarWidthRef.current,
         sidebarCollapsed,
       )
-      persistTerminalState(workspaceRoot)
       window.api.lifecycleSaveComplete()
     })
     return unsub
-  }, [persistTerminalState, sidebarCollapsed, workspaceRoot])
+  }, [activeWorkspaceId, sidebarCollapsed, workspaceRoot])
 
   // Handle crash recovery notification
   useEffect(() => {
@@ -293,7 +373,7 @@ export function AppShell() {
         const shouldPreserve = preservedTerminalIdsRef.current.has(terminalParams.terminalId)
         if (!shouldPreserve) {
           window.api.ptyKill(terminalParams.terminalId)
-          persistTerminalState()
+          persistWorkspaceRuntime()
         }
       }
     })
@@ -312,7 +392,7 @@ export function AppShell() {
     })
 
     registerDefaultCommands(api)
-  }, [persistTerminalState])
+  }, [persistWorkspaceRuntime])
 
   // Register app-wide action dispatch layer
   useEffect(() => {
@@ -346,7 +426,7 @@ export function AppShell() {
       params: createTerminalPanelParams(activeWorkspaceId ?? undefined, activeRoot ?? undefined, 'Terminal'),
       position,
     })
-    persistTerminalState()
+    persistWorkspaceRuntime()
   })
 
   // Cmd+B — toggle sidebar
@@ -548,7 +628,7 @@ export function AppShell() {
                       ),
                       position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
                     })
-                    persistTerminalState()
+                    persistWorkspaceRuntime()
                   }}
                 />
               </SidebarSection>
@@ -616,7 +696,7 @@ export function AppShell() {
             {
               label: 'Remove Workspace',
               danger: true,
-              onClick: () => removeWorkspace(wsContextMenu.id),
+              onClick: () => handleRemoveWorkspace(wsContextMenu.id),
             },
           ]}
         />

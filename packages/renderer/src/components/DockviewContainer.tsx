@@ -36,32 +36,7 @@ interface Props {
 export function DockviewContainer({ onApiReady }: Props) {
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
-      const { api } = event
-
-      const editorPanel = api.addPanel({
-        id: 'editor',
-        component: 'welcomePane',
-        params: {},
-      })
-
-      api.addPanel({
-        id: 'terminal',
-        component: 'terminalPane',
-        title: 'Terminal',
-        params: {},
-        position: { referencePanel: editorPanel, direction: 'below' },
-        initialHeight: 200,
-      })
-
-      api.addPanel({
-        id: 'agent',
-        component: 'placeholder',
-        params: { title: 'Agent' },
-        position: { referencePanel: editorPanel, direction: 'right' },
-        initialWidth: 350,
-      })
-
-      onApiReady(api)
+      onApiReady(event.api)
     },
     [onApiReady],
   )

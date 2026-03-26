@@ -26,6 +26,22 @@ export function createTerminalPanelParams(
   }
 }
 
+export function createRestoredTerminalPanelParams(
+  terminalId: string,
+  workspaceId?: string,
+  worktreePath?: string,
+  title?: string,
+  shell?: string,
+): TerminalPanelParams {
+  return {
+    terminalId,
+    workspaceId,
+    worktreePath,
+    title,
+    shell,
+  }
+}
+
 export function isTerminalPanel(panel: { params: unknown }): boolean {
   const params = panel.params as Partial<TerminalPanelParams> | undefined
   return typeof params?.terminalId === 'string' && params.terminalId.length > 0

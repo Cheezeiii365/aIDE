@@ -1,18 +1,18 @@
-import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell, session } from 'electron'
+import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell } from 'electron'
 import { join, dirname, relative } from 'path'
-import { existsSync, readdirSync, statSync } from 'fs'
+import { existsSync, readdirSync } from 'fs'
 import { execFile } from 'child_process'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
-import { registerFileWatcherHandlers, startWatcher, startWatchers, stopWatcher } from './fileWatcher'
+import { registerFileWatcherHandlers, startWatchers, stopWatcher } from './fileWatcher'
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
 import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
 import { startSearch, cancelSearch } from './ripgrepSearch'
 import { ensureAideFolder } from './aideInit'
-import { resolveSettings } from './settingsResolver'
+import { resolveAppDefaults, resolveSettings } from './settingsResolver'
 import { auditGitignore, appendToGitignore, isAuditDismissed, dismissAudit } from './gitignoreAudit'
 import { TaskRunner } from './taskRunner'
 import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
@@ -200,31 +200,7 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
     properties: ['openDirectory'],
   })
   if (result.canceled || result.filePaths.length === 0) return null
-  const selected = result.filePaths[0]
-
-  // Create workspace entry and activate it (handles .aide init, watchers, etc.)
-  const entry = workspaceRegistry.create(selected)
-  await activateWorkspace(entry.id)
-
-  // Auto-detect tasks (non-blocking)
-  if (!hasTasksFile(selected)) {
-    detectTasks(selected).then((tasks) => {
-      if (tasks.length > 0) {
-        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, tasks)
-      }
-    })
-  }
-
-  // Gitignore audit (non-blocking)
-  isAuditDismissed(selected).then(async (dismissed) => {
-    if (dismissed) return
-    const auditResult = await auditGitignore(selected)
-    if (auditResult.missing.length > 0) {
-      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
-    }
-  })
-
-  return selected
+  return result.filePaths[0]
 })
 
 ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, () => store.get('workspaceRoot'))
@@ -244,8 +220,11 @@ async function activateWorkspace(id: string): Promise<void> {
   store.set('activeWorktree', null)
 
   // Stop old pollers before starting new ones
+  taskRunner?.killAll()
+  taskRunner = null
   stopGitPolling()
   stopWorktreePolling()
+  stopWatcher()
 
   if (entry.rootPath) {
     await ensureAideFolder(entry.rootPath)
@@ -255,9 +234,6 @@ async function activateWorkspace(id: string): Promise<void> {
     const getWc = () => contentView?.webContents ?? null
     await startGitPolling(entry.rootPath, getWc)
     await startWorktreePolling(entry.rootPath, getWc, store)
-  } else {
-    // Blank workspace — stop file-related services
-    stopWatcher()
   }
 
   broadcastWorkspaceRegistry()
@@ -300,12 +276,46 @@ ipcMain.handle(IpcChannels.WORKSPACE_CREATE_BLANK, async () => {
 
 ipcMain.handle(IpcChannels.WORKSPACE_SET_ROOT, async (_event, id: string, rootPath: string) => {
   workspaceRegistry.setRoot(id, rootPath)
-  // Re-activate to start watchers/pollers for the new root
   await activateWorkspace(id)
+
+  if (!hasTasksFile(rootPath)) {
+    detectTasks(rootPath).then((tasks) => {
+      if (tasks.length > 0) {
+        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, tasks)
+      }
+    })
+  }
+
+  isAuditDismissed(rootPath).then(async (dismissed) => {
+    if (dismissed) return
+    const auditResult = await auditGitignore(rootPath)
+    if (auditResult.missing.length > 0) {
+      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
+    }
+  })
 })
 
-ipcMain.handle(IpcChannels.WORKSPACE_REMOVE, (_event, id: string) => {
+ipcMain.handle(IpcChannels.WORKSPACE_REMOVE, async (_event, id: string) => {
+  const wasActive = workspaceRegistry.getActiveId() === id
   workspaceRegistry.remove(id)
+
+  if (wasActive) {
+    const nextId = workspaceRegistry.getActiveId()
+    if (nextId) {
+      await activateWorkspace(nextId)
+    } else {
+      taskRunner?.killAll()
+      taskRunner = null
+      stopGitPolling()
+      stopWorktreePolling()
+      stopWatcher()
+      store.set('workspaceRoot', null)
+      store.set('activeWorktree', null)
+      broadcastWorkspaceRegistry()
+    }
+    return
+  }
+
   broadcastWorkspaceRegistry()
 })
 
@@ -320,6 +330,8 @@ ipcMain.handle(IpcChannels.WORKSPACE_CLOSE, async (_event, id: string) => {
       await activateWorkspace(nextId)
     } else {
       // No workspaces left — clean up all background services
+      taskRunner?.killAll()
+      taskRunner = null
       stopGitPolling()
       stopWorktreePolling()
       stopWatcher()
@@ -397,7 +409,7 @@ ipcMain.handle(IpcChannels.AIDE_INIT, async () => {
 // .aide settings IPC handler
 ipcMain.handle(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, async () => {
   const rootPath = store.get('workspaceRoot')
-  if (!rootPath) return null
+  if (!rootPath) return resolveAppDefaults(store)
   return resolveSettings(rootPath, store)
 })
 

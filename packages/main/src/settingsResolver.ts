@@ -25,6 +25,30 @@ const BUILT_IN_DEFAULTS: ResolvedSettings = {
   searchExclude: {},
 }
 
+export function resolveAppDefaults(
+  store: Store<AppSettings>,
+): ResolvedSettings {
+  const userDefaults = (store.get('editorDefaults') ?? {}) as Partial<AideProjectSettings>
+
+  return {
+    tabSize: userDefaults.tabSize ?? BUILT_IN_DEFAULTS.tabSize,
+    insertSpaces: userDefaults.insertSpaces ?? BUILT_IN_DEFAULTS.insertSpaces,
+    wordWrap: userDefaults.wordWrap ?? BUILT_IN_DEFAULTS.wordWrap,
+    rulers: userDefaults.rulers ?? BUILT_IN_DEFAULTS.rulers,
+    fontSize: userDefaults.fontSize ?? BUILT_IN_DEFAULTS.fontSize,
+    fontFamily: userDefaults.fontFamily ?? BUILT_IN_DEFAULTS.fontFamily,
+    formatOnSave: userDefaults.formatOnSave ?? BUILT_IN_DEFAULTS.formatOnSave,
+    filesExclude: {
+      ...BUILT_IN_DEFAULTS.filesExclude,
+      ...userDefaults.filesExclude,
+    },
+    searchExclude: {
+      ...BUILT_IN_DEFAULTS.searchExclude,
+      ...userDefaults.searchExclude,
+    },
+  }
+}
+
 /**
  * Read .aide/settings.json from a project root.
  * Returns an empty object if the file doesn't exist or is invalid.
@@ -53,30 +77,27 @@ export async function resolveSettings(
   store: Store<AppSettings>,
 ): Promise<ResolvedSettings> {
   const projectSettings = await readProjectSettings(rootPath)
-
-  // User-global editor defaults from electron-store (if any)
+  const appDefaults = resolveAppDefaults(store)
   const userDefaults = (store.get('editorDefaults') ?? {}) as Partial<AideProjectSettings>
 
   // Merge: project > user > built-in
   return {
-    tabSize: projectSettings.tabSize ?? userDefaults.tabSize ?? BUILT_IN_DEFAULTS.tabSize,
+    tabSize: projectSettings.tabSize ?? userDefaults.tabSize ?? appDefaults.tabSize,
     insertSpaces:
-      projectSettings.insertSpaces ?? userDefaults.insertSpaces ?? BUILT_IN_DEFAULTS.insertSpaces,
-    wordWrap: projectSettings.wordWrap ?? userDefaults.wordWrap ?? BUILT_IN_DEFAULTS.wordWrap,
-    rulers: projectSettings.rulers ?? userDefaults.rulers ?? BUILT_IN_DEFAULTS.rulers,
-    fontSize: projectSettings.fontSize ?? userDefaults.fontSize ?? BUILT_IN_DEFAULTS.fontSize,
+      projectSettings.insertSpaces ?? userDefaults.insertSpaces ?? appDefaults.insertSpaces,
+    wordWrap: projectSettings.wordWrap ?? userDefaults.wordWrap ?? appDefaults.wordWrap,
+    rulers: projectSettings.rulers ?? userDefaults.rulers ?? appDefaults.rulers,
+    fontSize: projectSettings.fontSize ?? userDefaults.fontSize ?? appDefaults.fontSize,
     fontFamily:
-      projectSettings.fontFamily ?? userDefaults.fontFamily ?? BUILT_IN_DEFAULTS.fontFamily,
+      projectSettings.fontFamily ?? userDefaults.fontFamily ?? appDefaults.fontFamily,
     formatOnSave:
-      projectSettings.formatOnSave ?? userDefaults.formatOnSave ?? BUILT_IN_DEFAULTS.formatOnSave,
+      projectSettings.formatOnSave ?? userDefaults.formatOnSave ?? appDefaults.formatOnSave,
     filesExclude: {
-      ...BUILT_IN_DEFAULTS.filesExclude,
-      ...userDefaults.filesExclude,
+      ...appDefaults.filesExclude,
       ...projectSettings.filesExclude,
     },
     searchExclude: {
-      ...BUILT_IN_DEFAULTS.searchExclude,
-      ...userDefaults.searchExclude,
+      ...appDefaults.searchExclude,
       ...projectSettings.searchExclude,
     },
   }
