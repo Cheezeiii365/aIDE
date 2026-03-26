@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WindowApi } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -174,6 +174,39 @@ const api: WindowApi = {
     ipcRenderer.on(IpcChannels.TASK_AUTO_DETECT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.TASK_AUTO_DETECT, handler)
   },
+
+  // Workspace registry
+  listWorkspaces: (): Promise<WorkspaceEntry[]> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_LIST),
+  createWorkspace: (rootPath: string): Promise<WorkspaceEntry> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_CREATE, rootPath),
+  removeWorkspace: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_REMOVE, id),
+  closeWorkspace: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_CLOSE, id),
+  switchWorkspace: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_SWITCH, id),
+  updateWorkspace: (id: string, patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_UPDATE, id, patch),
+  reorderWorkspaces: (ids: string[]): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_REORDER, ids),
+  getActiveWorkspaceId: (): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_GET_ACTIVE),
+  onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaces: WorkspaceEntry[]) => callback(workspaces)
+    ipcRenderer.on(IpcChannels.WORKSPACE_REGISTRY_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.WORKSPACE_REGISTRY_CHANGED, handler)
+  },
+
+  // State persistence
+  saveWorkspaceState: (rootPath: string, state: AideLocalState): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.STATE_SAVE, rootPath, state),
+  loadWorkspaceState: (rootPath: string): Promise<AideLocalState | null> =>
+    ipcRenderer.invoke(IpcChannels.STATE_LOAD, rootPath),
+  saveTerminalState: (rootPath: string, state: AideLocalTerminals): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.STATE_SAVE_TERMINALS, rootPath, state),
+  loadTerminalState: (rootPath: string): Promise<AideLocalTerminals | null> =>
+    ipcRenderer.invoke(IpcChannels.STATE_LOAD_TERMINALS, rootPath),
 
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,

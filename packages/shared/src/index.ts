@@ -96,6 +96,23 @@ export const IpcChannels = {
   TASK_RELOAD: 'task:reload',
   TASK_AUTO_DETECT: 'task:auto-detect',
   TASK_GENERATE: 'task:generate',
+
+  // Workspace registry
+  WORKSPACE_LIST: 'workspace:list',
+  WORKSPACE_CREATE: 'workspace:create',
+  WORKSPACE_REMOVE: 'workspace:remove',
+  WORKSPACE_CLOSE: 'workspace:close',
+  WORKSPACE_SWITCH: 'workspace:switch',
+  WORKSPACE_UPDATE: 'workspace:update',
+  WORKSPACE_REORDER: 'workspace:reorder',
+  WORKSPACE_REGISTRY_CHANGED: 'workspace:registry-changed',
+  WORKSPACE_GET_ACTIVE: 'workspace:get-active',
+
+  // State persistence
+  STATE_SAVE: 'state:save',
+  STATE_LOAD: 'state:load',
+  STATE_SAVE_TERMINALS: 'state:save-terminals',
+  STATE_LOAD_TERMINALS: 'state:load-terminals',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -228,6 +245,56 @@ export interface AideInitResult {
 export interface GitignoreAuditResult {
   missing: { pattern: string; category: string }[]
   total: number
+}
+
+// ─── Workspace Registry ──────────────────────────
+export interface WorkspaceEntry {
+  id: string
+  name: string
+  rootPath: string
+  icon?: string
+  color?: string
+  createdAt: number
+  lastOpenedAt: number
+}
+
+export interface AppWorkspaceRegistry {
+  workspaces: Record<string, WorkspaceEntry>
+  workspaceOrder: string[]
+  activeWorkspaceId: string | null
+  lastSessionWorkspaces: string[]
+}
+
+// ─── State Persistence ───────────────────────────
+export interface TabState {
+  filePath: string
+  scrollTop: number
+  cursorLine: number
+  cursorColumn: number
+  foldedRanges: [number, number][]
+  isDirty: boolean
+  dirtyContent?: string
+}
+
+export interface AideLocalState {
+  layout: unknown | null
+  openTabs: TabState[]
+  activeTabPath: string | null
+  sidebarWidth: number
+  sidebarCollapsed: boolean
+  sidebarSections: Record<string, boolean>
+}
+
+export interface TerminalState {
+  id: string
+  cwd: string
+  shell?: string
+  title?: string
+}
+
+export interface AideLocalTerminals {
+  terminals: TerminalState[]
+  activeTerminalId: string | null
 }
 
 // ─── Task System ─────────────────────────────────
@@ -422,6 +489,23 @@ export interface WindowApi {
   onTaskRequestInput: (callback: (request: TaskInputRequest) => void) => () => void
   onTaskDiagnostics: (callback: (diagnostics: TaskDiagnostic[]) => void) => () => void
   onTaskAutoDetect: (callback: (tasks: AideTask[]) => void) => () => void
+
+  // Workspace registry
+  listWorkspaces: () => Promise<WorkspaceEntry[]>
+  createWorkspace: (rootPath: string) => Promise<WorkspaceEntry>
+  removeWorkspace: (id: string) => Promise<void>
+  closeWorkspace: (id: string) => Promise<void>
+  switchWorkspace: (id: string) => Promise<void>
+  updateWorkspace: (id: string, patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>) => Promise<void>
+  reorderWorkspaces: (ids: string[]) => Promise<void>
+  getActiveWorkspaceId: () => Promise<string | null>
+  onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => () => void
+
+  // State persistence
+  saveWorkspaceState: (rootPath: string, state: AideLocalState) => Promise<void>
+  loadWorkspaceState: (rootPath: string) => Promise<AideLocalState | null>
+  saveTerminalState: (rootPath: string, state: AideLocalTerminals) => Promise<void>
+  loadTerminalState: (rootPath: string) => Promise<AideLocalTerminals | null>
 
   // Platform info
   platform: NodeJS.Platform

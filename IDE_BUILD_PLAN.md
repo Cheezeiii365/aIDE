@@ -1214,8 +1214,8 @@ Track milestone completion here. Update as you go.
 | 4.0a .aide folder infrastructure | ✅ Complete | `aideInit.ts`, `settingsResolver.ts`, project type detection, settings cascade |
 | 4.0b Gitignore security audit | ✅ Complete | `gitignoreAudit.ts`, review modal, command palette command, toast flow |
 | 4.0c Task system | ✅ Complete | `taskRunner.ts`, `taskVariableResolver.ts`, `problemMatcher.ts`, `taskAutoDetect.ts`, `useTasks` hook, `TaskInputModal`, status bar indicator, command palette commands |
-| 4.1 Workspace creation flow | ⬜ Not started | |
-| 4.2 Workspace switching + state persistence | ⬜ Not started | |
+| 4.1 Workspace creation flow | ✅ Complete | `workspaceRegistry.ts`, `useWorkspaces` hook, ribbon tabs, context menu, Cmd+1-9/Cmd+Shift+[/] switching |
+| 4.2 Workspace switching + state persistence | ✅ Complete | `stateSerializer.ts`, `workspaceStateSerializer.ts`, `workspaceSwitcher.ts`, 30s auto-save, atomic writes, worktree sync fix |
 | 4.3 Agent status in ribbon | ⬜ Not started | |
 | 4.4 Workspace management UI | ⬜ Not started | |
 

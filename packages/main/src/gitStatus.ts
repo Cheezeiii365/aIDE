@@ -95,12 +95,17 @@ export async function startGitPolling(
   lastBranch = ''
   lastIgnoredJson = ''
 
-  // Initial fetch
+  // Initial fetch — broadcast immediately so the renderer has fresh data
   const initial = await fetchGitStatus(rootPath)
   if (initial) {
     lastJson = JSON.stringify(initial.files)
     lastBranch = initial.branch
     lastIgnoredJson = JSON.stringify(initial.ignoredPaths)
+    const wc = getWebContents()
+    if (wc) {
+      wc.send(IpcChannels.GIT_STATUS_CHANGED, initial)
+      wc.send(IpcChannels.GIT_BRANCH_CHANGED, initial.branch)
+    }
   }
 
   pollTimer = setInterval(async () => {

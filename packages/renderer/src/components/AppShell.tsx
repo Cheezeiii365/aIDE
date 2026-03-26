@@ -15,8 +15,11 @@ import { CommandPalette } from './CommandPalette'
 import { QuickOpen } from './QuickOpen'
 import { GitignoreReviewModal } from './GitignoreReviewModal'
 import { TaskInputModal } from './TaskInputModal'
+import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { registerDefaultCommands } from '../lib/defaultCommands'
 import { useTasks } from '../hooks/useTasks'
+import { useWorkspaces } from '../hooks/useWorkspaces'
+import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspaceSwitcher'
 import type { GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
 
 /**
@@ -31,20 +34,56 @@ import type { GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
  */
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
+  const sidebarWidthRef = useRef(220)
+  const prevWorkspaceRootRef = useRef<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
   const [gitignoreAudit, setGitignoreAudit] = useState<GitignoreAuditResult | null>(null)
   const [gitignoreModalOpen, setGitignoreModalOpen] = useState(false)
   const [taskInputRequest, setTaskInputRequest] = useState<TaskInputRequest | null>(null)
-  const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
+  const [wsContextMenu, setWsContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const { runningTasks } = useTasks()
 
-  // Load persisted workspace root on mount
+  // Workspace registry
+  const {
+    workspaces,
+    activeWorkspaceId,
+    activeWorkspace,
+    switchWorkspace,
+    createWorkspace,
+    closeWorkspace,
+    removeWorkspace,
+    updateWorkspace,
+    reorderWorkspaces,
+  } = useWorkspaces()
+
+  // Derive workspaceRoot from active workspace for existing consumers
+  const workspaceRoot = activeWorkspace?.rootPath ?? null
+  const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
+
+  // Full Dockview clear + restore when workspace changes
   useEffect(() => {
-    window.api.getWorkspaceRoot().then(setWorkspaceRoot)
-  }, [])
+    const api = dockviewApiRef.current
+    if (!api || !workspaceRoot) return
+    // Skip on initial mount (no previous workspace to save)
+    const prevRoot = prevWorkspaceRootRef.current
+    prevWorkspaceRootRef.current = workspaceRoot
+    if (prevRoot === workspaceRoot) return
+    if (prevRoot === null) return // first load — DockviewContainer handles initial layout
+
+    doSwitchWorkspace({
+      dockviewApi: api,
+      currentRootPath: prevRoot,
+      targetRootPath: workspaceRoot,
+      sidebarWidth: sidebarWidthRef.current,
+      sidebarCollapsed,
+      onSidebarRestore: (width, collapsed) => {
+        sidebarWidthRef.current = width
+        setSidebarCollapsed(collapsed)
+      },
+    })
+  }, [workspaceRoot]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for gitignore audit results from main process and command palette
   useEffect(() => {
@@ -99,15 +138,50 @@ export function AppShell() {
     return unsub
   }, [])
 
+  // Cmd+1-9 and Cmd+Shift+[/] workspace switching
+  useEffect(() => {
+    const handleSwitch = (e: Event) => {
+      const { index } = (e as CustomEvent<{ index: number }>).detail
+      if (index < workspaces.length) {
+        switchWorkspace(workspaces[index].id)
+      }
+    }
+    const handleCycle = (e: Event) => {
+      const { direction } = (e as CustomEvent<{ direction: number }>).detail
+      if (workspaces.length === 0 || !activeWorkspaceId) return
+      const currentIdx = workspaces.findIndex((w) => w.id === activeWorkspaceId)
+      const nextIdx = (currentIdx + direction + workspaces.length) % workspaces.length
+      switchWorkspace(workspaces[nextIdx].id)
+    }
+    window.addEventListener('aide:workspace-switch', handleSwitch)
+    window.addEventListener('aide:workspace-cycle', handleCycle)
+    return () => {
+      window.removeEventListener('aide:workspace-switch', handleSwitch)
+      window.removeEventListener('aide:workspace-cycle', handleCycle)
+    }
+  }, [workspaces, activeWorkspaceId, switchWorkspace])
+
   // Keep sidebarVisible context key in sync
   useEffect(() => {
     setContext('sidebarVisible', !sidebarCollapsed)
   }, [sidebarCollapsed])
 
+  // Auto-save workspace state every 30 seconds (crash safety net)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      autoSave(
+        dockviewApiRef.current,
+        workspaceRoot,
+        sidebarWidthRef.current,
+        sidebarCollapsed,
+      )
+    }, 30_000)
+    return () => clearInterval(interval)
+  }, [workspaceRoot, sidebarCollapsed])
+
   const handleOpenFolder = useCallback(async () => {
-    const selected = await window.api.openWorkspaceDialog()
-    if (selected) setWorkspaceRoot(selected)
-  }, [])
+    await createWorkspace()
+  }, [createWorkspace])
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
@@ -327,7 +401,14 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <WorkspaceRibbon />
+      <WorkspaceRibbon
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSwitch={switchWorkspace}
+        onCreateWorkspace={handleOpenFolder}
+        onReorder={reorderWorkspaces}
+        onContextMenu={(id, x, y) => setWsContextMenu({ id, x, y })}
+      />
       <div className="app-middle">
         <Sidebar
           onFileOpen={onFileOpen}
@@ -389,6 +470,42 @@ export function AppShell() {
         <TaskInputModal
           request={taskInputRequest}
           onClose={() => setTaskInputRequest(null)}
+        />
+      )}
+      {wsContextMenu && (
+        <WorkspaceContextMenu
+          x={wsContextMenu.x}
+          y={wsContextMenu.y}
+          onClose={() => setWsContextMenu(null)}
+          items={[
+            {
+              label: 'Rename',
+              onClick: () => {
+                const ws = workspaces.find((w) => w.id === wsContextMenu.id)
+                if (!ws) return
+                const newName = prompt('Rename workspace:', ws.name)
+                if (newName && newName !== ws.name) {
+                  updateWorkspace(wsContextMenu.id, { name: newName })
+                }
+              },
+            },
+            {
+              label: 'Reveal in Finder',
+              onClick: () => {
+                const ws = workspaces.find((w) => w.id === wsContextMenu.id)
+                if (ws) window.api.revealInFinder(ws.rootPath)
+              },
+            },
+            {
+              label: 'Close Workspace',
+              onClick: () => closeWorkspace(wsContextMenu.id),
+            },
+            {
+              label: 'Remove Workspace',
+              danger: true,
+              onClick: () => removeWorkspace(wsContextMenu.id),
+            },
+          ]}
         />
       )}
     </div>

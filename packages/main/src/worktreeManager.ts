@@ -281,10 +281,11 @@ export async function startWorktreePolling(
   currentRepoRoot = repoRoot
   lastJson = ''
 
-  // Initial fetch
+  // Initial fetch — broadcast immediately so the renderer has fresh data
   const active = store.get('activeWorktree')
   cachedList = await fetchWorktreeList(repoRoot, active)
   lastJson = JSON.stringify(cachedList)
+  getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
 
   pollTimer = setInterval(async () => {
     const currentActive = store.get('activeWorktree')

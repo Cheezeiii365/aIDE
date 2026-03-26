@@ -18,7 +18,8 @@ export function useWorktrees(workspaceRoot: string | null) {
   // The effective root: active worktree path or workspace root
   const activeRoot = activeWorktree ?? workspaceRoot
 
-  // Load initial state
+  // Load initial state and subscribe to changes — re-run when workspaceRoot changes
+  // to avoid stale worktree data from a previous workspace
   useEffect(() => {
     if (!workspaceRoot) {
       setWorktrees([])
@@ -26,20 +27,21 @@ export function useWorktrees(workspaceRoot: string | null) {
       return
     }
 
+    // Reset immediately to avoid showing stale data during switch
+    setWorktrees([])
+    setActiveWorktreeState(null)
+
     window.api.listWorktrees().then(setWorktrees)
     window.api.getActiveWorktree().then(setActiveWorktreeState)
-  }, [workspaceRoot])
 
-  // Subscribe to worktree list changes
-  useEffect(() => {
+    // Subscribe to worktree list changes — scoped to this workspace
     const cleanup = window.api.onWorktreeListChanged((list) => {
       setWorktrees(list)
-      // Update active state from the list's isCurrent flags
       const current = list.find((w) => w.isCurrent)
       setActiveWorktreeState(current?.path ?? null)
     })
     return cleanup
-  }, [])
+  }, [workspaceRoot])
 
   const switchWorktree = useCallback(async (worktreePath: string | null) => {
     await window.api.setActiveWorktree(worktreePath)

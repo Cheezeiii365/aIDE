@@ -45,23 +45,23 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     },
   )
 
-  // Cmd+1 through Cmd+9 — workspace switching (placeholder)
+  // Cmd+1 through Cmd+9 — workspace switching
   for (let n = 1; n <= 9; n++) {
     registerCommand(
       { id: `workspace.switchTo${n}`, label: `Switch to Workspace ${n}`, keybinding: `Cmd+${n}`, category: 'Workspace' },
-      () => showToast(`Workspace switching is not yet available`),
+      () => window.dispatchEvent(new CustomEvent('aide:workspace-switch', { detail: { index: n - 1 } })),
     )
   }
 
-  // Cmd+Shift+] / Cmd+Shift+[ — cycle workspace tabs (placeholder)
+  // Cmd+Shift+] / Cmd+Shift+[ — cycle workspace tabs
   registerCommand(
-    { id: 'workspace.cycleTabNext', label: 'Next Tab', keybinding: 'Cmd+Shift+]', category: 'Workspace' },
-    () => showToast('Tab cycling is not yet available'),
+    { id: 'workspace.cycleTabNext', label: 'Next Workspace', keybinding: 'Cmd+Shift+]', category: 'Workspace' },
+    () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: 1 } })),
   )
 
   registerCommand(
-    { id: 'workspace.cycleTabPrev', label: 'Previous Tab', keybinding: 'Cmd+Shift+[', category: 'Workspace' },
-    () => showToast('Tab cycling is not yet available'),
+    { id: 'workspace.cycleTabPrev', label: 'Previous Workspace', keybinding: 'Cmd+Shift+[', category: 'Workspace' },
+    () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: -1 } })),
   )
 
   // Cmd+T — symbol search (placeholder, awaiting LSP)

@@ -23,3 +23,11 @@ export function setCachedState(filePath: string, state: EditorState): void {
     if (oldest !== undefined) cache.delete(oldest)
   }
 }
+
+export function clearCache(): void {
+  cache.clear()
+}
+
+export function getAllCachedPaths(): string[] {
+  return Array.from(cache.keys())
+}
