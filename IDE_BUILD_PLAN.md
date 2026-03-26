@@ -1211,6 +1211,9 @@ Track milestone completion here. Update as you go.
 ### Phase 4: Workspace System (Weeks 11–13)
 | Milestone | Status | Notes |
 |---|---|---|
+| 4.0a .aide folder infrastructure | ✅ Complete | `aideInit.ts`, `settingsResolver.ts`, project type detection, settings cascade |
+| 4.0b Gitignore security audit | ✅ Complete | `gitignoreAudit.ts`, review modal, command palette command, toast flow |
+| 4.0c Task system | ✅ Complete | `taskRunner.ts`, `taskVariableResolver.ts`, `problemMatcher.ts`, `taskAutoDetect.ts`, `useTasks` hook, `TaskInputModal`, status bar indicator, command palette commands |
 | 4.1 Workspace creation flow | ⬜ Not started | |
 | 4.2 Workspace switching + state persistence | ⬜ Not started | |
 | 4.3 Agent status in ribbon | ⬜ Not started | |

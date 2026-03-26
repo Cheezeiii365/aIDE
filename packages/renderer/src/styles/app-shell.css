@@ -232,6 +232,23 @@
   opacity: 0.7;
 }
 
+.status-bar__item--tasks {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+}
+
+.status-bar__spinner {
+  width: 10px;
+  height: 10px;
+  animation: status-spin 800ms linear infinite;
+}
+
+@keyframes status-spin {
+  to { transform: rotate(360deg); }
+}
+
 .status-bar__separator {
   width: 1px;
   height: 10px;

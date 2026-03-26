@@ -13,7 +13,11 @@ import { useWorktrees } from '../hooks/useWorktrees'
 import { ToastContainer, showToast } from './Toast'
 import { CommandPalette } from './CommandPalette'
 import { QuickOpen } from './QuickOpen'
+import { GitignoreReviewModal } from './GitignoreReviewModal'
+import { TaskInputModal } from './TaskInputModal'
 import { registerDefaultCommands } from '../lib/defaultCommands'
+import { useTasks } from '../hooks/useTasks'
+import type { GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
 
 /**
  * Top-level application shell that manages workspace state, dockview panels, shortcuts, and the main UI layout.
@@ -31,11 +35,68 @@ export function AppShell() {
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
+  const [gitignoreAudit, setGitignoreAudit] = useState<GitignoreAuditResult | null>(null)
+  const [gitignoreModalOpen, setGitignoreModalOpen] = useState(false)
+  const [taskInputRequest, setTaskInputRequest] = useState<TaskInputRequest | null>(null)
   const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
+  const { runningTasks } = useTasks()
 
   // Load persisted workspace root on mount
   useEffect(() => {
     window.api.getWorkspaceRoot().then(setWorkspaceRoot)
+  }, [])
+
+  // Listen for gitignore audit results from main process and command palette
+  useEffect(() => {
+    const handleAudit = (result: GitignoreAuditResult) => {
+      setGitignoreAudit(result)
+      showToast(
+        `Found ${result.missing.length} missing .gitignore pattern${result.missing.length !== 1 ? 's' : ''} for sensitive files`,
+        { label: 'Review', onClick: () => setGitignoreModalOpen(true) },
+      )
+    }
+
+    const unsub = window.api.onGitignoreAuditResult(handleAudit)
+
+    // Also listen for command-palette-triggered audits
+    const handleCustom = (e: Event) => {
+      handleAudit((e as CustomEvent<GitignoreAuditResult>).detail)
+    }
+    window.addEventListener('aide:gitignore-audit', handleCustom)
+
+    return () => {
+      unsub()
+      window.removeEventListener('aide:gitignore-audit', handleCustom)
+    }
+  }, [])
+
+  // Listen for task input requests
+  useEffect(() => {
+    const unsub = window.api.onTaskRequestInput((request) => {
+      setTaskInputRequest(request)
+    })
+    return unsub
+  }, [])
+
+  // Listen for task auto-detect results (offer to generate tasks.json)
+  useEffect(() => {
+    const unsub = window.api.onTaskAutoDetect((tasks) => {
+      showToast(
+        `Detected ${tasks.length} task${tasks.length !== 1 ? 's' : ''} from project config`,
+        {
+          label: 'Generate tasks.json',
+          onClick: async () => {
+            const result = await window.api.generateTasks()
+            if ('error' in result) {
+              showToast(result.error)
+            } else {
+              showToast('Generated .aide/tasks.json')
+            }
+          },
+        },
+      )
+    })
+    return unsub
   }, [])
 
   // Keep sidebarVisible context key in sync
@@ -304,7 +365,7 @@ export function AppShell() {
           <DockviewContainer onApiReady={onApiReady} />
         </div>
       </div>
-      <StatusBar />
+      <StatusBar runningTasks={runningTasks} />
       <ToastContainer />
       {commandPaletteOpen && (
         <CommandPalette onClose={() => setCommandPaletteOpen(false)} />
@@ -313,6 +374,21 @@ export function AppShell() {
         <QuickOpen
           onClose={() => setQuickOpenOpen(false)}
           workspaceRoot={activeRoot}
+        />
+      )}
+      {gitignoreModalOpen && gitignoreAudit && (
+        <GitignoreReviewModal
+          auditResult={gitignoreAudit}
+          onClose={() => {
+            setGitignoreModalOpen(false)
+            setGitignoreAudit(null)
+          }}
+        />
+      )}
+      {taskInputRequest && (
+        <TaskInputModal
+          request={taskInputRequest}
+          onClose={() => setTaskInputRequest(null)}
         />
       )}
     </div>

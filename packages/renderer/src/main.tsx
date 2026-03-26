@@ -14,6 +14,7 @@ import './styles/worktree-panel.css'
 import './styles/modal.css'
 import './styles/search-panel.css'
 import './styles/find-in-files.css'
+import './styles/gitignore-modal.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

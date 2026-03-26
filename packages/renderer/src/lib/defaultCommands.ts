@@ -69,4 +69,62 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     { id: 'editor.symbolSearch', label: 'Go to Symbol', keybinding: 'Cmd+T', category: 'Editor' },
     () => showToast('Symbol search requires LSP (coming in Phase 3)'),
   )
+
+  // Gitignore security audit — on-demand via command palette
+  registerCommand(
+    { id: 'gitignore.audit', label: 'Audit .gitignore Security', category: 'aIDE' },
+    async () => {
+      const result = await window.api.auditGitignore()
+      if (result.missing.length === 0) {
+        showToast('All security patterns are present in .gitignore')
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('aide:gitignore-audit', { detail: result }),
+        )
+      }
+    },
+  )
+
+  // Task system commands
+  registerCommand(
+    { id: 'task.run', label: 'Run Task...', category: 'Task', keybinding: 'Cmd+Shift+B' },
+    async () => {
+      const { tasks, compounds } = await window.api.listTasks()
+      const allItems = [
+        ...tasks.map((t) => ({ id: t.id, label: t.label, group: t.group })),
+        ...compounds.map((c) => ({ id: c.id, label: c.label, group: undefined })),
+      ]
+      if (allItems.length === 0) {
+        showToast('No tasks defined. Create .aide/tasks.json to add tasks.')
+        return
+      }
+      // Dispatch to command palette for task selection
+      window.dispatchEvent(
+        new CustomEvent('aide:task-picker', { detail: allItems }),
+      )
+    },
+  )
+
+  registerCommand(
+    { id: 'task.runLast', label: 'Run Last Task', category: 'Task', keybinding: 'Cmd+Shift+R' },
+    () => {
+      // Dispatch event — AppShell handles via useTasks
+      window.dispatchEvent(new CustomEvent('aide:task-run-last'))
+    },
+  )
+
+  registerCommand(
+    { id: 'task.terminate', label: 'Terminate Task...', category: 'Task', keybinding: 'Cmd+Shift+X' },
+    () => {
+      window.dispatchEvent(new CustomEvent('aide:task-terminate'))
+    },
+  )
+
+  registerCommand(
+    { id: 'task.reloadTasks', label: 'Reload Tasks', category: 'Task' },
+    async () => {
+      await window.api.reloadTasks()
+      showToast('Tasks reloaded')
+    },
+  )
 }

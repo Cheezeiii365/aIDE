@@ -11,8 +11,15 @@ import { registerFileWatcherHandlers, startWatcher, startWatchers, stopWatcher }
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gitStatus'
 import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
 import { startSearch, cancelSearch } from './ripgrepSearch'
+import { ensureAideFolder } from './aideInit'
+import { resolveSettings } from './settingsResolver'
+import { auditGitignore, appendToGitignore, isAuditDismissed, dismissAudit } from './gitignoreAudit'
+import { TaskRunner } from './taskRunner'
+import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
+
+let taskRunner: TaskRunner | null = null
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -192,6 +199,32 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   const selected = result.filePaths[0]
   store.set('workspaceRoot', selected)
   store.set('activeWorktree', null)
+
+  // Initialize .aide folder structure
+  const initResult = await ensureAideFolder(selected)
+  contentView?.webContents.send(IpcChannels.AIDE_INIT_RESULT, initResult)
+
+  // Initialize task runner
+  initTaskRunner(selected)
+
+  // Auto-detect tasks if no tasks.json exists (non-blocking)
+  if (!hasTasksFile(selected)) {
+    detectTasks(selected).then((tasks) => {
+      if (tasks.length > 0) {
+        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, tasks)
+      }
+    })
+  }
+
+  // Run gitignore security audit (non-blocking)
+  isAuditDismissed(selected).then(async (dismissed) => {
+    if (dismissed) return
+    const auditResult = await auditGitignore(selected)
+    if (auditResult.missing.length > 0) {
+      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
+    }
+  })
+
   await startWatchers('default', [selected])
   const getWc = () => contentView?.webContents ?? null
   await startGitPolling(selected, getWc)
@@ -200,6 +233,83 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
 })
 
 ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, () => store.get('workspaceRoot'))
+
+// .aide settings IPC handler
+ipcMain.handle(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return null
+  return resolveSettings(rootPath, store)
+})
+
+// Gitignore security audit IPC handlers
+ipcMain.handle(IpcChannels.GITIGNORE_AUDIT, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return { missing: [], total: 0 }
+  return auditGitignore(rootPath)
+})
+
+ipcMain.handle(IpcChannels.GITIGNORE_APPEND, async (_event, patterns: string[]) => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return
+  await appendToGitignore(rootPath, patterns)
+})
+
+ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return
+  await dismissAudit(rootPath)
+})
+
+// Task system IPC handlers
+function initTaskRunner(rootPath: string): void {
+  const getWc = () => contentView?.webContents ?? null
+  taskRunner = new TaskRunner(rootPath, {
+    onStatusChanged: (execution) => getWc()?.send(IpcChannels.TASK_STATUS_CHANGED, execution),
+    onRequestInput: (request) => getWc()?.send(IpcChannels.TASK_REQUEST_INPUT, request),
+    onDiagnostics: (diagnostics) => getWc()?.send(IpcChannels.TASK_DIAGNOSTICS, diagnostics),
+    onPtyData: (ptyId, data) => getWc()?.send(IpcChannels.PTY_DATA_OUT, ptyId, data),
+    onPtyExit: (ptyId, exitCode) => getWc()?.send(IpcChannels.PTY_EXIT, ptyId, exitCode),
+  })
+  taskRunner.loadTasks()
+}
+
+ipcMain.handle(IpcChannels.TASK_LIST, async () => {
+  if (!taskRunner) return { tasks: [], compounds: [] }
+  await taskRunner.loadTasks()
+  return { tasks: taskRunner.getTasks(), compounds: taskRunner.getCompounds() }
+})
+
+ipcMain.handle(IpcChannels.TASK_RUN, async (_event, taskId: string) => {
+  if (!taskRunner) return { error: 'No workspace open' }
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return { error: 'No workspace open' }
+
+  const ctx = {
+    workspaceRoot: rootPath,
+    workspaceName: rootPath.split('/').pop() ?? rootPath,
+  }
+  return taskRunner.run(taskId, ctx)
+})
+
+ipcMain.on(IpcChannels.TASK_KILL, (_event, executionId: string) => {
+  taskRunner?.kill(executionId)
+})
+
+ipcMain.handle(IpcChannels.TASK_RELOAD, async () => {
+  await taskRunner?.loadTasks()
+})
+
+ipcMain.on(IpcChannels.TASK_PROVIDE_INPUT, (_event, requestId: string, value: string | null) => {
+  taskRunner?.provideInput(requestId, value)
+})
+
+ipcMain.handle(IpcChannels.TASK_GENERATE, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return { error: 'No workspace open' }
+  const tasks = await detectTasks(rootPath)
+  if (tasks.length === 0) return { error: 'No tasks detected' }
+  return generateTasksFile(rootPath, tasks)
+})
 
 // Filesystem IPC handlers
 const HIDDEN_FILES = new Set(['.DS_Store', 'Thumbs.db'])
@@ -419,6 +529,12 @@ app.whenReady().then(async () => {
   // Auto-start watcher if we have a persisted workspace
   const savedRoot = store.get('workspaceRoot')
   if (savedRoot && existsSync(savedRoot)) {
+    // Ensure .aide folder exists on startup
+    await ensureAideFolder(savedRoot)
+
+    // Initialize task runner
+    initTaskRunner(savedRoot)
+
     // Watch both repo root and active worktree (if set) so changes in either are detected
     const activeWorktree = store.get('activeWorktree')
     const hasWorktree = activeWorktree && existsSync(activeWorktree)
@@ -436,6 +552,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', async () => {
+  taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()
   stopWorktreePolling()
