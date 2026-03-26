@@ -95,9 +95,6 @@ export function TaskInputModal({ request, onClose }: Props) {
           </div>
 
           <div className="modal__actions">
-            <button className="modal__btn modal__btn--secondary" onClick={handleCancel}>
-              Cancel
-            </button>
             {input.type === 'confirm' ? (
               <>
                 <button className="modal__btn modal__btn--secondary" onClick={handleCancel}>
@@ -108,9 +105,14 @@ export function TaskInputModal({ request, onClose }: Props) {
                 </button>
               </>
             ) : (
-              <button className="modal__btn modal__btn--primary" onClick={handleSubmit}>
-                OK
-              </button>
+              <>
+                <button className="modal__btn modal__btn--secondary" onClick={handleCancel}>
+                  Cancel
+                </button>
+                <button className="modal__btn modal__btn--primary" onClick={handleSubmit}>
+                  OK
+                </button>
+              </>
             )}
           </div>
         </div>
