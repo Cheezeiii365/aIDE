@@ -59,7 +59,7 @@ function resolveVariable(name: string, ctx: TaskVariableContext): string {
     case 'fileExtname': {
       const base = ctx.activeFile?.split('/').pop() ?? ''
       const dotIdx = base.lastIndexOf('.')
-      return dotIdx >= 0 ? base.slice(dotIdx) : ''
+      return dotIdx > 0 ? base.slice(dotIdx) : ''
     }
     case 'fileDirname': {
       if (!ctx.activeFile) return ''
