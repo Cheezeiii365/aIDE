@@ -107,6 +107,8 @@ export const IpcChannels = {
   WORKSPACE_REORDER: 'workspace:reorder',
   WORKSPACE_REGISTRY_CHANGED: 'workspace:registry-changed',
   WORKSPACE_GET_ACTIVE: 'workspace:get-active',
+  WORKSPACE_CREATE_BLANK: 'workspace:create-blank',
+  WORKSPACE_SET_ROOT: 'workspace:set-root',
 
   // State persistence
   STATE_SAVE: 'state:save',
@@ -257,7 +259,7 @@ export interface GitignoreAuditResult {
 export interface WorkspaceEntry {
   id: string
   name: string
-  rootPath: string
+  rootPath: string | null
   icon?: string
   color?: string
   createdAt: number
@@ -475,6 +477,7 @@ export interface WindowApi {
   searchReplace: (opts: ReplaceOpts) => Promise<{ success: true } | { error: string }>
 
   // .aide project folder
+  aideInit: () => Promise<AideInitResult | { error: string }>
   getResolvedSettings: () => Promise<ResolvedSettings>
   onAideInitResult: (callback: (result: AideInitResult) => void) => () => void
 
@@ -499,11 +502,13 @@ export interface WindowApi {
   // Workspace registry
   listWorkspaces: () => Promise<WorkspaceEntry[]>
   createWorkspace: (rootPath: string) => Promise<WorkspaceEntry>
+  createBlankWorkspace: () => Promise<WorkspaceEntry>
   removeWorkspace: (id: string) => Promise<void>
   closeWorkspace: (id: string) => Promise<void>
   switchWorkspace: (id: string) => Promise<void>
   updateWorkspace: (id: string, patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>) => Promise<void>
   reorderWorkspaces: (ids: string[]) => Promise<void>
+  setWorkspaceRoot: (id: string, rootPath: string) => Promise<void>
   getActiveWorkspaceId: () => Promise<string | null>
   onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => () => void
 

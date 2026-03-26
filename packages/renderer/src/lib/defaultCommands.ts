@@ -53,6 +53,24 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     )
   }
 
+  // Cmd+Shift+W — close active workspace
+  registerCommand(
+    { id: 'workspace.close', label: 'Close Workspace', keybinding: 'Cmd+Shift+W', category: 'Workspace' },
+    () => window.dispatchEvent(new CustomEvent('aide:workspace-close')),
+  )
+
+  // Cmd+Shift+N — new blank workspace
+  registerCommand(
+    { id: 'workspace.new', label: 'New Workspace', keybinding: 'Cmd+Shift+N', category: 'Workspace' },
+    () => window.dispatchEvent(new CustomEvent('aide:workspace-new-blank')),
+  )
+
+  // Cmd+O — open folder
+  registerCommand(
+    { id: 'workspace.openFolder', label: 'Open Folder...', keybinding: 'Cmd+O', category: 'Workspace' },
+    () => window.dispatchEvent(new CustomEvent('aide:workspace-open-folder')),
+  )
+
   // Cmd+Shift+] / Cmd+Shift+[ — cycle workspace tabs
   registerCommand(
     { id: 'workspace.cycleTabNext', label: 'Next Workspace', keybinding: 'Cmd+Shift+]', category: 'Workspace' },
@@ -68,6 +86,35 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
   registerCommand(
     { id: 'editor.symbolSearch', label: 'Go to Symbol', keybinding: 'Cmd+T', category: 'Editor' },
     () => showToast('Symbol search requires LSP (coming in Phase 3)'),
+  )
+
+  // Full .aide project initialization
+  registerCommand(
+    { id: 'aide.init', label: 'Initialize Project', category: 'aIDE' },
+    async () => {
+      const result = await window.api.aideInit()
+      if ('error' in result) {
+        showToast(result.error)
+      } else {
+        showToast(result.created
+          ? `Initialized .aide/ for ${result.projectType} project`
+          : `Project already initialized (${result.projectType})`,
+        )
+      }
+    },
+  )
+
+  // Generate tasks.json from project config
+  registerCommand(
+    { id: 'aide.generateTasks', label: 'Generate Tasks', category: 'aIDE' },
+    async () => {
+      const result = await window.api.generateTasks()
+      if ('error' in result) {
+        showToast(result.error)
+      } else {
+        showToast('Generated .aide/tasks.json')
+      }
+    },
   )
 
   // Gitignore security audit — on-demand via command palette

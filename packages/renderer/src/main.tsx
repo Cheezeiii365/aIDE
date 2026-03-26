@@ -15,6 +15,7 @@ import './styles/modal.css'
 import './styles/search-panel.css'
 import './styles/find-in-files.css'
 import './styles/gitignore-modal.css'
+import './styles/welcome-pane.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

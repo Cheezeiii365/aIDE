@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { DockviewReact, type DockviewReadyEvent, type DockviewApi } from 'dockview-react'
 import { PlaceholderPane } from './panes/PlaceholderPane'
+import { WelcomePane } from './panes/WelcomePane'
 import { EditorPane } from './panes/EditorPane'
 import { EditorTab } from './panes/EditorTab'
 import { TerminalPane } from './panes/TerminalPane'
@@ -11,6 +12,7 @@ import '../styles/dockview-theme.css'
 
 const components = {
   placeholder: PlaceholderPane,
+  welcomePane: WelcomePane,
   editorPane: EditorPane,
   terminalPane: TerminalPane,
   markdownPreview: MarkdownPreviewPane,
@@ -38,8 +40,8 @@ export function DockviewContainer({ onApiReady }: Props) {
 
       const editorPanel = api.addPanel({
         id: 'editor',
-        component: 'placeholder',
-        params: { title: 'Welcome' },
+        component: 'welcomePane',
+        params: {},
       })
 
       api.addPanel({

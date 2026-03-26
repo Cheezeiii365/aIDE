@@ -62,13 +62,40 @@ export function AppShell() {
   const workspaceRoot = activeWorkspace?.rootPath ?? null
   const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
 
+  const handleOpenFolder = useCallback(async () => {
+    // If in a blank workspace (no rootPath), set root instead of creating new
+    if (activeWorkspace && !activeWorkspace.rootPath) {
+      const selected = await window.api.openWorkspaceDialog()
+      if (selected) {
+        await window.api.setWorkspaceRoot(activeWorkspace.id, selected)
+      }
+      return
+    }
+    await createWorkspace()
+  }, [createWorkspace, activeWorkspace])
+
+  const handleNewBlankWorkspace = useCallback(async () => {
+    await window.api.createBlankWorkspace()
+  }, [])
+
   // Full Dockview clear + restore when workspace changes
   useEffect(() => {
     const api = dockviewApiRef.current
-    if (!api || !workspaceRoot) return
-    // Skip on initial mount (no previous workspace to save)
+    if (!api) return
     const prevRoot = prevWorkspaceRootRef.current
     prevWorkspaceRootRef.current = workspaceRoot
+
+    // Transition to no workspace — save then show welcome layout
+    if (!workspaceRoot && prevRoot) {
+      autoSave(api, prevRoot, sidebarWidthRef.current, sidebarCollapsed)
+      // Clear all panels and show welcome
+      const panels = [...api.panels]
+      for (const panel of panels) panel.api.close()
+      api.addPanel({ id: 'welcome', component: 'welcomePane', params: {} })
+      return
+    }
+
+    if (!workspaceRoot) return
     if (prevRoot === workspaceRoot) return
     if (prevRoot === null) return // first load — DockviewContainer handles initial layout
 
@@ -161,6 +188,24 @@ export function AppShell() {
     }
   }, [workspaces, activeWorkspaceId, switchWorkspace])
 
+  // Cmd+Shift+W close, Cmd+Shift+N new blank, Cmd+O open folder
+  useEffect(() => {
+    const handleClose = () => {
+      if (activeWorkspaceId) closeWorkspace(activeWorkspaceId)
+    }
+    const handleNewBlank = () => handleNewBlankWorkspace()
+    const handleOpenFolderEvt = () => handleOpenFolder()
+
+    window.addEventListener('aide:workspace-close', handleClose)
+    window.addEventListener('aide:workspace-new-blank', handleNewBlank)
+    window.addEventListener('aide:workspace-open-folder', handleOpenFolderEvt)
+    return () => {
+      window.removeEventListener('aide:workspace-close', handleClose)
+      window.removeEventListener('aide:workspace-new-blank', handleNewBlank)
+      window.removeEventListener('aide:workspace-open-folder', handleOpenFolderEvt)
+    }
+  }, [activeWorkspaceId, closeWorkspace, handleOpenFolder, handleNewBlankWorkspace])
+
   // Keep sidebarVisible context key in sync
   useEffect(() => {
     setContext('sidebarVisible', !sidebarCollapsed)
@@ -200,10 +245,6 @@ export function AppShell() {
     })
     return unsub
   }, [])
-
-  const handleOpenFolder = useCallback(async () => {
-    await createWorkspace()
-  }, [createWorkspace])
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
@@ -427,7 +468,9 @@ export function AppShell() {
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         onSwitch={switchWorkspace}
-        onCreateWorkspace={handleOpenFolder}
+        onOpenFolder={handleOpenFolder}
+        onNewWorkspace={handleNewBlankWorkspace}
+        onCloseWorkspace={closeWorkspace}
         onReorder={reorderWorkspaces}
         onContextMenu={(id, x, y) => setWsContextMenu({ id, x, y })}
       />
@@ -515,7 +558,7 @@ export function AppShell() {
               label: 'Reveal in Finder',
               onClick: () => {
                 const ws = workspaces.find((w) => w.id === wsContextMenu.id)
-                if (ws) window.api.revealInFinder(ws.rootPath)
+                if (ws?.rootPath) window.api.revealInFinder(ws.rootPath)
               },
             },
             {

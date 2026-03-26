@@ -71,6 +71,58 @@ export class WorkspaceRegistry {
   }
 
   /**
+   * Create a blank workspace with no folder. Named "Untitled", "Untitled 2", etc.
+   */
+  createBlank(): WorkspaceEntry {
+    const workspaces = this.store.get('workspaces')
+
+    // Generate unique "Untitled" name
+    const existingNames = new Set(Object.values(workspaces).map((w) => w.name))
+    let name = 'Untitled'
+    let counter = 2
+    while (existingNames.has(name)) {
+      name = `Untitled ${counter++}`
+    }
+
+    const entry: WorkspaceEntry = {
+      id: randomUUID(),
+      name,
+      rootPath: null,
+      createdAt: Date.now(),
+      lastOpenedAt: Date.now(),
+    }
+
+    workspaces[entry.id] = entry
+    this.store.set('workspaces', workspaces)
+
+    const order = this.store.get('workspaceOrder')
+    order.push(entry.id)
+    this.store.set('workspaceOrder', order)
+
+    const session = this.store.get('lastSessionWorkspaces')
+    if (!session.includes(entry.id)) {
+      session.push(entry.id)
+      this.store.set('lastSessionWorkspaces', session)
+    }
+
+    return entry
+  }
+
+  /**
+   * Set the rootPath on an existing workspace (e.g. opening a folder in a blank workspace).
+   */
+  setRoot(id: string, rootPath: string): void {
+    const workspaces = this.store.get('workspaces')
+    const entry = workspaces[id]
+    if (!entry) return
+
+    entry.rootPath = rootPath
+    entry.name = rootPath.split('/').pop() ?? rootPath
+    workspaces[id] = entry
+    this.store.set('workspaces', workspaces)
+  }
+
+  /**
    * Remove a workspace from the registry entirely.
    * Does NOT delete .aide/ from disk.
    */
@@ -198,7 +250,7 @@ export class WorkspaceRegistry {
     const removed: string[] = []
 
     for (const [id, entry] of Object.entries(workspaces)) {
-      if (!existsSync(entry.rootPath)) {
+      if (entry.rootPath && !existsSync(entry.rootPath)) {
         removed.push(id)
       }
     }

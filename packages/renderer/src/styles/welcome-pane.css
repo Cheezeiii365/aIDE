@@ -1,0 +1,117 @@
+.welcome-pane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.welcome-pane__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  max-width: 360px;
+}
+
+.welcome-pane__title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.welcome-pane__subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: -16px 0 0;
+}
+
+.welcome-pane__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.welcome-pane__action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.welcome-pane__action:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.welcome-pane__action--primary {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
+}
+
+.welcome-pane__action--primary:hover {
+  opacity: 0.9;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.welcome-pane__action-label {
+  font-weight: 500;
+}
+
+.welcome-pane__kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 11px;
+  font-family: inherit;
+  color: inherit;
+  opacity: 0.7;
+  line-height: 1.4;
+}
+
+.welcome-pane__action--primary .welcome-pane__kbd {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.welcome-pane__hints {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.welcome-pane__hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.welcome-pane__hint .welcome-pane__kbd {
+  min-width: 90px;
+  text-align: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  opacity: 1;
+}

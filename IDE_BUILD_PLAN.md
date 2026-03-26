@@ -1224,7 +1224,7 @@ Track milestone completion here. Update as you go.
 | 4.1 Workspace creation flow | ✅ Complete | `workspaceRegistry.ts`, `useWorkspaces` hook, ribbon tabs, context menu, Cmd+1-9/Cmd+Shift+[/] switching |
 | 4.2 Workspace switching + state persistence | ✅ Complete | `stateSerializer.ts`, `workspaceStateSerializer.ts`, `workspaceSwitcher.ts`, 30s auto-save, atomic writes, worktree sync fix |
 | 4.3 Agent status in ribbon | ⬜ Not started | |
-| 4.4 Workspace management UI | ⬜ Not started | |
+| 4.4 Workspace management UI | ✅ Complete | Close workspace (Cmd+Shift+W, tab × button, middle-click, context menu), blank workspace (Cmd+Shift+N, + button), open folder in blank workspace (Cmd+O), welcome pane with shortcut hints, proper empty state on last workspace close |
 | 4.5 App lifecycle (Phase E) | ✅ Complete | Session restore, graceful quit with async save, crash recovery toast, `--clean` flag, welcome tab on empty session |
 
 ### Phase 5: Agent Integration (Weeks 14–17)

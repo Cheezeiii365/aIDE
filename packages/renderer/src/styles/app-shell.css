@@ -87,6 +87,30 @@
   max-width: 120px;
 }
 
+.workspace-tab__close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 2px;
+  margin-right: -4px;
+}
+
+.workspace-tab:hover .workspace-tab__close {
+  display: flex;
+}
+
+.workspace-tab__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .workspace-ribbon__actions {
   -webkit-app-region: no-drag;
   display: flex;

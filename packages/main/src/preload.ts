@@ -120,6 +120,7 @@ const api: WindowApi = {
   searchReplace: (opts: ReplaceOpts) => ipcRenderer.invoke(IpcChannels.SEARCH_REPLACE, opts),
 
   // .aide project folder
+  aideInit: () => ipcRenderer.invoke(IpcChannels.AIDE_INIT),
   getResolvedSettings: (): Promise<ResolvedSettings> =>
     ipcRenderer.invoke(IpcChannels.AIDE_GET_RESOLVED_SETTINGS),
   onAideInitResult: (callback: (result: AideInitResult) => void) => {
@@ -180,6 +181,8 @@ const api: WindowApi = {
     ipcRenderer.invoke(IpcChannels.WORKSPACE_LIST),
   createWorkspace: (rootPath: string): Promise<WorkspaceEntry> =>
     ipcRenderer.invoke(IpcChannels.WORKSPACE_CREATE, rootPath),
+  createBlankWorkspace: (): Promise<WorkspaceEntry> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_CREATE_BLANK),
   removeWorkspace: (id: string): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.WORKSPACE_REMOVE, id),
   closeWorkspace: (id: string): Promise<void> =>
@@ -190,6 +193,8 @@ const api: WindowApi = {
     ipcRenderer.invoke(IpcChannels.WORKSPACE_UPDATE, id, patch),
   reorderWorkspaces: (ids: string[]): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.WORKSPACE_REORDER, ids),
+  setWorkspaceRoot: (id: string, rootPath: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_SET_ROOT, id, rootPath),
   getActiveWorkspaceId: (): Promise<string | null> =>
     ipcRenderer.invoke(IpcChannels.WORKSPACE_GET_ACTIVE),
   onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => {

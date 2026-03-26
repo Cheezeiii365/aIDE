@@ -7,7 +7,9 @@ interface Props {
   workspaces: WorkspaceEntry[]
   activeWorkspaceId: string | null
   onSwitch: (id: string) => void
-  onCreateWorkspace: () => void
+  onOpenFolder: () => void
+  onNewWorkspace: () => void
+  onCloseWorkspace: (id: string) => void
   onReorder: (ids: string[]) => void
   onContextMenu: (id: string, x: number, y: number) => void
 }
@@ -16,7 +18,9 @@ export function WorkspaceRibbon({
   workspaces,
   activeWorkspaceId,
   onSwitch,
-  onCreateWorkspace,
+  onOpenFolder,
+  onNewWorkspace,
+  onCloseWorkspace,
   onReorder,
   onContextMenu,
 }: Props) {
@@ -63,6 +67,13 @@ export function WorkspaceRibbon({
     draggedIdRef.current = null
   }, [])
 
+  const handleMiddleClick = useCallback((e: React.MouseEvent, id: string) => {
+    if (e.button === 1) {
+      e.preventDefault()
+      onCloseWorkspace(id)
+    }
+  }, [onCloseWorkspace])
+
   return (
     <header className={`workspace-ribbon${isFullscreen ? ' workspace-ribbon--fullscreen' : ''}`}>
       <div className="workspace-ribbon__tabs">
@@ -71,6 +82,7 @@ export function WorkspaceRibbon({
             key={ws.id}
             className={`workspace-tab${ws.id === activeWorkspaceId ? ' workspace-tab--active' : ''}${ws.id === dragOverId ? ' workspace-tab--drag-over' : ''}`}
             onClick={() => onSwitch(ws.id)}
+            onMouseDown={(e) => handleMiddleClick(e, ws.id)}
             onContextMenu={(e) => {
               e.preventDefault()
               onContextMenu(ws.id, e.clientX, e.clientY)
@@ -80,7 +92,7 @@ export function WorkspaceRibbon({
             onDragOver={(e) => handleDragOver(e, ws.id)}
             onDrop={() => handleDrop(ws.id)}
             onDragEnd={handleDragEnd}
-            title={ws.rootPath}
+            title={ws.rootPath ?? ws.name}
           >
             {ws.color && (
               <span
@@ -92,20 +104,30 @@ export function WorkspaceRibbon({
             <span className="workspace-tab__name">
               {ws.icon ? `${ws.icon} ` : ''}{ws.name}
             </span>
+            <span
+              className="workspace-tab__close"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCloseWorkspace(ws.id)
+              }}
+              title="Close Workspace"
+            >
+              ×
+            </span>
           </button>
         ))}
         {workspaces.length === 0 && (
           <button
             className="workspace-tab workspace-tab--active"
-            onClick={onCreateWorkspace}
+            onClick={onOpenFolder}
           >
             <span>No Project</span>
           </button>
         )}
         <button
           className="workspace-tab workspace-tab--add"
-          onClick={onCreateWorkspace}
-          title="New Workspace"
+          onClick={onNewWorkspace}
+          title="New Workspace (⌘⇧N)"
         >
           +
         </button>
