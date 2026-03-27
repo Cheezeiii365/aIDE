@@ -1,6 +1,6 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 26, 2026
+> **Last updated:** March 27, 2026
 > **Status:** Active development (Phase 2 in progress)
 
 ---
@@ -9,6 +9,32 @@
 - Move worktree storage from `../.aide-worktrees/` to `<repoRoot>/.aide/worktrees/` (match Claude Code convention, add `.aide/` to `.gitignore`)
 - Add `@` prefix in Quick Open (Cmd+P) to go to symbol, `:` prefix to go to line (VS Code-style)
 - Clicking the line number indicator in the status bar should open the go-to-line command palette (`:` mode)
+- Upgrade pane/tab cycling from immediate navigation to a VS Code-style `Ctrl+Tab` switcher overlay with MRU preview and commit-on-release behavior
+
+### Deferred V2: Pane/Tab Switcher Overlay
+
+V1 ships immediate commands for pane and tab cycling:
+
+- `Ctrl+Tab` / `Ctrl+Shift+Tab` move through tabs in visual order inside the focused pane
+- `Ctrl+Alt+Tab` / `Ctrl+Alt+Shift+Tab` cycle MRU panes
+
+V2 should upgrade this to a real switcher session instead of firing the command on every `keydown`.
+
+Requirements:
+
+- Holding the modifier should open a transient switcher overlay showing recent tabs for the focused pane
+- Repeated `Tab` presses should advance selection inside the overlay without committing immediately
+- Releasing the modifier should commit the selected target and close the overlay
+- A parallel pane switcher should exist for pane MRU, not just tab MRU
+- The overlay should show enough metadata to disambiguate duplicates: tab title, pane type/icon, and path when relevant
+
+Implementation notes:
+
+- Extend the keybinding/input layer beyond `keydown` only. The current keybinding service does not model `keyup`, modifier-hold sessions, or transient navigation state.
+- Add a small switcher controller in the renderer that can start, advance, reverse, cancel, and commit a navigation session.
+- Keep MRU tracking in the Dockview navigation service; the V2 switcher should consume that state instead of building its own history model.
+- Suppress switcher activation while modal text inputs are focused, unless the focused surface explicitly opts in.
+- Prefer a generic switcher primitive so the same mechanism can later power workspace MRU switching if desired.
 
 ---
 
