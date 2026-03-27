@@ -7,7 +7,6 @@ import { showToast } from '../components/Toast'
  * Call once after DockviewApi is available.
  */
 export function registerDefaultCommands(dockviewApi: DockviewApi): void {
-  // Cmd+\ — split editor vertically
   registerCommand(
     { id: 'editor.splitVertical', label: 'Split Editor Right', category: 'Editor' },
     () => {
@@ -26,7 +25,6 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     },
   )
 
-  // Cmd+Shift+\ — split editor horizontally
   registerCommand(
     { id: 'editor.splitHorizontal', label: 'Split Editor Down', category: 'Editor' },
     () => {
@@ -45,7 +43,6 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     },
   )
 
-  // Cmd+1 through Cmd+9 — workspace switching
   for (let n = 1; n <= 9; n++) {
     registerCommand(
       { id: `workspace.switchTo${n}`, label: `Switch to Workspace ${n}`, category: 'Workspace' },
@@ -53,25 +50,21 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     )
   }
 
-  // Cmd+Shift+W — close active workspace
   registerCommand(
     { id: 'workspace.close', label: 'Close Workspace', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-close')),
   )
 
-  // Cmd+Shift+N — new blank workspace
   registerCommand(
     { id: 'workspace.new', label: 'New Workspace', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-new-blank')),
   )
 
-  // Cmd+O — open folder
   registerCommand(
     { id: 'workspace.openFolder', label: 'Open Folder...', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-open-folder')),
   )
 
-  // Cmd+Shift+] / Cmd+Shift+[ — cycle workspace tabs
   registerCommand(
     { id: 'workspace.cycleTabNext', label: 'Next Workspace', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: 1 } })),
@@ -82,7 +75,6 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: -1 } })),
   )
 
-  // Cmd+T — symbol search (placeholder, awaiting LSP)
   registerCommand(
     { id: 'editor.symbolSearch', label: 'Go to Symbol', category: 'Editor' },
     () => showToast('Symbol search requires LSP (coming in Phase 3)'),
@@ -117,7 +109,6 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     },
   )
 
-  // Gitignore security audit — on-demand via command palette
   registerCommand(
     { id: 'gitignore.audit', label: 'Audit .gitignore Security', category: 'aIDE' },
     async () => {
@@ -132,7 +123,6 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     },
   )
 
-  // Task system commands
   registerCommand(
     { id: 'task.run', label: 'Run Task...', category: 'Task' },
     async () => {
@@ -145,7 +135,6 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
         showToast('No tasks defined. Create .aide/tasks.json to add tasks.')
         return
       }
-      // Dispatch to command palette for task selection
       window.dispatchEvent(
         new CustomEvent('aide:task-picker', { detail: allItems }),
       )
@@ -155,7 +144,6 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
   registerCommand(
     { id: 'task.runLast', label: 'Run Last Task', category: 'Task' },
     () => {
-      // Dispatch event — AppShell handles via useTasks
       window.dispatchEvent(new CustomEvent('aide:task-run-last'))
     },
   )

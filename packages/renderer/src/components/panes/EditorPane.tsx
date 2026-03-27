@@ -11,6 +11,7 @@ import { getCachedState, setCachedState } from '../../lib/editorStateCache'
 import { isDirty, setDirty, onDirtyChange } from '../../lib/editorDirtyState'
 import { publishContent, clearContent } from '../../lib/editorContentBus'
 import { getPanelZoomFactor } from '../../lib/panelZoom'
+import { clearActiveEditor, setActiveEditor } from '../../lib/activeEditor'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 import { showToast } from '../Toast'
@@ -157,6 +158,11 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         parent: hostRef.current,
       })
 
+      const handleFocusIn = () => {
+        setActiveEditor(view, filePath)
+      }
+      view.dom.addEventListener('focusin', handleFocusIn)
+
       if (cached) {
         view.dispatch({
           effects: StateEffect.appendConfig.of([
@@ -179,13 +185,26 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         col: pos - line.from + 1,
         language: languageName,
       })
+
+      if (view.hasFocus) {
+        setActiveEditor(view, filePath)
+      }
+
+      return () => {
+        view.dom.removeEventListener('focusin', handleFocusIn)
+      }
     }
 
-    init()
+    let cleanupFocus: (() => void) | undefined
+    init().then((cleanup) => {
+      cleanupFocus = cleanup
+    })
 
     return () => {
       destroyed = true
+      cleanupFocus?.()
       if (viewRef.current) {
+        clearActiveEditor(viewRef.current)
         setCachedState(filePath, viewRef.current.state)
         viewRef.current.destroy()
         viewRef.current = null
@@ -309,6 +328,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   useEffect(() => {
     const disposable = api.onDidActiveChange(({ isActive }) => {
       if (isActive && viewRef.current) {
+        setActiveEditor(viewRef.current, filePath)
         const state = viewRef.current.state
         const pos = state.selection.main.head
         const line = state.doc.lineAt(pos)
@@ -317,6 +337,8 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
           col: pos - line.from + 1,
           language: getLanguageName(filePath),
         })
+      } else if (viewRef.current) {
+        clearActiveEditor(viewRef.current)
       }
     })
     return () => disposable.dispose()

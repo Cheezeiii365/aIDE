@@ -27,6 +27,11 @@ import { createTerminalPanelParams, getTerminalParams } from '../lib/terminalSta
 import { createBrowserPanelParams, getBrowserParams } from '../lib/browserState'
 import { getPanelZoomFactor, updatePanelZoomParams } from '../lib/panelZoom'
 import {
+  commentLineInActiveEditor,
+  toggleLineCommentInActiveEditor,
+  uncommentLineInActiveEditor,
+} from '../lib/editorComments'
+import {
   captureWorkspaceRuntimeSnapshot,
   clearWorkspaceRuntimeSnapshot,
   saveWorkspaceRuntimeSnapshot,
@@ -506,7 +511,7 @@ export function AppShell() {
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cmd+Shift+T — open a new terminal tab
+  // Ctrl+` — open a new terminal tab
   useCommand('terminal.new', {
     label: 'New Terminal',
     category: 'Terminal',
@@ -530,6 +535,48 @@ export function AppShell() {
       position,
     })
     persistWorkspaceRuntime()
+  })
+
+  useCommand('editor.toggleComment', {
+    label: 'Toggle Line Comment',
+    category: 'Editor',
+  }, () => {
+    const result = toggleLineCommentInActiveEditor()
+    if (result === 'no-editor') {
+      showToast('No active editor')
+      return
+    }
+    if (result === 'unsupported') {
+      showToast('Line comments are not available for this file type')
+    }
+  })
+
+  useCommand('editor.commentLine', {
+    label: 'Comment Line',
+    category: 'Editor',
+  }, () => {
+    const result = commentLineInActiveEditor()
+    if (result === 'no-editor') {
+      showToast('No active editor')
+      return
+    }
+    if (result === 'unsupported') {
+      showToast('Line comments are not available for this file type')
+    }
+  })
+
+  useCommand('editor.uncommentLine', {
+    label: 'Uncomment Line',
+    category: 'Editor',
+  }, () => {
+    const result = uncommentLineInActiveEditor()
+    if (result === 'no-editor') {
+      showToast('No active editor')
+      return
+    }
+    if (result === 'unsupported') {
+      showToast('Line comments are not available for this file type')
+    }
   })
 
   // Cmd+B — toggle sidebar

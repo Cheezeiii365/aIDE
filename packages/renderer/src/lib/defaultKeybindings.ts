@@ -9,6 +9,9 @@ export const defaultKeybindings: KeybindingRule[] = [
   { key: 'Cmd+\\', command: 'editor.splitVertical' },
   { key: 'Cmd+Shift+\\', command: 'editor.splitHorizontal' },
   { key: 'Cmd+T', command: 'editor.symbolSearch' },
+  { key: 'Cmd+/', command: 'editor.toggleComment' },
+  { key: 'Cmd+K Cmd+C', command: 'editor.commentLine' },
+  { key: 'Cmd+K Cmd+U', command: 'editor.uncommentLine' },
 
   // ── Workspace switching ─────────────────────────
   { key: 'Cmd+1', command: 'workspace.switchTo1' },
@@ -34,7 +37,10 @@ export const defaultKeybindings: KeybindingRule[] = [
   { key: 'Cmd+Shift+X', command: 'task.terminate' },
 
   // ── Terminal ────────────────────────────────────
-  { key: 'Cmd+Shift+T', command: 'terminal.new' },
+  { key: 'Ctrl+`', command: 'terminal.new' },
+
+  // ── Browser ─────────────────────────────────────
+  { key: 'Cmd+K Cmd+B', command: 'browser.new' },
 
   // ── View ────────────────────────────────────────
   { key: 'Cmd+B', command: 'view.toggleSidebar' },

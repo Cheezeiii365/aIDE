@@ -17,6 +17,7 @@ export interface SearchPanelItem {
   description?: string
   icon?: ReactNode
   category?: string
+  searchText?: string
 }
 
 interface SearchPanelProps {
@@ -81,7 +82,7 @@ function filterAndSort(items: SearchPanelItem[], query: string): FuzzyResult[] {
 
   const results: FuzzyResult[] = []
   for (const item of items) {
-    const match = fuzzyMatch(query, item.label)
+    const match = fuzzyMatch(query, item.searchText ?? item.label)
     if (match) results.push({ item, ...match })
   }
   results.sort((a, b) => b.score - a.score)

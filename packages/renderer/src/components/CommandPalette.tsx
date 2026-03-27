@@ -37,6 +37,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
         id: cmd.id,
         label: cmd.category ? `${cmd.category}: ${cmd.label}` : cmd.label,
         description: primaryKey ? formatKeybinding(primaryKey) : undefined,
+        searchText: `${cmd.category ? `${cmd.category} ` : ''}${cmd.label} ${cmd.id}`,
       }
     })
   }, [])
