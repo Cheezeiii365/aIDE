@@ -69,7 +69,7 @@ function updateLineCommentsInActiveEditor(mode: CommentMode): CommentResult {
     const indent = line.text.match(/^\s*/)?.[0].length ?? 0
     const offset = line.from + indent
 
-    if (shouldUncomment && allCommented) {
+    if (shouldUncomment && line.text.slice(indent).startsWith(token)) {
       let removeTo = offset + token.length
       if (line.text.slice(indent + token.length).startsWith(' ')) {
         removeTo += 1
