@@ -9,7 +9,7 @@ import { showToast } from '../components/Toast'
 export function registerDefaultCommands(dockviewApi: DockviewApi): void {
   // Cmd+\ — split editor vertically
   registerCommand(
-    { id: 'editor.splitVertical', label: 'Split Editor Right', keybinding: 'Cmd+\\', category: 'Editor' },
+    { id: 'editor.splitVertical', label: 'Split Editor Right', category: 'Editor' },
     () => {
       const active = dockviewApi.activePanel
       if (!active) return
@@ -28,7 +28,7 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
 
   // Cmd+Shift+\ — split editor horizontally
   registerCommand(
-    { id: 'editor.splitHorizontal', label: 'Split Editor Down', keybinding: 'Cmd+Shift+\\', category: 'Editor' },
+    { id: 'editor.splitHorizontal', label: 'Split Editor Down', category: 'Editor' },
     () => {
       const active = dockviewApi.activePanel
       if (!active) return
@@ -48,43 +48,43 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
   // Cmd+1 through Cmd+9 — workspace switching
   for (let n = 1; n <= 9; n++) {
     registerCommand(
-      { id: `workspace.switchTo${n}`, label: `Switch to Workspace ${n}`, keybinding: `Cmd+${n}`, category: 'Workspace' },
+      { id: `workspace.switchTo${n}`, label: `Switch to Workspace ${n}`, category: 'Workspace' },
       () => window.dispatchEvent(new CustomEvent('aide:workspace-switch', { detail: { index: n - 1 } })),
     )
   }
 
   // Cmd+Shift+W — close active workspace
   registerCommand(
-    { id: 'workspace.close', label: 'Close Workspace', keybinding: 'Cmd+Shift+W', category: 'Workspace' },
+    { id: 'workspace.close', label: 'Close Workspace', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-close')),
   )
 
   // Cmd+Shift+N — new blank workspace
   registerCommand(
-    { id: 'workspace.new', label: 'New Workspace', keybinding: 'Cmd+Shift+N', category: 'Workspace' },
+    { id: 'workspace.new', label: 'New Workspace', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-new-blank')),
   )
 
   // Cmd+O — open folder
   registerCommand(
-    { id: 'workspace.openFolder', label: 'Open Folder...', keybinding: 'Cmd+O', category: 'Workspace' },
+    { id: 'workspace.openFolder', label: 'Open Folder...', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-open-folder')),
   )
 
   // Cmd+Shift+] / Cmd+Shift+[ — cycle workspace tabs
   registerCommand(
-    { id: 'workspace.cycleTabNext', label: 'Next Workspace', keybinding: 'Cmd+Shift+]', category: 'Workspace' },
+    { id: 'workspace.cycleTabNext', label: 'Next Workspace', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: 1 } })),
   )
 
   registerCommand(
-    { id: 'workspace.cycleTabPrev', label: 'Previous Workspace', keybinding: 'Cmd+Shift+[', category: 'Workspace' },
+    { id: 'workspace.cycleTabPrev', label: 'Previous Workspace', category: 'Workspace' },
     () => window.dispatchEvent(new CustomEvent('aide:workspace-cycle', { detail: { direction: -1 } })),
   )
 
   // Cmd+T — symbol search (placeholder, awaiting LSP)
   registerCommand(
-    { id: 'editor.symbolSearch', label: 'Go to Symbol', keybinding: 'Cmd+T', category: 'Editor' },
+    { id: 'editor.symbolSearch', label: 'Go to Symbol', category: 'Editor' },
     () => showToast('Symbol search requires LSP (coming in Phase 3)'),
   )
 
@@ -134,7 +134,7 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
 
   // Task system commands
   registerCommand(
-    { id: 'task.run', label: 'Run Task...', category: 'Task', keybinding: 'Cmd+Shift+B' },
+    { id: 'task.run', label: 'Run Task...', category: 'Task' },
     async () => {
       const { tasks, compounds } = await window.api.listTasks()
       const allItems = [
@@ -153,7 +153,7 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
   )
 
   registerCommand(
-    { id: 'task.runLast', label: 'Run Last Task', category: 'Task', keybinding: 'Cmd+Shift+R' },
+    { id: 'task.runLast', label: 'Run Last Task', category: 'Task' },
     () => {
       // Dispatch event — AppShell handles via useTasks
       window.dispatchEvent(new CustomEvent('aide:task-run-last'))
@@ -161,7 +161,7 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
   )
 
   registerCommand(
-    { id: 'task.terminate', label: 'Terminate Task...', category: 'Task', keybinding: 'Cmd+Shift+X' },
+    { id: 'task.terminate', label: 'Terminate Task...', category: 'Task' },
     () => {
       window.dispatchEvent(new CustomEvent('aide:task-terminate'))
     },

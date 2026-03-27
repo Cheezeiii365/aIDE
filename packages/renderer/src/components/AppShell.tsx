@@ -18,6 +18,8 @@ import { TaskInputModal } from './TaskInputModal'
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { NewBrowserPaneModal } from './NewBrowserPaneModal'
 import { registerDefaultCommands } from '../lib/defaultCommands'
+import { loadKeybindings } from '../lib/KeybindingService'
+import { defaultKeybindings } from '../lib/defaultKeybindings'
 import { useTasks } from '../hooks/useTasks'
 import { useWorkspaces } from '../hooks/useWorkspaces'
 import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspaceSwitcher'
@@ -483,6 +485,17 @@ export function AppShell() {
     })
 
     registerDefaultCommands(api)
+
+    // Initialize keybinding service: load defaults, then layer user overrides
+    window.api
+      .getKeybindingOverrides()
+      .then((overrides) => {
+        loadKeybindings(defaultKeybindings, overrides)
+      })
+      .catch((err) => {
+        console.error('Failed to load keybinding overrides:', err)
+        loadKeybindings(defaultKeybindings, [])
+      })
   }, [persistWorkspaceRuntime])
 
   // Register app-wide action dispatch layer
@@ -496,7 +509,6 @@ export function AppShell() {
   // Cmd+Shift+T — open a new terminal tab
   useCommand('terminal.new', {
     label: 'New Terminal',
-    keybinding: 'Cmd+Shift+T',
     category: 'Terminal',
   }, () => {
     const api = dockviewApiRef.current
@@ -523,7 +535,6 @@ export function AppShell() {
   // Cmd+B — toggle sidebar
   useCommand('view.toggleSidebar', {
     label: 'Toggle Sidebar',
-    keybinding: 'Cmd+B',
     category: 'View',
   }, () => {
     setSidebarCollapsed((prev) => !prev)
@@ -532,7 +543,6 @@ export function AppShell() {
   // Cmd+W — close active panel
   useCommand('panel.close', {
     label: 'Close Active Panel',
-    keybinding: 'Cmd+W',
     category: 'Panel',
   }, () => {
     const api = dockviewApiRef.current
@@ -572,7 +582,6 @@ export function AppShell() {
   // Cmd+Shift+V — toggle markdown preview for active .md file
   useCommand('markdown.togglePreview', {
     label: 'Toggle Markdown Preview',
-    keybinding: 'Cmd+Shift+V',
     category: 'Markdown',
   }, () => {
     const api = dockviewApiRef.current
@@ -587,7 +596,6 @@ export function AppShell() {
   // Cmd+Shift+P — command palette
   useCommand('commandPalette.open', {
     label: 'Command Palette',
-    keybinding: 'Cmd+Shift+P',
     category: 'View',
   }, () => {
     setQuickOpenOpen(false)
@@ -597,7 +605,6 @@ export function AppShell() {
   // Cmd+P — quick open
   useCommand('quickOpen.open', {
     label: 'Quick Open',
-    keybinding: 'Cmd+P',
     category: 'View',
   }, () => {
     setCommandPaletteOpen(false)
@@ -638,7 +645,6 @@ export function AppShell() {
   // Cmd+Shift+F — find in files
   useCommand('search.findInFiles', {
     label: 'Find in Files',
-    keybinding: 'Cmd+Shift+F',
     category: 'Search',
   }, () => {
     const api = dockviewApiRef.current
@@ -663,6 +669,28 @@ export function AppShell() {
       position: terminalPanel
         ? { referencePanel: terminalPanel }
         : undefined,
+    })
+  })
+
+  // Cmd+, — open settings
+  useCommand('settings.open', {
+    label: 'Open Settings',
+    category: 'Preferences',
+  }, () => {
+    const api = dockviewApiRef.current
+    if (!api) return
+
+    const existing = api.panels.find((p) => p.id === 'settings')
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+
+    api.addPanel({
+      id: 'settings',
+      component: 'settingsPane',
+      title: 'Settings',
+      params: {},
     })
   })
 

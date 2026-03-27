@@ -839,7 +839,7 @@ An Electron window with the correct visual chrome, dark + light theme toggle wor
   - Preview auto-closes when source editor tab is closed
 
 - [ ] **2.6** Keyboard shortcut system
-  - Build `ShortcutManager` singleton with a focus context stack
+  - Build `KeybindingService` — VS Code-style separated commands/keybindings with ordered rule dispatch, `when` context clauses, negative rules, and last-match-wins priority
   - Implement `Cmd+1–9` for workspace switching
   - Implement `Cmd+\` / `Cmd+Shift+\` for pane splitting
   - Implement `Cmd+W` for closing current tab (not pane)
@@ -984,13 +984,17 @@ A fully integrated AI coding agent experience. You can describe a task in the ag
 **Goal:** The quality bar needed to put this in front of other developers.
 
 #### Milestones
-- [ ] **6.1** Settings system
-  - Build settings panel (accessible via `Cmd+,`)
-  - Font size, font family selection
-  - Editor tab size (2 vs 4 spaces)
-  - API key management (stored via `safeStorage`)
-  - LSP server paths (for custom installations)
-  - Keyboard shortcut customization
+- [x] **6.1** Settings system
+  - Settings panel skeleton (accessible via `Cmd+,`)
+  - Two-scope UI: User (electron-store) and Workspace (.aide/settings.json)
+  - Schema-driven: categories + descriptors, add new settings by appending to registry
+  - Font size, font family, tab size, insert spaces, word wrap, format on save
+  - Theme picker in Workbench > Appearance
+  - Placeholder categories: Cursor, Minimap, Suggestions, Layout, Window, Terminal, Browser, Explorer, Extensions, Keyboard Shortcuts
+  - Search bar filters settings by label/description/key
+  - Modified indicators with per-setting reset-to-default
+  - Keyboard shortcut customization: keybinding recorder, conflict detection, user overrides persisted to electron-store
+  - Future: API key management (`safeStorage`), LSP server paths
 
 - [ ] **6.2** Quick open (`Cmd+P`)
   - Fuzzy file search across workspace root
@@ -1203,7 +1207,7 @@ Track milestone completion here. Update as you go.
 | 2.3 Terminal (xterm.js + node-pty) | ✅ Complete | xterm.js 6 + node-pty in main process, UUID-multiplexed IPC (PTY_DATA_IN/OUT/RESIZE/KILL/EXIT), FitAddon + WebLinksAddon with appActions dispatch, ResizeObserver + debounced ptyResize, theme hot-swap, Cmd+Shift+T for new terminal tabs, destroyed-flag async safety pattern. Deferred: file path link detection, terminal search, session persistence, shell profiles |
 | 2.4 Find in files + symbol search | 🟡 In progress | 2.4a complete: FindInFilesPane Dockview pane with bundled @vscode/ripgrep, streaming JSON results via IPC (SEARCH_START/RESULTS/COMPLETE/CANCEL/REPLACE), toggle buttons (regex/case/whole-word/file-glob), results grouped by file with match highlighting, click-to-jump opens file at line/column, single/per-file/global replace mode. Deferred: symbol search (requires LSP in Phase 3) |
 | 2.5 Markdown preview | ✅ Complete | MarkdownPreviewPane in Dockview, marked v17 + DOMPurify + highlight.js (may switch to Shiki TextMate in future). Live preview via editorContentBus pub/sub. Cmd+Shift+V toggle. Toast notification on .md open. Auto-close on editor close. Theme-aware CSS with syntax token mapping |
-| 2.6 Keyboard shortcut system | ✅ Complete | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. 2.6b complete: CommandRegistry (single source of truth for all IDE commands), ContextKeys system (boolean when-clause evaluation), chord shortcut support (Cmd+K Cmd+S style), conflict detection with console.warn, useCommand hook. All existing shortcuts migrated to command registry. New shortcuts: Cmd+Shift+P (command palette), Cmd+P (quick open), Cmd+Shift+F (find in files), Cmd+\\ (split vertical), Cmd+Shift+\\ (split horizontal). Placeholder commands: Cmd+1-9 (workspace switching), Cmd+Shift+[/] (tab cycling), Cmd+T (symbol search) |
+| 2.6 Keyboard shortcut system | ✅ Complete | 2.6a complete: centralized ShortcutManager singleton with platform-aware modifier normalization (Cmd/Ctrl), useShortcut React hook, capture-phase keydown listener. 2.6b complete: CommandRegistry (single source of truth for all IDE commands), ContextKeys system (boolean when-clause evaluation), chord shortcut support (Cmd+K Cmd+S style), conflict detection with console.warn, useCommand hook. All existing shortcuts migrated to command registry. New shortcuts: Cmd+Shift+P (command palette), Cmd+P (quick open), Cmd+Shift+F (find in files), Cmd+\\ (split vertical), Cmd+Shift+\\ (split horizontal). Placeholder commands: Cmd+1-9 (workspace switching), Cmd+Shift+[/] (tab cycling), Cmd+T (symbol search). **2.6c complete:** When-aware shortcut dispatch — ShortcutManager evaluates `when` clauses before firing, allowing same keybinding with different contexts (e.g., F3 in editor vs terminal). Keyboard Shortcuts manager in Settings: VS Code-style table with Command/Keybinding/When/Source columns, inline KeybindingRecorder with chord support and conflict warnings, user overrides persisted via IPC in electron-store, `useKeybindingOverrides` hook for load/set/reset/apply lifecycle |
 | 2.7 Git worktree management | ✅ Complete | Sidebar refactored into collapsible SidebarSection components. Worktree panel lists all repo worktrees with branch name, dirty badge, main label. Create worktree modal (new or existing branch, base branch picker). Worktrees stored at `../.aide-worktrees/<branch>/`. File tree re-roots on worktree switch. Terminal right-click context menu for worktree switching. Auto-detect external worktrees via 5s polling of `git worktree list --porcelain`. Backend: `worktreeManager.ts` follows gitStatus.ts pattern. New IPC channels: WORKTREE_LIST/CREATE/REMOVE/SET_ACTIVE/GET_ACTIVE/LIST_CHANGED/LIST_BRANCHES. **UX polish pass**: VS Code-style 2px accent left-border for active item, 30px item height, inline hover action buttons (terminal + more), "M" letter badge for dirty status with pulse animation, context menu icons, segmented toggle in create modal replacing checkbox, CSS spinner + success flash on submit, entry slide-in animations for new worktrees, empty state guidance, list-integrated add button. **Worktree file watcher fix**: switching worktrees now watches both repo root and active worktree simultaneously via `startWatchers('default', [repoRoot, worktreePath])` — changes in either root are detected and surfaced to the editor. Deferred: cross-worktree diff, agent panel integration, git graph sidebar section |
 
 ### Phase 3: LSP + Browser Pane (Weeks 8–10)
@@ -1240,7 +1244,7 @@ Track milestone completion here. Update as you go.
 ### Phase 6: Polish + Open Source Release (Weeks 18–21)
 | Milestone | Status | Notes |
 |---|---|---|
-| 6.1 Settings system | ⬜ Not started | |
+| 6.1 Settings system | ✅ Complete | Settings panel skeleton (Cmd+,). Two-scope UI (User/Workspace) with category sidebar, search, schema-driven setting rows. IPC handlers for per-layer read/write (electron-store for user, .aide/settings.json for workspace). Theme picker, toggle/number/text/enum controls, modified indicators with reset. **Keyboard Shortcuts manager:** VS Code-style table (Command, Keybinding, When, Source columns), inline keybinding recorder with chord support and conflict detection, user overrides persisted in electron-store, when-aware shortcut dispatch via ShortcutManager + ContextKeys integration. Placeholder categories for future features (Terminal, Browser, Extensions). |
 | 6.2 Quick open (`Cmd+P`) + command palette | ✅ Complete | Reusable SearchPanel overlay (fuzzy filtering, virtualized list, portal-based). CommandPalette: lists all registered commands with keybinding hints, recently-used sort. QuickOpen: file search via `git ls-files` IPC, FileTypeIcon, relative path display. Both wired as commands in registry | |
 | 6.3 GitHub repository + CI | 🟡 In progress | electron-builder.yml configured for macOS (dmg+zip arm64+x64), Linux (AppImage+deb), Windows (nsis+zip). pnpm dist scripts added. GitHub Releases publish via `--publish always`. First alpha release: v0.1.0-alpha.1 |
 | 6.4 Plugin system foundation | ⬜ Not started | |
