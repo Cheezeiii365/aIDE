@@ -6,6 +6,12 @@ import type { BrowserPanelParams } from '../../lib/browserState'
 import { adjustZoomFactor, resetZoomFactor, zoomFactorToPercent } from '@aide/shared'
 import '../../styles/browser-pane.css'
 
+/**
+ * Produces a display title for a URL, preferring its hostname with fallbacks.
+ *
+ * @param url - The URL string to derive a title from; may be empty or invalid.
+ * @returns The hostname extracted from `url`, `'Browser'` if `url` is falsy or has no hostname, or the original `url` if it cannot be parsed.
+ */
 function titleForUrl(url: string): string {
   if (!url) return 'Browser'
   try {
@@ -15,10 +21,24 @@ function titleForUrl(url: string): string {
   }
 }
 
+/**
+ * Determines whether an error message indicates an aborted navigation.
+ *
+ * @param message - The error message text to inspect
+ * @returns `true` if the message contains `ERR_ABORTED` (case-insensitive), `false` otherwise
+ */
 function isAbortError(message: string): boolean {
   return /ERR_ABORTED/i.test(message)
 }
 
+/**
+ * Render a browser pane UI that embeds and controls a browser instance and synchronizes its state (bounds, visibility, navigation, title, loading, and zoom) with the host application.
+ *
+ * @param api - Panel API used to read/update panel parameters, set the panel title, and subscribe to panel events
+ * @param containerApi - Container API used to observe layout changes
+ * @param params - Initial and persisted panel parameters (e.g., url, zoomFactor, paneId, workspaceId, sessionMode, hasLoadedOnce)
+ * @returns The React element for the browser pane, including navigation controls, URL entry, zoom controls, status display, and the browser host container
+ */
 export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<BrowserPanelParams>) {
   const hostRef = useRef<HTMLDivElement>(null)
   const chromeRef = useRef<HTMLDivElement>(null)

@@ -1,9 +1,14 @@
 import type { IDockviewPanelProps } from 'dockview-react'
 
 /**
- * Render the application's welcome pane containing the title, action buttons, and keyboard shortcut hints.
+ * Render the welcome pane UI with title, action buttons, and keyboard shortcut hints.
  *
- * @returns A React element containing the welcome pane UI
+ * The pane applies `--panel-zoom` from `params?.zoomFactor` to scale its contents.
+ * Clicking the primary and secondary action buttons dispatches `aide:workspace-open-folder`
+ * and `aide:workspace-new-blank` CustomEvents on `window`, respectively.
+ *
+ * @param params - Panel parameters; `params.zoomFactor` (optional) sets the CSS `--panel-zoom` value
+ * @returns A React element representing the welcome pane
  */
 export function WelcomePane({ params }: IDockviewPanelProps<{ zoomFactor?: number }>) {
   const isMac = navigator.platform.includes('Mac')

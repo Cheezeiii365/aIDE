@@ -15,11 +15,14 @@ export interface WorkspaceRuntimeSnapshot {
 const snapshots = new Map<string, WorkspaceRuntimeSnapshot>()
 
 /**
- * Create a runtime snapshot of the current workspace state.
+ * Creates a runtime snapshot of the current workspace state.
  *
+ * @param dockviewApi - Dockview API providing panels, active panel, and other UI state
  * @param workspaceId - Identifier used as the snapshot key
  * @param rootPath - Root filesystem path for the workspace, or `null` if none
- * @returns A `WorkspaceRuntimeSnapshot` containing `workspaceId`, `rootPath`, serialized workspace `state`, serialized `terminals`, `activePanelId` (or `null`), and `panelParams` mapping panel IDs to their parameter objects
+ * @param sidebarWidth - Current sidebar width in pixels
+ * @param sidebarCollapsed - Whether the sidebar is collapsed
+ * @returns A `WorkspaceRuntimeSnapshot` containing the workspace ID and root path, serialized workspace `state` and `terminals`, the `activePanelId` (or `null`), and `panelParams` mapping panel IDs to shallow-copied parameter objects
  */
 export function captureWorkspaceRuntimeSnapshot(
   dockviewApi: DockviewApi,

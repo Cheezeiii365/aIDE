@@ -57,9 +57,9 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     let destroyed = false
 
     /**
-     * Initialize and mount the CodeMirror editor for the current filePath, loading disk content and wiring editor state, extensions, and listeners.
+     * Initialize and mount the CodeMirror editor for the current filePath and publish its initial state.
      *
-     * Reads the file from disk, records the clean baseline, uses a cached editor state if available or creates a new state with theme, wrap, indentation, language, update listeners, and keybindings, then instantiates and stores the EditorView, publishes the initial document content, clears the loading state, and publishes the initial cursor position. Sets error and loading state on read failure.
+     * Reads the file from disk, records the last-known clean baseline, restores a cached editor state when available or creates a new state with theme, metrics/zoom, wrap, indentation, language, update listeners, and keybindings, then mounts the EditorView, publishes the document content to the external bus, clears the loading indicator, and updates the initial cursor position status. On read failure, sets the component error and clears loading state.
      */
     async function init() {
       const result = await window.api.readFile(filePath)
