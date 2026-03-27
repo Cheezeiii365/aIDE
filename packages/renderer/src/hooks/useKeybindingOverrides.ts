@@ -34,14 +34,14 @@ export function useKeybindingOverrides(): UseKeybindingOverridesReturn {
   }, [])
 
   const addOverride = useCallback(async (rule: KeybindingRule) => {
-    const updated = [...overrides, rule]
-    await persist(updated)
-  }, [overrides, persist])
+    const current = await window.api.getKeybindingOverrides()
+    await persist([...current, rule])
+  }, [persist])
 
   const removeOverride = useCallback(async (index: number) => {
-    const updated = overrides.filter((_, i) => i !== index)
-    await persist(updated)
-  }, [overrides, persist])
+    const current = await window.api.getKeybindingOverrides()
+    await persist(current.filter((_, i) => i !== index))
+  }, [persist])
 
   const resetOverrides = useCallback(async () => {
     await persist([])
