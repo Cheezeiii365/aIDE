@@ -150,6 +150,14 @@ export const IpcChannels = {
   BROWSER_CAN_NAVIGATE_CHANGED: 'browser:can-navigate-changed',
   BROWSER_FOCUS_CHANGED: 'browser:focus-changed',
 
+  // Settings
+  SETTINGS_GET_USER: 'settings:get-user',
+  SETTINGS_SET_USER: 'settings:set-user',
+  SETTINGS_GET_WORKSPACE: 'settings:get-workspace',
+  SETTINGS_SET_WORKSPACE: 'settings:set-workspace',
+  SETTINGS_GET_DEFAULTS: 'settings:get-defaults',
+  SETTINGS_CHANGED: 'settings:changed',
+
   // App lifecycle
   LIFECYCLE_REQUEST_SAVE: 'lifecycle:request-save',
   LIFECYCLE_SAVE_COMPLETE: 'lifecycle:save-complete',
@@ -157,6 +165,8 @@ export const IpcChannels = {
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
+
+export type SettingsScope = 'user' | 'workspace'
 
 export interface DirEntry {
   name: string
@@ -575,6 +585,14 @@ export interface WindowApi {
   aideInit: () => Promise<AideInitResult | { error: string }>
   getResolvedSettings: () => Promise<ResolvedSettings>
   onAideInitResult: (callback: (result: AideInitResult) => void) => () => void
+
+  // Settings
+  getUserSettings: () => Promise<Partial<AideProjectSettings>>
+  setUserSetting: (key: string, value: unknown | undefined) => Promise<void>
+  getWorkspaceSettings: () => Promise<AideProjectSettings>
+  setWorkspaceSetting: (key: string, value: unknown | undefined) => Promise<void>
+  getBuiltInDefaults: () => Promise<ResolvedSettings>
+  onSettingsChanged: (callback: (resolved: ResolvedSettings) => void) => () => void
 
   // Gitignore security audit
   auditGitignore: () => Promise<GitignoreAuditResult>

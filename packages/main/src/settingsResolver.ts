@@ -13,7 +13,7 @@ import { join } from 'path'
 import type Store from 'electron-store'
 import type { AppSettings, AideProjectSettings, ResolvedSettings } from '@aide/shared'
 
-const BUILT_IN_DEFAULTS: ResolvedSettings = {
+export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   tabSize: 2,
   insertSpaces: true,
   wordWrap: 'off',

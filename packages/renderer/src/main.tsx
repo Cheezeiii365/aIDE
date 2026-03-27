@@ -16,6 +16,7 @@ import './styles/search-panel.css'
 import './styles/find-in-files.css'
 import './styles/gitignore-modal.css'
 import './styles/welcome-pane.css'
+import './styles/settings-pane.css'
 
 const rootElement = document.getElementById('root')
 

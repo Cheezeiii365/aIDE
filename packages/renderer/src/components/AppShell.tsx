@@ -666,6 +666,29 @@ export function AppShell() {
     })
   })
 
+  // Cmd+, — open settings
+  useCommand('settings.open', {
+    label: 'Open Settings',
+    keybinding: 'Cmd+,',
+    category: 'Preferences',
+  }, () => {
+    const api = dockviewApiRef.current
+    if (!api) return
+
+    const existing = api.panels.find((p) => p.id === 'settings')
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+
+    api.addPanel({
+      id: 'settings',
+      component: 'settingsPane',
+      title: 'Settings',
+      params: {},
+    })
+  })
+
   const onFileOpen = useCallback((filePath: string, opts?: OpenFileOpts) => {
     const api = dockviewApiRef.current
     if (!api) return

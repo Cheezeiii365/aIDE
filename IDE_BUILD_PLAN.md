@@ -984,13 +984,16 @@ A fully integrated AI coding agent experience. You can describe a task in the ag
 **Goal:** The quality bar needed to put this in front of other developers.
 
 #### Milestones
-- [ ] **6.1** Settings system
-  - Build settings panel (accessible via `Cmd+,`)
-  - Font size, font family selection
-  - Editor tab size (2 vs 4 spaces)
-  - API key management (stored via `safeStorage`)
-  - LSP server paths (for custom installations)
-  - Keyboard shortcut customization
+- [x] **6.1** Settings system
+  - Settings panel skeleton (accessible via `Cmd+,`)
+  - Two-scope UI: User (electron-store) and Workspace (.aide/settings.json)
+  - Schema-driven: categories + descriptors, add new settings by appending to registry
+  - Font size, font family, tab size, insert spaces, word wrap, format on save
+  - Theme picker in Workbench > Appearance
+  - Placeholder categories: Cursor, Minimap, Suggestions, Layout, Window, Terminal, Browser, Explorer, Extensions, Keyboard Shortcuts
+  - Search bar filters settings by label/description/key
+  - Modified indicators with per-setting reset-to-default
+  - Future: API key management (`safeStorage`), LSP server paths, keyboard shortcut customization
 
 - [ ] **6.2** Quick open (`Cmd+P`)
   - Fuzzy file search across workspace root
@@ -1240,7 +1243,7 @@ Track milestone completion here. Update as you go.
 ### Phase 6: Polish + Open Source Release (Weeks 18–21)
 | Milestone | Status | Notes |
 |---|---|---|
-| 6.1 Settings system | ⬜ Not started | |
+| 6.1 Settings system | ✅ Complete | Settings panel skeleton (Cmd+,). Two-scope UI (User/Workspace) with category sidebar, search, schema-driven setting rows. IPC handlers for per-layer read/write (electron-store for user, .aide/settings.json for workspace). Theme picker, toggle/number/text/enum controls, modified indicators with reset. Placeholder categories for future features (Terminal, Browser, Extensions, Keyboard Shortcuts). |
 | 6.2 Quick open (`Cmd+P`) + command palette | ✅ Complete | Reusable SearchPanel overlay (fuzzy filtering, virtualized list, portal-based). CommandPalette: lists all registered commands with keybinding hints, recently-used sort. QuickOpen: file search via `git ls-files` IPC, FileTypeIcon, relative path display. Both wired as commands in registry | |
 | 6.3 GitHub repository + CI | 🟡 In progress | electron-builder.yml configured for macOS (dmg+zip arm64+x64), Linux (AppImage+deb), Windows (nsis+zip). pnpm dist scripts added. GitHub Releases publish via `--publish always`. First alpha release: v0.1.0-alpha.1 |
 | 6.4 Plugin system foundation | ⬜ Not started | |

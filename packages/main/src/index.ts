@@ -12,7 +12,7 @@ import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './gi
 import { registerWorktreeHandlers, startWorktreePolling, stopWorktreePolling } from './worktreeManager'
 import { startSearch, cancelSearch } from './ripgrepSearch'
 import { ensureAideFolder } from './aideInit'
-import { resolveAppDefaults, resolveSettings } from './settingsResolver'
+import { resolveAppDefaults, resolveSettings, BUILT_IN_DEFAULTS } from './settingsResolver'
 import { auditGitignore, appendToGitignore, isAuditDismissed, dismissAudit } from './gitignoreAudit'
 import { TaskRunner } from './taskRunner'
 import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
@@ -514,6 +514,77 @@ ipcMain.handle(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, async () => {
   const rootPath = store.get('workspaceRoot')
   if (!rootPath) return resolveAppDefaults(store)
   return resolveSettings(rootPath, store)
+})
+
+// Settings IPC handlers
+ipcMain.handle(IpcChannels.SETTINGS_GET_DEFAULTS, () => BUILT_IN_DEFAULTS)
+
+ipcMain.handle(IpcChannels.SETTINGS_GET_USER, () => {
+  return store.get('editorDefaults') ?? {}
+})
+
+ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value: unknown) => {
+  const current = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
+  if (value === undefined || value === null) {
+    delete current[key]
+  } else {
+    current[key] = value
+  }
+  store.set('editorDefaults', current)
+
+  // Broadcast resolved settings
+  const rootPath = store.get('workspaceRoot')
+  const resolved = rootPath
+    ? await resolveSettings(rootPath, store)
+    : resolveAppDefaults(store)
+  contentView?.webContents.send(IpcChannels.SETTINGS_CHANGED, resolved)
+})
+
+ipcMain.handle(IpcChannels.SETTINGS_GET_WORKSPACE, async () => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return {}
+  const settingsPath = join(rootPath, '.aide', 'settings.json')
+  if (!existsSync(settingsPath)) return {}
+  try {
+    const raw = await readFile(settingsPath, 'utf-8')
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+})
+
+ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, value: unknown) => {
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return
+
+  const settingsPath = join(rootPath, '.aide', 'settings.json')
+
+  // Ensure .aide directory exists
+  const aideDir = join(rootPath, '.aide')
+  if (!existsSync(aideDir)) await mkdir(aideDir, { recursive: true })
+
+  // Read existing settings
+  let current: Record<string, unknown> = {}
+  if (existsSync(settingsPath)) {
+    try {
+      const raw = await readFile(settingsPath, 'utf-8')
+      current = JSON.parse(raw)
+    } catch {
+      current = {}
+    }
+  }
+
+  if (value === undefined || value === null) {
+    delete current[key]
+  } else {
+    current[key] = value
+  }
+
+  await fsWriteFile(settingsPath, JSON.stringify(current, null, 2) + '\n', 'utf-8')
+
+  // Broadcast resolved settings
+  const resolved = await resolveSettings(rootPath, store)
+  contentView?.webContents.send(IpcChannels.SETTINGS_CHANGED, resolved)
 })
 
 // Gitignore security audit IPC handlers
