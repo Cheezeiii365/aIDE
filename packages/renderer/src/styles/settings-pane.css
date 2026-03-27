@@ -555,7 +555,7 @@
 
 .keybinding-recorder__conflict {
   font-size: 11px;
-  color: #e5534b;
+  color: var(--text-error);
   padding: 0 2px;
 }
 
