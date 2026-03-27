@@ -1,12 +1,13 @@
 /* ── Find in Files pane ── */
 
 .find-in-files {
+  --panel-zoom: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: calc(13px * var(--panel-zoom));
 }
 
 /* ── Controls ── */
@@ -28,7 +29,7 @@
 .fif-input {
   flex: 1;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--panel-zoom));
   font-family: inherit;
   color: var(--text-primary);
   background: var(--bg-sunken);
@@ -42,13 +43,13 @@
 }
 
 .fif-input--glob {
-  font-size: 12px;
+  font-size: calc(12px * var(--panel-zoom));
 }
 
 .fif-toggle {
   flex-shrink: 0;
   padding: 3px 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--panel-zoom));
   font-family: inherit;
   color: var(--text-muted);
   background: transparent;
@@ -71,7 +72,7 @@
 .fif-replace-all-btn {
   flex-shrink: 0;
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: calc(11px * var(--panel-zoom));
   font-family: inherit;
   color: var(--text-primary);
   background: var(--bg-hover);
@@ -89,7 +90,7 @@
 
 .fif-summary {
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--panel-zoom));
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -121,7 +122,7 @@
 .fif-chevron {
   flex-shrink: 0;
   width: 12px;
-  font-size: 10px;
+  font-size: calc(10px * var(--panel-zoom));
   color: var(--text-muted);
 }
 
@@ -134,7 +135,7 @@
 
 .fif-match-count {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--panel-zoom));
   color: var(--text-muted);
   background: var(--bg-sunken);
   padding: 0 5px;
@@ -144,7 +145,7 @@
 .fif-replace-file-btn {
   flex-shrink: 0;
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: calc(10px * var(--panel-zoom));
   font-family: inherit;
   color: var(--text-muted);
   background: transparent;
@@ -167,7 +168,7 @@
   padding: 2px 8px 2px 28px;
   cursor: pointer;
   font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
-  font-size: 12px;
+  font-size: calc(12px * var(--panel-zoom));
 }
 
 .fif-match-row:hover {
@@ -199,7 +200,7 @@
 .fif-replace-btn {
   flex-shrink: 0;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: calc(11px * var(--panel-zoom));
   color: var(--text-muted);
   background: transparent;
   border: none;

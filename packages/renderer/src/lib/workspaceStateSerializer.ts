@@ -10,17 +10,24 @@ import type { DockviewApi } from 'dockview-react'
 import type { AideLocalState, TabState } from '@aide/shared'
 import { getCachedState, getAllCachedPaths } from './editorStateCache'
 import { isDirty } from './editorDirtyState'
+import { serializeBrowserPaneState } from './browserState'
 
 /**
- * Build an AideLocalState representing the current workspace layout, open editor tabs, active tab, and sidebar settings.
+ * Create an AideLocalState snapshot of the current workspace, including Dockview layout, open editor tabs, active tab, sidebar settings, and serialized browser pane state.
  *
  * @param dockviewApi - The Dockview API instance to read panels and layout from, or `null` if unavailable
- * @param sidebarWidth - The current sidebar width in pixels
- * @param sidebarCollapsed - Whether the sidebar is collapsed
- * @returns The serialized AideLocalState with `layout`, `openTabs`, `activeTabPath`, `sidebarWidth`, `sidebarCollapsed`, and `sidebarSections`
+ * @param workspaceId - Workspace identifier passed to browser pane serialization, or `null` to omit workspace-specific data
+ * @returns The serialized AideLocalState containing:
+ * - `layout`: serialized Dockview layout or `null` if unavailable or serialization failed
+ * - `openTabs`: list of open editor TabState entries (file path, cursor position, folded ranges, dirty flag, etc.)
+ * - `activeTabPath`: file path of the active editor tab or `null`
+ * - `sidebarWidth` and `sidebarCollapsed`: current sidebar settings
+ * - `sidebarSections`: persisted sidebar sections (empty object here)
+ * - `browserPanes`: browser pane state produced by `serializeBrowserPaneState(dockviewApi, workspaceId)`
  */
 export function serializeWorkspaceState(
   dockviewApi: DockviewApi | null,
+  workspaceId: string | null,
   sidebarWidth: number,
   sidebarCollapsed: boolean,
 ): AideLocalState {
@@ -73,6 +80,7 @@ export function serializeWorkspaceState(
     sidebarWidth,
     sidebarCollapsed,
     sidebarSections: {},
+    browserPanes: serializeBrowserPaneState(dockviewApi, workspaceId),
   }
 }
 

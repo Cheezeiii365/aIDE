@@ -14,20 +14,24 @@ interface Props {
 }
 
 /**
- * Render the resizable project sidebar containing the file explorer or an empty-state prompt.
+ * Render the resizable project sidebar showing a file explorer or an empty-state prompt.
  *
- * The sidebar preserves its width between sessions, supports drag-to-resize within configured
- * bounds, and provides a filter input for the file tree. When `activeRoot` is null the component
- * shows an "Open Folder" empty state and delegates folder-opening to `onOpenFolder`.
+ * Persists width across sessions, supports drag-to-resize within bounds, and provides a filter input for the file tree.
  *
- * @param onFileOpen - Callback invoked with a file path when a file is selected in the tree
- * @param collapsed - If true, the sidebar is hidden and the component renders `null`
- * @param activeRoot - The workspace root path to display in the explorer; set to `null` to show the empty state
+ * @param onFileOpen - Callback invoked with the selected file path
+ * @param collapsed - When `true`, the component renders `null`
+ * @param activeRoot - Workspace root path to display; set to `null` to show the empty state
  * @param onOpenFolder - Callback invoked when the "Open Folder" button is clicked in the empty state
  * @param worktreeSection - Optional React node rendered after the explorer section when `activeRoot` is set
- * @returns The sidebar UI element when visible; `null` when collapsed
+ * @returns The sidebar element when visible, `null` when collapsed
  */
-export function Sidebar({ onFileOpen, collapsed = false, activeRoot, onOpenFolder, worktreeSection }: Props) {
+export function Sidebar({
+  onFileOpen,
+  collapsed = false,
+  activeRoot,
+  onOpenFolder,
+  worktreeSection,
+}: Props) {
   const [width, setWidth] = useState(220) // fallback until loaded
   const [filter, setFilter] = useState('')
   const dragging = useRef(false)

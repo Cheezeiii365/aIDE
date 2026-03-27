@@ -18,6 +18,7 @@ import { TaskRunner } from './taskRunner'
 import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
 import { WorkspaceRegistry } from './workspaceRegistry'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './stateSerializer'
+import { BrowserPaneManager } from './browserPaneManager'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -26,6 +27,10 @@ let taskRunner: TaskRunner | null = null
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
+const browserPaneManager = new BrowserPaneManager({
+  getWindow: () => mainWindow,
+  getRendererWebContents: () => contentView?.webContents ?? null,
+})
 
 /**
  * Builds and installs the application's native menu with platform-appropriate entries.
@@ -36,6 +41,9 @@ let contentView: WebContentsView | null = null
  */
 function buildAppMenu(): void {
   const isMac = process.platform === 'darwin'
+  const sendZoomCommand = (target: 'panel', action: 'in' | 'out' | 'reset') => {
+    contentView?.webContents.send(IpcChannels.APP_ZOOM_COMMAND, { target, action })
+  }
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -68,9 +76,21 @@ function buildAppMenu(): void {
     {
       label: 'View',
       submenu: [
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { role: 'resetZoom' },
+        {
+          label: 'Zoom In',
+          accelerator: process.platform === 'darwin' ? 'Cmd+=' : 'Ctrl+=',
+          click: () => sendZoomCommand('panel', 'in'),
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: process.platform === 'darwin' ? 'Cmd+-' : 'Ctrl+-',
+          click: () => sendZoomCommand('panel', 'out'),
+        },
+        {
+          label: 'Actual Size',
+          accelerator: process.platform === 'darwin' ? 'Cmd+0' : 'Ctrl+0',
+          click: () => sendZoomCommand('panel', 'reset'),
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' },
         { type: 'separator' },
@@ -192,6 +212,14 @@ ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_GET, () => store.get('sidebarWidth'))
 ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_SET, (_event, width: number) => {
   store.set('sidebarWidth', width)
 })
+
+ipcMain.handle(IpcChannels.BROWSER_ZOOM_GET, (_event, paneId: string) => browserPaneManager.getZoom(paneId))
+ipcMain.handle(IpcChannels.BROWSER_ZOOM_SET, (_event, paneId: string, zoomFactor: number) =>
+  browserPaneManager.setZoom(paneId, zoomFactor),
+)
+ipcMain.handle(IpcChannels.BROWSER_ZOOM_ADJUST, (_event, paneId: string, delta: number) =>
+  browserPaneManager.adjustZoom(paneId, delta),
+)
 
 // Workspace IPC handlers
 // Open folder dialog — now delegates to workspace registry
@@ -411,6 +439,47 @@ ipcMain.handle(IpcChannels.STATE_SAVE_TERMINALS, async (_event, rootPath: string
 
 ipcMain.handle(IpcChannels.STATE_LOAD_TERMINALS, async (_event, rootPath: string) => {
   return loadTerminalState(rootPath)
+})
+
+// Browser pane IPC handlers
+ipcMain.handle(IpcChannels.BROWSER_CREATE, (_event, paneId: string, workspaceId: string, sessionMode: import('@aide/shared').BrowserSessionMode) => {
+  return browserPaneManager.create(paneId, workspaceId, sessionMode)
+})
+
+ipcMain.on(IpcChannels.BROWSER_DESTROY, (_event, paneId: string) => {
+  browserPaneManager.destroy(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_DESTROY_WORKSPACE, (_event, workspaceId: string) => {
+  browserPaneManager.destroyWorkspace(workspaceId)
+})
+
+ipcMain.handle(IpcChannels.BROWSER_NAVIGATE, async (_event, paneId: string, url: string) => {
+  return browserPaneManager.navigate(paneId, url)
+})
+
+ipcMain.on(IpcChannels.BROWSER_GO_BACK, (_event, paneId: string) => {
+  browserPaneManager.goBack(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_GO_FORWARD, (_event, paneId: string) => {
+  browserPaneManager.goForward(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_RELOAD, (_event, paneId: string) => {
+  browserPaneManager.reload(paneId)
+})
+
+ipcMain.on(IpcChannels.BROWSER_HOST_UPDATE, (_event, update: import('@aide/shared').BrowserHostUpdate) => {
+  browserPaneManager.handleHostUpdate(update)
+})
+
+ipcMain.on(IpcChannels.BROWSER_SUPPRESS_OVERLAYS, () => {
+  browserPaneManager.suppressOverlays()
+})
+
+ipcMain.on(IpcChannels.BROWSER_UNSUPPRESS_OVERLAYS, () => {
+  browserPaneManager.unsuppressOverlays()
 })
 
 // Full .aide initialization (on-demand from command palette)

@@ -3,6 +3,7 @@
  * SVG paths inspired by the Seti UI icon set (MIT-licensed).
  */
 
+import type { ReactNode } from 'react'
 import { getFileIconId, getFolderIconId } from './fileIcons'
 
 // ── Color palette (Seti theme) ──────────────────
@@ -49,13 +50,13 @@ const ICON_COLORS: Record<string, string> = {
 }
 
 /**
- * Provide the SVG JSX fragment for the specified icon identifier.
+ * Return the SVG fragment for a given icon identifier.
  *
- * @param iconId - The icon identifier (for example: `ts`, `js`, `json`, `image`, `folder`, etc.) used to select which SVG content to render.
- * @returns A JSX.Element containing the SVG nodes for the requested icon; returns a generic document-shaped SVG when `iconId` is not recognized.
+ * @param iconId - The icon identifier (e.g., `ts`, `js`, `json`, `image`, `folder`) used to select SVG content.
+ * @returns SVG nodes corresponding to `iconId`; a generic document-shaped SVG when `iconId` is not recognized.
  */
 
-function iconPath(iconId: string): JSX.Element {
+function iconPath(iconId: string): ReactNode {
   switch (iconId) {
     case 'ts':
       return (

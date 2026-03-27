@@ -48,7 +48,7 @@
 .file-tree__name {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-primary);
 }
 
@@ -94,7 +94,7 @@
   border-radius: 3px;
   background: var(--bg-sunken);
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 10px;
   font-family: inherit;
   outline: none;
 }
@@ -135,7 +135,7 @@
 }
 
 .sidebar__empty-hint {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   text-align: center;
 }

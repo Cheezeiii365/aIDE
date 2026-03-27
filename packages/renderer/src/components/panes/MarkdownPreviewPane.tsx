@@ -37,16 +37,17 @@ hljs.registerLanguage('md', markdown)
 
 interface MarkdownPreviewParams {
   filePath: string
+  zoomFactor?: number
 }
 
 /**
- * Render a live, syntax-highlighted preview of the markdown content for the given file path.
+ * Render a live preview of the markdown located at the provided file path.
  *
- * The preview stays in sync with editor content when available, falls back to reading the file from disk,
- * highlights code blocks with highlight.js, debounces rendering, and sanitizes output with DOMPurify.
+ * The preview synchronizes with in-memory editor content when available, falls back to reading the file from disk,
+ * highlights fenced code blocks, and sanitizes generated HTML before rendering.
  *
- * @param params - Panel parameters containing `filePath`, the path used to source markdown content
- * @returns A React element containing the sanitized HTML preview of the markdown content
+ * @param params - Panel parameters; must include `filePath` (path to the markdown source) and may include `zoomFactor`
+ * @returns A React element containing the rendered, sanitized HTML preview of the markdown content
  */
 export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPreviewParams>) {
   const { filePath } = params
@@ -114,7 +115,11 @@ export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPrev
   }, [])
 
   return (
-    <div className="markdown-preview" ref={scrollRef}>
+    <div
+      className="markdown-preview"
+      ref={scrollRef}
+      style={{ ['--panel-zoom' as string]: String(params.zoomFactor ?? 1) }}
+    >
       {/* Safe: all HTML is sanitized through DOMPurify above */}
       {/* Links are intercepted via handleLinkClick and routed through openUrl */}
       <div

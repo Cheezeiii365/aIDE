@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -22,6 +22,16 @@ const api: WindowApi = {
     const handler = (_event: Electron.IpcRendererEvent, isFullscreen: boolean) => callback(isFullscreen)
     ipcRenderer.on(IpcChannels.FULLSCREEN_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.FULLSCREEN_CHANGED, handler)
+  },
+
+  // Zoom
+  getBrowserZoom: (paneId: string) => ipcRenderer.invoke(IpcChannels.BROWSER_ZOOM_GET, paneId),
+  setBrowserZoom: (paneId: string, zoomFactor: number) => ipcRenderer.invoke(IpcChannels.BROWSER_ZOOM_SET, paneId, zoomFactor),
+  adjustBrowserZoom: (paneId: string, delta: number) => ipcRenderer.invoke(IpcChannels.BROWSER_ZOOM_ADJUST, paneId, delta),
+  onZoomCommand: (callback: (payload: ZoomCommandPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ZoomCommandPayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.APP_ZOOM_COMMAND, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.APP_ZOOM_COMMAND, handler)
   },
 
   // Sidebar width
@@ -214,6 +224,53 @@ const api: WindowApi = {
     ipcRenderer.invoke(IpcChannels.STATE_SAVE_TERMINALS, rootPath, state),
   loadTerminalState: (rootPath: string): Promise<AideLocalTerminals | null> =>
     ipcRenderer.invoke(IpcChannels.STATE_LOAD_TERMINALS, rootPath),
+
+  // Browser panes
+  browserCreate: (paneId: string, workspaceId: string, sessionMode: BrowserSessionMode) =>
+    ipcRenderer.invoke(IpcChannels.BROWSER_CREATE, paneId, workspaceId, sessionMode),
+  browserDestroy: (paneId: string) =>
+    ipcRenderer.send(IpcChannels.BROWSER_DESTROY, paneId),
+  browserDestroyWorkspace: (workspaceId: string) =>
+    ipcRenderer.send(IpcChannels.BROWSER_DESTROY_WORKSPACE, workspaceId),
+  browserNavigate: (paneId: string, url: string) =>
+    ipcRenderer.invoke(IpcChannels.BROWSER_NAVIGATE, paneId, url),
+  browserGoBack: (paneId: string) =>
+    ipcRenderer.send(IpcChannels.BROWSER_GO_BACK, paneId),
+  browserGoForward: (paneId: string) =>
+    ipcRenderer.send(IpcChannels.BROWSER_GO_FORWARD, paneId),
+  browserReload: (paneId: string) =>
+    ipcRenderer.send(IpcChannels.BROWSER_RELOAD, paneId),
+  browserHostUpdate: (update: BrowserHostUpdate) =>
+    ipcRenderer.send(IpcChannels.BROWSER_HOST_UPDATE, update),
+  browserSuppressOverlays: () =>
+    ipcRenderer.send(IpcChannels.BROWSER_SUPPRESS_OVERLAYS),
+  browserUnsuppressOverlays: () =>
+    ipcRenderer.send(IpcChannels.BROWSER_UNSUPPRESS_OVERLAYS),
+  onBrowserDidNavigate: (callback: (payload: BrowserDidNavigatePayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: BrowserDidNavigatePayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.BROWSER_DID_NAVIGATE, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.BROWSER_DID_NAVIGATE, handler)
+  },
+  onBrowserTitleUpdated: (callback: (payload: BrowserPageTitlePayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: BrowserPageTitlePayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.BROWSER_PAGE_TITLE_UPDATED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.BROWSER_PAGE_TITLE_UPDATED, handler)
+  },
+  onBrowserLoadingChanged: (callback: (payload: BrowserLoadingPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: BrowserLoadingPayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.BROWSER_LOADING_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.BROWSER_LOADING_CHANGED, handler)
+  },
+  onBrowserCanNavigateChanged: (callback: (payload: BrowserCanNavigatePayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: BrowserCanNavigatePayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.BROWSER_CAN_NAVIGATE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.BROWSER_CAN_NAVIGATE_CHANGED, handler)
+  },
+  onBrowserFocusChanged: (callback: (payload: BrowserFocusPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: BrowserFocusPayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.BROWSER_FOCUS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.BROWSER_FOCUS_CHANGED, handler)
+  },
 
   // App lifecycle
   onLifecycleRequestSave: (callback: () => void) => {

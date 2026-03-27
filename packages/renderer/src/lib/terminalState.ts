@@ -7,6 +7,7 @@ export interface TerminalPanelParams {
   worktreePath?: string
   shell?: string
   title?: string
+  zoomFactor?: number
 }
 
 /**
@@ -21,10 +22,12 @@ function randomId(): string {
 /**
  * Create parameters for a new terminal panel with a generated terminalId.
  *
+ * The returned params include any provided metadata and a default zoomFactor of 1.
+ *
  * @param workspaceId - Workspace identifier to associate the terminal with
  * @param worktreePath - Working directory path for the terminal (cwd)
  * @param title - Optional display title for the terminal panel
- * @returns A `TerminalPanelParams` object containing a generated `terminalId` and any provided fields
+ * @returns A `TerminalPanelParams` object with a generated `terminalId`, the supplied fields, and `zoomFactor` set to `1`
  */
 export function createTerminalPanelParams(
   workspaceId?: string,
@@ -36,18 +39,19 @@ export function createTerminalPanelParams(
     workspaceId,
     worktreePath,
     title,
+    zoomFactor: 1,
   }
 }
 
 /**
- * Creates TerminalPanelParams for restoring a terminal panel with the given identifier and optional metadata.
+ * Create terminal panel parameters for restoring an existing terminal.
  *
  * @param terminalId - The unique identifier of the terminal to restore
  * @param workspaceId - Optional workspace identifier associated with the terminal
  * @param worktreePath - Optional working directory path for the terminal
  * @param title - Optional display title for the terminal panel
  * @param shell - Optional shell executable or command for the terminal
- * @returns A TerminalPanelParams object containing the provided values
+ * @returns A TerminalPanelParams object populated from the provided values; `zoomFactor` is set to 1
  */
 export function createRestoredTerminalPanelParams(
   terminalId: string,
@@ -62,6 +66,7 @@ export function createRestoredTerminalPanelParams(
     worktreePath,
     title,
     shell,
+    zoomFactor: 1,
   }
 }
 

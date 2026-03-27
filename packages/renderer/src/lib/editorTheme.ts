@@ -7,17 +7,61 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import type { ThemeName } from '@aide/shared'
 
 export const themeCompartment = new Compartment()
+export const editorMetricsCompartment = new Compartment()
 
 const baseTheme = EditorView.theme({
   '&': {
     height: '100%',
-    fontSize: '13px',
     fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace",
   },
   '.cm-scroller': {
     overflow: 'auto',
   },
 })
+
+/**
+ * Produce editor typography metrics derived from a base font size.
+ *
+ * @param fontSize - Base font size in pixels (number, interpreted as px)
+ * @returns An object containing `fontSize` (the input value) and `lineHeight` (a pixel string rounded to `Math.round(fontSize * 1.6)`), e.g. `{ fontSize: 13, lineHeight: "21px" }`
+ */
+export function getEditorMetrics(fontSize: number): { fontSize: number; lineHeight: string } {
+  return {
+    fontSize,
+    lineHeight: `${Math.round(fontSize * 1.6)}px`,
+  }
+}
+
+/**
+ * Create a CodeMirror theme extension that applies the editor's font size and line height.
+ *
+ * @param fontSize - Base font size in pixels to apply to the editor
+ * @returns An EditorView theme extension that sets `fontSize` on the editor root, content, gutters and gutter elements, and applies a computed `lineHeight` to lines and those elements; the `lineHeight` is computed as `Math.round(fontSize * 1.6)` pixels.
+ */
+export function getEditorMetricsExtension(fontSize: number): Extension {
+  const metrics = getEditorMetrics(fontSize)
+  return EditorView.theme({
+    '&': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-content': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-line': {
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-gutters': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+    '.cm-gutterElement': {
+      fontSize: `${metrics.fontSize}px`,
+      lineHeight: metrics.lineHeight,
+    },
+  })
+}
 
 /* ─── Atom One Light — CodeMirror theme ────────────────────── */
 const oneLightTheme = EditorView.theme(

@@ -16,17 +16,21 @@ import { QuickOpen } from './QuickOpen'
 import { GitignoreReviewModal } from './GitignoreReviewModal'
 import { TaskInputModal } from './TaskInputModal'
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
+import { NewBrowserPaneModal } from './NewBrowserPaneModal'
 import { registerDefaultCommands } from '../lib/defaultCommands'
 import { useTasks } from '../hooks/useTasks'
 import { useWorkspaces } from '../hooks/useWorkspaces'
 import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspaceSwitcher'
 import { createTerminalPanelParams, getTerminalParams } from '../lib/terminalState'
+import { createBrowserPanelParams, getBrowserParams } from '../lib/browserState'
+import { getPanelZoomFactor, updatePanelZoomParams } from '../lib/panelZoom'
 import {
   captureWorkspaceRuntimeSnapshot,
   clearWorkspaceRuntimeSnapshot,
   saveWorkspaceRuntimeSnapshot,
 } from '../lib/workspaceRuntimeSnapshots'
-import type { AideTask, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
+import type { AideTask, BrowserSessionMode, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
+import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
 
 /**
  * Top-level application shell coordinating workspace lifecycle, Dockview panels, keyboard commands, and primary UI.
@@ -43,6 +47,7 @@ export function AppShell() {
   const prevWorkspaceIdRef = useRef<string | null>(null)
   const preservedTerminalIdsRef = useRef(new Set<string>())
   const destroyedWorkspaceIdsRef = useRef(new Set<string>())
+  const isSwitchingWorkspaceRef = useRef(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
@@ -50,6 +55,9 @@ export function AppShell() {
   const [gitignoreModalOpen, setGitignoreModalOpen] = useState(false)
   const [taskInputRequest, setTaskInputRequest] = useState<TaskInputRequest | null>(null)
   const [wsContextMenu, setWsContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [newBrowserPaneOpen, setNewBrowserPaneOpen] = useState(false)
+  const [activeBrowserPaneId, setActiveBrowserPaneId] = useState<string | null>(null)
+  const [activePanelId, setActivePanelId] = useState<string | null>(null)
   const { runningTasks } = useTasks()
 
   // Workspace registry
@@ -110,6 +118,7 @@ export function AppShell() {
     const workspace = workspaces.find((entry) => entry.id === id)
     destroyedWorkspaceIdsRef.current.add(id)
     clearWorkspaceRuntimeSnapshot(id)
+    window.api.browserDestroyWorkspace(id)
     if (workspace?.rootPath) {
       window.api.saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null }).catch(() => {})
     }
@@ -121,6 +130,7 @@ export function AppShell() {
     const workspace = workspaces.find((entry) => entry.id === id)
     destroyedWorkspaceIdsRef.current.add(id)
     clearWorkspaceRuntimeSnapshot(id)
+    window.api.browserDestroyWorkspace(id)
     if (workspace?.rootPath) {
       window.api.saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null }).catch(() => {})
     }
@@ -176,6 +186,7 @@ export function AppShell() {
             setSidebarCollapsed(collapsed)
           },
           onBeforeClearPanels: () => {
+            isSwitchingWorkspaceRef.current = true
             preservedTerminalIdsRef.current = new Set(
               api.panels
                 .map((panel) => getTerminalParams(panel)?.terminalId)
@@ -183,6 +194,7 @@ export function AppShell() {
             )
           },
           onAfterRestorePanels: () => {
+            isSwitchingWorkspaceRef.current = false
             preservedTerminalIdsRef.current.clear()
           },
         })
@@ -206,6 +218,7 @@ export function AppShell() {
         setSidebarCollapsed(collapsed)
       },
       onBeforeClearPanels: () => {
+        isSwitchingWorkspaceRef.current = true
         preservedTerminalIdsRef.current = new Set(
           api.panels
             .map((panel) => getTerminalParams(panel)?.terminalId)
@@ -213,6 +226,7 @@ export function AppShell() {
         )
       },
       onAfterRestorePanels: () => {
+        isSwitchingWorkspaceRef.current = false
         preservedTerminalIdsRef.current.clear()
       },
     })
@@ -320,6 +334,68 @@ export function AppShell() {
     setContext('sidebarVisible', !sidebarCollapsed)
   }, [sidebarCollapsed])
 
+  useEffect(() => {
+    const shouldSuppress = commandPaletteOpen || quickOpenOpen || gitignoreModalOpen || !!taskInputRequest || newBrowserPaneOpen
+    if (shouldSuppress) {
+      window.api.browserSuppressOverlays()
+    } else {
+      window.api.browserUnsuppressOverlays()
+    }
+  }, [commandPaletteOpen, gitignoreModalOpen, newBrowserPaneOpen, quickOpenOpen, taskInputRequest])
+
+  useEffect(() => {
+    const unsub = window.api.onBrowserFocusChanged(({ paneId, focused }) => {
+      if (focused) {
+        setActiveBrowserPaneId(paneId)
+        setContext('browserFocused', true)
+      } else {
+        setActiveBrowserPaneId((current) => {
+          const next = current === paneId ? null : current
+          setContext('browserFocused', next !== null)
+          return next
+        })
+      }
+    })
+    return unsub
+  }, [])
+
+  const updateActivePanelZoom = useCallback(async (nextZoom: number) => {
+    const api = dockviewApiRef.current
+    if (!api || !activePanelId) return
+    const activePanel = api.panels.find((panel) => panel.id === activePanelId)
+    if (!activePanel) return
+
+    const browserParams = getBrowserParams(activePanel)
+    if (browserParams) {
+      const appliedZoom = await window.api.setBrowserZoom(browserParams.paneId, nextZoom)
+      activePanel.api.updateParameters({ ...browserParams, zoomFactor: appliedZoom })
+      persistWorkspaceRuntime()
+      return
+    }
+
+    activePanel.api.updateParameters(updatePanelZoomParams(
+      (activePanel.params as Record<string, unknown> | undefined),
+      nextZoom,
+    ))
+    persistWorkspaceRuntime()
+  }, [activePanelId, persistWorkspaceRuntime])
+
+  const handleZoomCommand = useCallback((action: 'in' | 'out' | 'reset', _target: 'panel') => {
+    const activePanel = dockviewApiRef.current?.panels.find((panel) => panel.id === activePanelId)
+    if (!activePanel) return
+    const currentZoom = getPanelZoomFactor(activePanel.params)
+    const nextZoom = action === 'reset'
+      ? resetZoomFactor()
+      : adjustZoomFactor(currentZoom, action === 'in' ? 0.1 : -0.1)
+    void updateActivePanelZoom(nextZoom)
+  }, [activePanelId, updateActivePanelZoom])
+
+  useEffect(() => {
+    return window.api.onZoomCommand(({ action, target }) => {
+      handleZoomCommand(action, target)
+    })
+  }, [handleZoomCommand])
+
   // Auto-save workspace state every 30 seconds (crash safety net)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -374,19 +450,34 @@ export function AppShell() {
           persistWorkspaceRuntime()
         }
       }
+
+      const browserParams = getBrowserParams(event)
+      if (browserParams && !isSwitchingWorkspaceRef.current) {
+        setActiveBrowserPaneId((current) => (current === browserParams.paneId ? null : current))
+        setContext('browserFocused', false)
+        window.api.browserDestroy(browserParams.paneId)
+        persistWorkspaceRuntime()
+      }
     })
 
     // Track which pane type is focused
     api.onDidActivePanelChange((panel) => {
       if (!panel) {
+        setActivePanelId(null)
         setContext('editorFocused', false)
         setContext('terminalFocused', false)
+        setContext('browserFocused', false)
         return
       }
       const id = panel.id
+      setActivePanelId(id)
       const isTerminal = id === 'terminal' || id.startsWith('terminal-')
+      const browserParams = getBrowserParams(panel)
+      const isBrowser = !!browserParams
+      setActiveBrowserPaneId(browserParams?.paneId ?? null)
       setContext('terminalFocused', isTerminal)
-      setContext('editorFocused', !isTerminal)
+      setContext('browserFocused', isBrowser)
+      setContext('editorFocused', !isTerminal && !isBrowser)
     })
 
     registerDefaultCommands(api)
@@ -511,6 +602,37 @@ export function AppShell() {
     setQuickOpenOpen(true)
   })
 
+  useCommand('browser.new', {
+    label: 'New Browser Pane',
+    category: 'Browser',
+  }, () => {
+    if (!activeWorkspaceId) return
+    setCommandPaletteOpen(false)
+    setQuickOpenOpen(false)
+    setNewBrowserPaneOpen(true)
+  })
+
+  useCommand('browser.back', {
+    label: 'Browser Back',
+    category: 'Browser',
+  }, () => {
+    if (activeBrowserPaneId) window.api.browserGoBack(activeBrowserPaneId)
+  })
+
+  useCommand('browser.forward', {
+    label: 'Browser Forward',
+    category: 'Browser',
+  }, () => {
+    if (activeBrowserPaneId) window.api.browserGoForward(activeBrowserPaneId)
+  })
+
+  useCommand('browser.reload', {
+    label: 'Browser Reload',
+    category: 'Browser',
+  }, () => {
+    if (activeBrowserPaneId) window.api.browserReload(activeBrowserPaneId)
+  })
+
   // Cmd+Shift+F — find in files
   useCommand('search.findInFiles', {
     label: 'Find in Files',
@@ -582,6 +704,23 @@ export function AppShell() {
       })
     }
   }, [openMarkdownPreview])
+
+  const handleCreateBrowserPane = useCallback((sessionMode: BrowserSessionMode, url: string) => {
+    const api = dockviewApiRef.current
+    if (!api || !activeWorkspaceId) return
+
+    const activePanel = api.activePanel
+    const params = createBrowserPanelParams(activeWorkspaceId, sessionMode, url.trim())
+    api.addPanel({
+      id: params.paneId,
+      component: 'browserPane',
+      title: 'Browser',
+      params,
+      position: activePanel ? { referencePanel: activePanel, direction: 'right' } : undefined,
+    })
+    setNewBrowserPaneOpen(false)
+    persistWorkspaceRuntime()
+  }, [activeWorkspaceId, persistWorkspaceRuntime])
 
   return (
     <div className="app-shell">
@@ -661,6 +800,12 @@ export function AppShell() {
         <TaskInputModal
           request={taskInputRequest}
           onClose={() => setTaskInputRequest(null)}
+        />
+      )}
+      {newBrowserPaneOpen && (
+        <NewBrowserPaneModal
+          onClose={() => setNewBrowserPaneOpen(false)}
+          onSubmit={handleCreateBrowserPane}
         />
       )}
       {wsContextMenu && (

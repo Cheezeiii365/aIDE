@@ -1,11 +1,12 @@
 .markdown-preview {
+  --panel-zoom: 1;
   width: 100%;
   height: 100%;
   overflow-y: auto;
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-size: calc(14px * var(--panel-zoom));
   line-height: 1.6;
 }
 
@@ -53,7 +54,7 @@
   padding: 12px 16px;
   overflow-x: auto;
   font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: calc(13px * var(--panel-zoom));
   line-height: 1.5;
   margin: 1em 0;
 }
