@@ -64,6 +64,22 @@ function shouldOpenExternally(url: string): boolean {
   }
 }
 
+function scaleBoundsToContentView(
+  bounds: { x: number; y: number; width: number; height: number },
+  viewport: { width: number; height: number },
+  contentBounds: { width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+  const scaleX = viewport.width > 0 ? contentBounds.width / viewport.width : 1
+  const scaleY = viewport.height > 0 ? contentBounds.height / viewport.height : 1
+
+  return {
+    x: Math.round(bounds.x * scaleX),
+    y: Math.round(bounds.y * scaleY),
+    width: Math.max(0, Math.round(bounds.width * scaleX)),
+    height: Math.max(0, Math.round(bounds.height * scaleY)),
+  }
+}
+
 export class BrowserPaneManager {
   private panes = new Map<string, ManagedBrowserPane>()
 
@@ -278,12 +294,18 @@ export class BrowserPaneManager {
 
     managed.workspaceId = update.workspaceId
 
-    const nextBounds = {
-      x: Math.round(update.bounds.x),
-      y: Math.round(update.bounds.y),
-      width: Math.max(0, Math.round(update.bounds.width)),
-      height: Math.max(0, Math.round(update.bounds.height)),
-    }
+    const window = this.options.getWindow()
+    const windowContentBounds = window?.getContentBounds() ?? null
+    const scaledBounds = windowContentBounds
+      ? scaleBoundsToContentView(update.bounds, update.viewport, windowContentBounds)
+      : {
+          x: Math.round(update.bounds.x),
+          y: Math.round(update.bounds.y),
+          width: Math.max(0, Math.round(update.bounds.width)),
+          height: Math.max(0, Math.round(update.bounds.height)),
+        }
+
+    const nextBounds = scaledBounds
     const nextDesiredVisible = update.visible && nextBounds.width > 0 && nextBounds.height > 0
 
     if (!sameBounds(managed.lastBounds, nextBounds)) {

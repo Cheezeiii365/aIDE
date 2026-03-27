@@ -17,6 +17,7 @@ export interface SearchPanelItem {
   description?: string
   icon?: ReactNode
   category?: string
+  searchText?: string
 }
 
 interface SearchPanelProps {
@@ -81,7 +82,7 @@ function filterAndSort(items: SearchPanelItem[], query: string): FuzzyResult[] {
 
   const results: FuzzyResult[] = []
   for (const item of items) {
-    const match = fuzzyMatch(query, item.label)
+    const match = fuzzyMatch(query, item.searchText ?? item.label)
     if (match) results.push({ item, ...match })
   }
   results.sort((a, b) => b.score - a.score)
@@ -154,6 +155,7 @@ export function SearchPanel({
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
 
   const results = useMemo(() => filterAndSort(items, query), [items, query])
 
@@ -174,9 +176,13 @@ export function SearchPanel({
     virtualizer.scrollToIndex(activeIndex, { align: 'auto' })
   }, [activeIndex, virtualizer])
 
-  // Auto-focus input
+  // Auto-focus input; restore previous focus on unmount
   useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null
     inputRef.current?.focus()
+    return () => {
+      previousFocusRef.current?.focus()
+    }
   }, [])
 
   const handleKeyDown = useCallback(

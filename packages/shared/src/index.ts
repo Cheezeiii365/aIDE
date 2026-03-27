@@ -374,6 +374,7 @@ export interface BrowserHostUpdate {
   bounds: { x: number; y: number; width: number; height: number }
   visible: boolean
   chromeHeight: number
+  viewport: { width: number; height: number }
 }
 
 export interface BrowserDidNavigatePayload {

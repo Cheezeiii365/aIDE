@@ -66,6 +66,7 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
     if (!host || !workspaceId) return
 
     const rect = host.getBoundingClientRect()
+    const chromeRect = chromeRef.current?.getBoundingClientRect()
     const next = {
       paneId,
       workspaceId,
@@ -76,7 +77,11 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
         height: rect.height,
       },
       visible: rect.width > 0 && rect.height > 0,
-      chromeHeight: chromeRef.current?.getBoundingClientRect().height ?? 0,
+      chromeHeight: chromeRect?.height ?? 0,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
     }
 
     const serialized = JSON.stringify(next)
@@ -255,6 +260,10 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
         bounds: { x: 0, y: 0, width: 0, height: 0 },
         visible: false,
         chromeHeight: 0,
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        },
       })
     }
   }, [api, containerApi, paneId, pushHostUpdate, requestInitialLoad, workspaceId])

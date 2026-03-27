@@ -26,6 +26,12 @@ import { autoSave, switchWorkspace as doSwitchWorkspace } from '../lib/workspace
 import { createTerminalPanelParams, getTerminalParams } from '../lib/terminalState'
 import { createBrowserPanelParams, getBrowserParams } from '../lib/browserState'
 import { getPanelZoomFactor, updatePanelZoomParams } from '../lib/panelZoom'
+import { DockviewNavigation } from '../lib/dockviewNavigation'
+import {
+  commentLineInActiveEditor,
+  toggleLineCommentInActiveEditor,
+  uncommentLineInActiveEditor,
+} from '../lib/editorComments'
 import {
   captureWorkspaceRuntimeSnapshot,
   clearWorkspaceRuntimeSnapshot,
@@ -44,6 +50,7 @@ import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
  */
 export function AppShell() {
   const dockviewApiRef = useRef<DockviewApi | null>(null)
+  const dockviewNavigationRef = useRef<DockviewNavigation | null>(null)
   const sidebarWidthRef = useRef(220)
   const prevWorkspaceRootRef = useRef<string | null>(null)
   const prevWorkspaceIdRef = useRef<string | null>(null)
@@ -439,6 +446,7 @@ export function AppShell() {
 
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
+    dockviewNavigationRef.current = new DockviewNavigation(api)
 
     // Auto-close preview pane when its source editor is closed
     api.onDidRemovePanel((event) => {
@@ -506,7 +514,7 @@ export function AppShell() {
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cmd+Shift+T — open a new terminal tab
+  // Ctrl+` — open a new terminal tab
   useCommand('terminal.new', {
     label: 'New Terminal',
     category: 'Terminal',
@@ -532,6 +540,48 @@ export function AppShell() {
     persistWorkspaceRuntime()
   })
 
+  useCommand('editor.toggleComment', {
+    label: 'Toggle Line Comment',
+    category: 'Editor',
+  }, () => {
+    const result = toggleLineCommentInActiveEditor()
+    if (result === 'no-editor') {
+      showToast('No active editor')
+      return
+    }
+    if (result === 'unsupported') {
+      showToast('Line comments are not available for this file type')
+    }
+  })
+
+  useCommand('editor.commentLine', {
+    label: 'Comment Line',
+    category: 'Editor',
+  }, () => {
+    const result = commentLineInActiveEditor()
+    if (result === 'no-editor') {
+      showToast('No active editor')
+      return
+    }
+    if (result === 'unsupported') {
+      showToast('Line comments are not available for this file type')
+    }
+  })
+
+  useCommand('editor.uncommentLine', {
+    label: 'Uncomment Line',
+    category: 'Editor',
+  }, () => {
+    const result = uncommentLineInActiveEditor()
+    if (result === 'no-editor') {
+      showToast('No active editor')
+      return
+    }
+    if (result === 'unsupported') {
+      showToast('Line comments are not available for this file type')
+    }
+  })
+
   // Cmd+B — toggle sidebar
   useCommand('view.toggleSidebar', {
     label: 'Toggle Sidebar',
@@ -551,6 +601,62 @@ export function AppShell() {
     if (active) {
       active.api.close()
     }
+  })
+
+  useCommand('pane.cycleRecent', {
+    label: 'Cycle Recent Pane',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusPaneRecent(1)
+  })
+
+  useCommand('pane.cycleRecentReverse', {
+    label: 'Cycle Recent Pane Backward',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusPaneRecent(-1)
+  })
+
+  useCommand('pane.focusNext', {
+    label: 'Focus Next Pane',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusPaneLinear(1)
+  })
+
+  useCommand('pane.focusPrevious', {
+    label: 'Focus Previous Pane',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusPaneLinear(-1)
+  })
+
+  useCommand('pane.tab.cycleRecent', {
+    label: 'Cycle Recent Tab In Pane',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusTabRecent(1)
+  })
+
+  useCommand('pane.tab.cycleRecentReverse', {
+    label: 'Cycle Recent Tab In Pane Backward',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusTabRecent(-1)
+  })
+
+  useCommand('pane.tab.focusNext', {
+    label: 'Focus Next Tab In Pane',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusTabLinear(1)
+  })
+
+  useCommand('pane.tab.focusPrevious', {
+    label: 'Focus Previous Tab In Pane',
+    category: 'Pane',
+  }, () => {
+    dockviewNavigationRef.current?.focusTabLinear(-1)
   })
 
   // Open or toggle markdown preview for a file
