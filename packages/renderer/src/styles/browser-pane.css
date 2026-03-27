@@ -1,7 +1,11 @@
 .browser-pane {
+  width: 100%;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--bg-base);
 }
 
@@ -10,9 +14,14 @@
   grid-template-columns: auto auto auto minmax(0, 1fr) auto minmax(120px, 180px);
   gap: 8px;
   align-items: center;
+  min-width: 0;
   padding: 8px;
   border-bottom: 1px solid var(--border-subtle);
   background: linear-gradient(180deg, var(--bg-elevated), var(--bg-base));
+}
+
+.browser-pane__chrome > * {
+  min-width: 0;
 }
 
 .browser-pane__nav-btn {
@@ -66,6 +75,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .browser-pane__zoom-readout {
@@ -80,6 +90,7 @@
 
 .browser-pane__host {
   flex: 1;
+  width: 100%;
   min-height: 0;
   background:
     radial-gradient(circle at top left, rgba(82, 139, 255, 0.14), transparent 28%),
