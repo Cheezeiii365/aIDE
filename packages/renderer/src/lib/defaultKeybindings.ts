@@ -9,9 +9,9 @@ export const defaultKeybindings: KeybindingRule[] = [
   { key: 'Cmd+\\', command: 'editor.splitVertical' },
   { key: 'Cmd+Shift+\\', command: 'editor.splitHorizontal' },
   { key: 'Cmd+T', command: 'editor.symbolSearch' },
-  { key: 'Cmd+/', command: 'editor.toggleComment' },
-  { key: 'Cmd+K Cmd+C', command: 'editor.commentLine' },
-  { key: 'Cmd+K Cmd+U', command: 'editor.uncommentLine' },
+  { key: 'Cmd+/', command: 'editor.toggleComment', when: 'editorInFocus' },
+  { key: 'Cmd+K Cmd+C', command: 'editor.commentLine', when: 'editorInFocus' },
+  { key: 'Cmd+K Cmd+U', command: 'editor.uncommentLine', when: 'editorInFocus' },
 
   // ── Workspace switching ─────────────────────────
   { key: 'Cmd+1', command: 'workspace.switchTo1' },
