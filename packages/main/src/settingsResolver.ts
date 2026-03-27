@@ -87,20 +87,16 @@ export async function resolveSettings(
 ): Promise<ResolvedSettings> {
   const projectSettings = await readProjectSettings(rootPath)
   const appDefaults = resolveAppDefaults(store)
-  const userDefaults = (store.get('editorDefaults') ?? {}) as Partial<AideProjectSettings>
 
-  // Merge: project > user > built-in
+  // Merge: project > user > built-in (appDefaults already incorporates user defaults)
   return {
-    tabSize: projectSettings.tabSize ?? userDefaults.tabSize ?? appDefaults.tabSize,
-    insertSpaces:
-      projectSettings.insertSpaces ?? userDefaults.insertSpaces ?? appDefaults.insertSpaces,
-    wordWrap: projectSettings.wordWrap ?? userDefaults.wordWrap ?? appDefaults.wordWrap,
-    rulers: projectSettings.rulers ?? userDefaults.rulers ?? appDefaults.rulers,
-    fontSize: projectSettings.fontSize ?? userDefaults.fontSize ?? appDefaults.fontSize,
-    fontFamily:
-      projectSettings.fontFamily ?? userDefaults.fontFamily ?? appDefaults.fontFamily,
-    formatOnSave:
-      projectSettings.formatOnSave ?? userDefaults.formatOnSave ?? appDefaults.formatOnSave,
+    tabSize: projectSettings.tabSize ?? appDefaults.tabSize,
+    insertSpaces: projectSettings.insertSpaces ?? appDefaults.insertSpaces,
+    wordWrap: projectSettings.wordWrap ?? appDefaults.wordWrap,
+    rulers: projectSettings.rulers ?? appDefaults.rulers,
+    fontSize: projectSettings.fontSize ?? appDefaults.fontSize,
+    fontFamily: projectSettings.fontFamily ?? appDefaults.fontFamily,
+    formatOnSave: projectSettings.formatOnSave ?? appDefaults.formatOnSave,
     filesExclude: {
       ...appDefaults.filesExclude,
       ...projectSettings.filesExclude,

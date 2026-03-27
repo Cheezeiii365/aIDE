@@ -487,9 +487,15 @@ export function AppShell() {
     registerDefaultCommands(api)
 
     // Initialize keybinding service: load defaults, then layer user overrides
-    window.api.getKeybindingOverrides().then((overrides) => {
-      loadKeybindings(defaultKeybindings, overrides)
-    })
+    window.api
+      .getKeybindingOverrides()
+      .then((overrides) => {
+        loadKeybindings(defaultKeybindings, overrides)
+      })
+      .catch((err) => {
+        console.error('Failed to load keybinding overrides:', err)
+        loadKeybindings(defaultKeybindings, [])
+      })
   }, [persistWorkspaceRuntime])
 
   // Register app-wide action dispatch layer
