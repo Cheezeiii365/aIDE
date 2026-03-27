@@ -318,6 +318,7 @@ export class TaskRunner {
       : []
     const matcherInstances = matchers
       .map((m) => createMatcher(m as BuiltinMatcherName))
+      .filter((matcher): matcher is NonNullable<typeof matcher> => matcher !== null)
       .filter(Boolean)
 
     const runningTask: RunningTask = { execution, pty, task }
@@ -332,7 +333,7 @@ export class TaskRunner {
         const diagnostics: TaskDiagnostic[] = []
         for (const line of lines) {
           for (const matcher of matcherInstances) {
-            const diag = matcher!(line, task.id)
+            const diag = matcher(line, task.id)
             if (diag) diagnostics.push(diag)
           }
         }

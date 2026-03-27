@@ -121,7 +121,7 @@ export function GitignoreReviewModal({ auditResult, onClose }: Props) {
         </div>
         <div className="modal__actions" style={{ padding: '12px 16px', borderTop: '1px solid var(--border-subtle)' }}>
           <button className="modal__btn modal__btn--secondary" onClick={handleDismiss}>
-            Don't show again
+            Don&apos;t show again
           </button>
           <button
             className="modal__btn modal__btn--primary"

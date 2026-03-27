@@ -49,8 +49,8 @@ export function subscribeContent(
   }
   subs.add(callback)
   return () => {
-    subs!.delete(callback)
-    if (subs!.size === 0) listeners.delete(filePath)
+    subs.delete(callback)
+    if (subs.size === 0) listeners.delete(filePath)
   }
 }
 

@@ -125,7 +125,7 @@ export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPrev
       <div
         className="markdown-preview__body"
         onClick={handleLinkClick}
-        dangerouslySetInnerHTML={{ __html: html }}  // eslint-disable-line -- content is DOMPurify-sanitized (line 91)
+        dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
   )

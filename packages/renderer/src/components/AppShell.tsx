@@ -380,7 +380,7 @@ export function AppShell() {
     persistWorkspaceRuntime()
   }, [activePanelId, persistWorkspaceRuntime])
 
-  const handleZoomCommand = useCallback((action: 'in' | 'out' | 'reset', _target: 'panel') => {
+  const handleZoomCommand = useCallback((action: 'in' | 'out' | 'reset') => {
     const activePanel = dockviewApiRef.current?.panels.find((panel) => panel.id === activePanelId)
     if (!activePanel) return
     const currentZoom = getPanelZoomFactor(activePanel.params)
@@ -392,7 +392,9 @@ export function AppShell() {
 
   useEffect(() => {
     return window.api.onZoomCommand(({ action, target }) => {
-      handleZoomCommand(action, target)
+      if (target === 'panel') {
+        handleZoomCommand(action)
+      }
     })
   }, [handleZoomCommand])
 
