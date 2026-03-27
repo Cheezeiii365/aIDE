@@ -7,7 +7,8 @@ import { executeCommand } from './CommandRegistry'
 
 interface ShortcutParts {
   key: string
-  meta: boolean
+  cmd: boolean
+  ctrl: boolean
   shift: boolean
   alt: boolean
 }
@@ -19,17 +20,6 @@ interface ResolvedRule {
   parts: ShortcutParts[]  // length 1 = single, length 2 = chord
   source: RuleSource
   suppressed: boolean     // marked true by negative-rule preprocessing
-}
-
-// ── Platform detection ─────────────────────────
-
-let isMac = true
-function initPlatform() {
-  try {
-    isMac = window.api.platform === 'darwin'
-  } catch {
-    // preload not ready yet
-  }
 }
 
 // ── Singleton state ────────────────────────────
@@ -45,10 +35,33 @@ const CHORD_TIMEOUT = 1500
 
 function ensureListener() {
   if (listening) return
-  initPlatform()
   window.addEventListener('keydown', handleKeyDown, true)
   listening = true
 }
+
+// ── Key alias normalisation ─────────────────────
+// Maps friendly shortcut-string names to their canonical KeyboardEvent.key (lowercased).
+
+const KEY_ALIASES: Record<string, string> = {
+  space: ' ',
+  up: 'arrowup',
+  down: 'arrowdown',
+  left: 'arrowleft',
+  right: 'arrowright',
+  esc: 'escape',
+}
+
+// Reverse map for display (canonical lowercased key → friendly name).
+const KEY_DISPLAY: Record<string, string> = {
+  ' ': 'Space',
+  arrowup: 'Up',
+  arrowdown: 'Down',
+  arrowleft: 'Left',
+  arrowright: 'Right',
+  escape: 'Esc',
+}
+
+const MODIFIERS = new Set(['cmd', 'ctrl', 'shift', 'alt', 'opt'])
 
 // ── Parsing ────────────────────────────────────
 
@@ -57,11 +70,14 @@ function parseSingle(segment: string): ShortcutParts {
     .split('+')
     .map((p) => p.trim().toLowerCase())
 
+  const rawKey = tokens.filter((p) => !MODIFIERS.has(p))[0] ?? ''
+
   return {
-    meta: tokens.includes('cmd') || tokens.includes('ctrl'),
+    cmd: tokens.includes('cmd'),
+    ctrl: tokens.includes('ctrl'),
     shift: tokens.includes('shift'),
     alt: tokens.includes('alt') || tokens.includes('opt'),
-    key: tokens.filter((p) => !['cmd', 'ctrl', 'shift', 'alt', 'opt'].includes(p))[0] ?? '',
+    key: KEY_ALIASES[rawKey] ?? rawKey,
   }
 }
 
@@ -70,9 +86,9 @@ function parse(shortcut: string): ShortcutParts[] {
 }
 
 function partsMatch(parts: ShortcutParts, e: KeyboardEvent): boolean {
-  const modKey = isMac ? e.metaKey : e.ctrlKey
   return (
-    parts.meta === modKey &&
+    parts.cmd === e.metaKey &&
+    parts.ctrl === e.ctrlKey &&
     parts.shift === e.shiftKey &&
     parts.alt === e.altKey &&
     parts.key === e.key.toLowerCase()
@@ -80,15 +96,21 @@ function partsMatch(parts: ShortcutParts, e: KeyboardEvent): boolean {
 }
 
 function partsEqual(a: ShortcutParts, b: ShortcutParts): boolean {
-  return a.key === b.key && a.meta === b.meta && a.shift === b.shift && a.alt === b.alt
+  return a.key === b.key && a.cmd === b.cmd && a.ctrl === b.ctrl && a.shift === b.shift && a.alt === b.alt
 }
 
 function partsToString(parts: ShortcutParts): string {
   const tokens: string[] = []
-  if (parts.meta) tokens.push('Cmd')
+  if (parts.cmd) tokens.push('Cmd')
+  if (parts.ctrl) tokens.push('Ctrl')
   if (parts.shift) tokens.push('Shift')
   if (parts.alt) tokens.push('Alt')
-  if (parts.key) tokens.push(parts.key.length === 1 ? parts.key.toUpperCase() : capitalize(parts.key))
+  if (parts.key) {
+    const display = KEY_DISPLAY[parts.key]
+    if (display) tokens.push(display)
+    else if (parts.key.length === 1) tokens.push(parts.key.toUpperCase())
+    else tokens.push(capitalize(parts.key))
+  }
   return tokens.join('+')
 }
 

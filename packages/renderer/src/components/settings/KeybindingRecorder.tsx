@@ -27,7 +27,8 @@ export function KeybindingRecorder({ commandId, onRecord, onCancel }: Keybinding
     if (['Meta', 'Control', 'Shift', 'Alt'].includes(key)) return null
 
     const tokens: string[] = []
-    if (e.metaKey || e.ctrlKey) tokens.push('Cmd')
+    if (e.metaKey) tokens.push('Cmd')
+    if (e.ctrlKey) tokens.push('Ctrl')
     if (e.shiftKey) tokens.push('Shift')
     if (e.altKey) tokens.push('Alt')
 
