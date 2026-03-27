@@ -1,8 +1,7 @@
 import { ipcMain } from 'electron'
 import simpleGit from 'simple-git'
-import { resolve, basename } from 'path'
+import { resolve } from 'path'
 import { mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
 import { IpcChannels } from '@aide/shared'
 import type { WorktreeInfo, WorktreeCreateOpts, AppSettings } from '@aide/shared'
 import type Store from 'electron-store'
@@ -220,12 +219,13 @@ export function registerWorktreeHandlers(
   ipcMain.handle(
     IpcChannels.WORKTREE_SET_ACTIVE,
     async (_event, worktreePath: string | null): Promise<void> => {
+      if (!currentRepoRoot) return
       store.set('activeWorktree', worktreePath)
 
       // Watch both repo root and active worktree (or just repo root if null)
       const roots = worktreePath
-        ? [currentRepoRoot!, worktreePath]
-        : [currentRepoRoot!]
+        ? [currentRepoRoot, worktreePath]
+        : [currentRepoRoot]
       await startWatchers('default', roots)
 
       // Git polling uses the effective root for status

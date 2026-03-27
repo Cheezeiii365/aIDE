@@ -128,8 +128,10 @@ export class WorkspaceRegistry {
    */
   remove(id: string): void {
     const workspaces = this.store.get('workspaces')
-    delete workspaces[id]
-    this.store.set('workspaces', workspaces)
+    const remainingWorkspaces = Object.fromEntries(
+      Object.entries(workspaces).filter(([workspaceId]) => workspaceId !== id),
+    )
+    this.store.set('workspaces', remainingWorkspaces)
 
     // Remove from ordering
     const order = this.store.get('workspaceOrder').filter((wid) => wid !== id)

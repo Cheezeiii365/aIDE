@@ -123,10 +123,12 @@ export function useCommand(
   handler: () => void,
 ): void {
   const handlerRef = useRef(handler)
+  const defRef = useRef(def)
   handlerRef.current = handler
+  defRef.current = def
 
   useEffect(() => {
-    registerCommand({ id, ...def }, () => handlerRef.current())
+    registerCommand({ id, ...defRef.current }, () => handlerRef.current())
     return () => unregisterCommand(id)
-  }, [id, def.keybinding])
+  }, [id, def])
 }

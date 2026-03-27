@@ -57,13 +57,14 @@ export function serializeWorkspaceState(
 
       const cachedState = getCachedState(filePath)
       const cursorPos = cachedState?.selection?.main
+      const cursorLine = cursorPos && cachedState ? cachedState.doc.lineAt(cursorPos.head) : null
       const dirty = isDirty(filePath)
 
       const tabState: TabState = {
         filePath,
         scrollTop: 0, // EditorView scroll not accessible from EditorState
-        cursorLine: cursorPos ? cachedState!.doc.lineAt(cursorPos.head).number : 1,
-        cursorColumn: cursorPos ? (cursorPos.head - cachedState!.doc.lineAt(cursorPos.head).from + 1) : 1,
+        cursorLine: cursorLine?.number ?? 1,
+        cursorColumn: cursorPos && cursorLine ? (cursorPos.head - cursorLine.from + 1) : 1,
         foldedRanges: [],
         isDirty: dirty,
         // Note: dirtyContent would need the EditorView's current doc text

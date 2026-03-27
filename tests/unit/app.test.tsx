@@ -149,7 +149,10 @@ async function renderApp() {
     )
     await Promise.resolve()
   })
-  return result!
+  if (!result) {
+    throw new Error('renderApp did not produce a render result')
+  }
+  return result
 }
 
 describe('App', () => {

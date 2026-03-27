@@ -54,18 +54,22 @@ export function ToastContainer() {
       {toasts.map((t) => (
         <div key={t.id} className="toast" onClick={() => dismiss(t.id)}>
           <span>{t.message}</span>
-          {t.action && (
+          {(() => {
+            const action = t.action
+            if (!action) return null
+            return (
             <button
               className="toast__action"
               onClick={(e) => {
                 e.stopPropagation()
-                t.action!.onClick()
+                action.onClick()
                 dismiss(t.id)
               }}
             >
-              {t.action.label}
+              {action.label}
             </button>
-          )}
+            )
+          })()}
         </div>
       ))}
     </div>

@@ -68,7 +68,7 @@ async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null>
  * The handler listens on `IpcChannels.GIT_STATUS` and returns `null` when no repository root is set;
  * otherwise it returns the result of `fetchGitStatus(currentRoot)`.
  */
-export function registerGitStatusHandlers(getWebContents: GetWebContents): void {
+export function registerGitStatusHandlers(): void {
   ipcMain.handle(IpcChannels.GIT_STATUS, async () => {
     if (!currentRoot) return null
     return fetchGitStatus(currentRoot)

@@ -83,7 +83,7 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
     if (serialized === lastHostUpdateRef.current) return
     lastHostUpdateRef.current = serialized
     window.api.browserHostUpdate(next)
-  }, [api, paneId, workspaceId])
+  }, [paneId, workspaceId])
 
   const syncPanelParams = useCallback((nextUrl: string) => {
     const currentParams = paramsRef.current
@@ -146,7 +146,7 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
 
     initialLoadRequestedRef.current = true
     void commitNavigation(currentParams.url)
-  }, [api, commitNavigation])
+  }, [commitNavigation])
 
   useEffect(() => {
     browserReadyRef.current = false
@@ -157,8 +157,9 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
         initialLoadRequestedRef.current = false
         return
       }
+      const currentParams = paramsRef.current
       browserReadyRef.current = true
-      void window.api.setBrowserZoom(paneId, params.zoomFactor ?? 1)
+      void window.api.setBrowserZoom(paneId, currentParams?.zoomFactor ?? 1)
       lastHostUpdateRef.current = ''
       pushHostUpdate()
       requestInitialLoad()

@@ -45,10 +45,19 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const isReloadingRef = useRef(false)
   const { theme } = useTheme()
   const { setStatus } = useEditorStatus()
+  const paramsRef = useRef(params)
+  const themeRef = useRef(theme)
+  const setStatusRef = useRef(setStatus)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const filePath = params.filePath
+
+  useEffect(() => {
+    paramsRef.current = params
+    themeRef.current = theme
+    setStatusRef.current = setStatus
+  }, [params, setStatus, theme])
 
   // Create editor on mount
   useEffect(() => {
@@ -84,9 +93,9 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       } else {
         const extensions = [
           basicSetup,
-          themeCompartment.of(getThemeExtension(theme)),
+          themeCompartment.of(getThemeExtension(themeRef.current)),
           editorMetricsCompartment.of(
-            getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(params))),
+            getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(paramsRef.current))),
           ),
           wrapCompartment.of(getWrapExtension(false)),
           indentationMarkers(),
@@ -94,7 +103,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
             if (update.selectionSet || update.docChanged) {
               const pos = update.state.selection.main.head
               const line = update.state.doc.lineAt(pos)
-              setStatus({
+              setStatusRef.current({
                 line: line.number,
                 col: pos - line.from + 1,
                 language: languageName,
@@ -152,7 +161,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         view.dispatch({
           effects: StateEffect.appendConfig.of([
             editorMetricsCompartment.of(
-              getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(params))),
+              getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(paramsRef.current))),
             ),
           ]),
         })
@@ -165,7 +174,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       // Push initial cursor position
       const pos = state.selection.main.head
       const line = state.doc.lineAt(pos)
-      setStatus({
+      setStatusRef.current({
         line: line.number,
         col: pos - line.from + 1,
         language: languageName,
@@ -185,7 +194,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       clearContent(filePath)
       cleanContentMap.delete(filePath)
     }
-  }, [filePath]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filePath])
 
   /**
    * Replace the editor's document with the file's current disk contents.
@@ -250,7 +259,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     })
 
     return unsub
-  }, [filePath, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filePath, loading])
 
   // Hot-swap theme when it changes
   useEffect(() => {

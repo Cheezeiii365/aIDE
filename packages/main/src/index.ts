@@ -836,7 +836,7 @@ app.whenReady().then(async () => {
   registerFileWatcherHandlers(() => contentView?.webContents ?? null)
 
   const getWebContents = () => contentView?.webContents ?? null
-  registerGitStatusHandlers(getWebContents)
+registerGitStatusHandlers()
   registerWorktreeHandlers(getWebContents, store)
 
   // Notify renderer of crash recovery after window loads
