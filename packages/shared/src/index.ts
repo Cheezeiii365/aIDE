@@ -3,7 +3,7 @@
  * IPC channel definitions go here for type-safe communication.
  */
 
-export type { CommandDefinition } from './commands'
+export type { CommandDefinition, KeybindingRule } from './commands'
 export {
   adjustZoomFactor,
   clampZoomFactor,
@@ -158,6 +158,11 @@ export const IpcChannels = {
   SETTINGS_GET_DEFAULTS: 'settings:get-defaults',
   SETTINGS_CHANGED: 'settings:changed',
 
+  // Keybinding overrides
+  KEYBINDINGS_GET: 'keybindings:get',
+  KEYBINDINGS_SET: 'keybindings:set',
+  KEYBINDINGS_CHANGED: 'keybindings:changed',
+
   // App lifecycle
   LIFECYCLE_REQUEST_SAVE: 'lifecycle:request-save',
   LIFECYCLE_SAVE_COMPLETE: 'lifecycle:save-complete',
@@ -167,6 +172,7 @@ export const IpcChannels = {
 export type ThemeName = 'one-dark' | 'one-light'
 
 export type SettingsScope = 'user' | 'workspace'
+
 
 export interface DirEntry {
   name: string
@@ -593,6 +599,11 @@ export interface WindowApi {
   setWorkspaceSetting: (key: string, value: unknown | undefined) => Promise<void>
   getBuiltInDefaults: () => Promise<ResolvedSettings>
   onSettingsChanged: (callback: (resolved: ResolvedSettings) => void) => () => void
+
+  // Keybinding overrides
+  getKeybindingOverrides: () => Promise<import('./commands').KeybindingRule[]>
+  setKeybindingOverrides: (rules: import('./commands').KeybindingRule[]) => Promise<void>
+  onKeybindingsChanged: (callback: (rules: import('./commands').KeybindingRule[]) => void) => () => void
 
   // Gitignore security audit
   auditGitignore: () => Promise<GitignoreAuditResult>

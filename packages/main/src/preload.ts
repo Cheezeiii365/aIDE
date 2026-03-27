@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -156,6 +156,17 @@ const api: WindowApi = {
     const handler = (_event: Electron.IpcRendererEvent, resolved: ResolvedSettings) => callback(resolved)
     ipcRenderer.on(IpcChannels.SETTINGS_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.SETTINGS_CHANGED, handler)
+  },
+
+  // Keybinding overrides
+  getKeybindingOverrides: (): Promise<KeybindingRule[]> =>
+    ipcRenderer.invoke(IpcChannels.KEYBINDINGS_GET),
+  setKeybindingOverrides: (rules: KeybindingRule[]): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.KEYBINDINGS_SET, rules),
+  onKeybindingsChanged: (callback: (rules: KeybindingRule[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, rules: KeybindingRule[]) => callback(rules)
+    ipcRenderer.on(IpcChannels.KEYBINDINGS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.KEYBINDINGS_CHANGED, handler)
   },
 
   // Gitignore security audit

@@ -587,6 +587,27 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, v
   contentView?.webContents.send(IpcChannels.SETTINGS_CHANGED, resolved)
 })
 
+// Keybinding overrides IPC handlers
+// Migrate old Record<commandId, keybinding> format to KeybindingRule[] on first read
+function migrateKeybindingOverrides(stored: unknown): { key: string; command: string; when?: string }[] {
+  if (Array.isArray(stored)) return stored
+  if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+    const migrated = Object.entries(stored as Record<string, string>).map(([command, key]) => ({ key, command }))
+    store.set('keybindingOverrides', migrated)
+    return migrated
+  }
+  return []
+}
+
+ipcMain.handle(IpcChannels.KEYBINDINGS_GET, () => {
+  return migrateKeybindingOverrides(store.get('keybindingOverrides'))
+})
+
+ipcMain.handle(IpcChannels.KEYBINDINGS_SET, async (_event, rules: { key: string; command: string; when?: string }[]) => {
+  store.set('keybindingOverrides', rules)
+  contentView?.webContents.send(IpcChannels.KEYBINDINGS_CHANGED, rules)
+})
+
 // Gitignore security audit IPC handlers
 ipcMain.handle(IpcChannels.GITIGNORE_AUDIT, async () => {
   const rootPath = store.get('workspaceRoot')

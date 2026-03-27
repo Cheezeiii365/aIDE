@@ -1,25 +1,11 @@
 import { useMemo } from 'react'
 import { SearchPanel, type SearchPanelItem } from './SearchPanel'
 import { getAllCommands, getRecentlyUsed, isEnabled, executeCommand } from '../lib/CommandRegistry'
+import { getKeybindingsForCommand } from '../lib/KeybindingService'
+import { formatKeybinding } from '../lib/formatKeybinding'
 
 interface CommandPaletteProps {
   onClose: () => void
-}
-
-/**
- * Normalize a keyboard shortcut string for compact, user-facing display.
- *
- * @param kb - The raw keybinding string (for example, "Cmd+Shift+P")
- * @returns The formatted keybinding where `Cmd` → `⌘`, `Shift` → `⇧`, `Alt`/`Opt` → `⌥`, `+` characters are removed, and consecutive whitespace is collapsed to a single space
- */
-function formatKeybinding(kb: string): string {
-  // Normalise for display: Cmd → ⌘, Shift → ⇧, Alt → ⌥
-  return kb
-    .replace(/Cmd/gi, '\u2318')
-    .replace(/Shift/gi, '\u21E7')
-    .replace(/Alt|Opt/gi, '\u2325')
-    .replace(/\+/g, '')
-    .replace(/\s+/g, ' ')
 }
 
 /**
@@ -44,11 +30,15 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
       return a.label.localeCompare(b.label)
     })
 
-    return sorted.map((cmd) => ({
-      id: cmd.id,
-      label: cmd.category ? `${cmd.category}: ${cmd.label}` : cmd.label,
-      description: cmd.keybinding ? formatKeybinding(cmd.keybinding) : undefined,
-    }))
+    return sorted.map((cmd) => {
+      const bindings = getKeybindingsForCommand(cmd.id)
+      const primaryKey = bindings.length > 0 ? bindings[bindings.length - 1].key : undefined
+      return {
+        id: cmd.id,
+        label: cmd.category ? `${cmd.category}: ${cmd.label}` : cmd.label,
+        description: primaryKey ? formatKeybinding(primaryKey) : undefined,
+      }
+    })
   }, [])
 
   return (

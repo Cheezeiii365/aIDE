@@ -8,6 +8,7 @@ import {
   type SettingDescriptor,
 } from '../../lib/settingsSchema'
 import { SettingRow } from './SettingRow'
+import { KeyboardShortcutsTable } from './KeyboardShortcutsTable'
 import type { ThemeName } from '@aide/shared'
 
 interface Props {
@@ -54,14 +55,9 @@ export function SettingsContent({ settings, activeCategory, searchQuery, theme, 
             </div>
           )}
 
-          {/* Special: Keyboard Shortcuts placeholder */}
+          {/* Special: Keyboard Shortcuts table */}
           {section.categoryId === 'keyboardShortcuts' && (
-            <div className="settings-placeholder">
-              <p>Keyboard shortcut customization coming soon.</p>
-              <p className="settings-placeholder__hint">
-                Use the Command Palette (⌘⇧P) to discover available shortcuts.
-              </p>
-            </div>
+            <KeyboardShortcutsTable />
           )}
 
           {section.descriptors.length > 0 ? (
