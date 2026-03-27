@@ -18,7 +18,7 @@ interface ShortcutRow {
 export function KeyboardShortcutsTable() {
   const { overrides, loading, addOverride, removeOverride } = useKeybindingOverrides()
   const [searchQuery, setSearchQuery] = useState('')
-  const [recordingCommandId, setRecordingCommandId] = useState<string | null>(null)
+  const [recordingRowKey, setRecordingRowKey] = useState<string | null>(null)
 
   const rows = useMemo((): ShortcutRow[] => {
     const commands = getAllCommands()
@@ -132,19 +132,19 @@ export function KeyboardShortcutsTable() {
                   )}
                 </td>
                 <td className="shortcuts-td shortcuts-td--keybinding">
-                  {recordingCommandId === row.commandId ? (
+                  {recordingRowKey === `${row.commandId}-${row.key}-${idx}` ? (
                     <KeybindingRecorder
                       commandId={row.commandId}
                       onRecord={(kb) => {
-                        addOverride({ key: kb, command: row.commandId })
-                        setRecordingCommandId(null)
+                        addOverride({ key: kb, command: row.commandId, when: row.when })
+                        setRecordingRowKey(null)
                       }}
-                      onCancel={() => setRecordingCommandId(null)}
+                      onCancel={() => setRecordingRowKey(null)}
                     />
                   ) : (
                     <button
                       className="shortcuts-keybinding-button"
-                      onClick={() => setRecordingCommandId(row.commandId)}
+                      onClick={() => setRecordingRowKey(`${row.commandId}-${row.key}-${idx}`)}
                       title="Click to change keybinding"
                     >
                       {row.key ? (
