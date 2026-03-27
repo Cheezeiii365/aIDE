@@ -7,6 +7,15 @@ interface NewBrowserPaneModalProps {
   onSubmit: (sessionMode: BrowserSessionMode, url: string) => void
 }
 
+/**
+ * Render a modal that lets the user choose a session mode and starting URL to create a new browser pane.
+ *
+ * The modal autofocuses the starting URL input and closes when the Escape key is pressed or when the overlay is clicked.
+ *
+ * @param onClose - Callback invoked to close the modal
+ * @param onSubmit - Callback invoked with the selected `sessionMode` and `url` when the form is submitted
+ * @returns A React element representing the "New Browser Pane" modal
+ */
 export function NewBrowserPaneModal({ onClose, onSubmit }: NewBrowserPaneModalProps) {
   const [sessionMode, setSessionMode] = useState<BrowserSessionMode>('shared-auth')
   const [url, setUrl] = useState('')

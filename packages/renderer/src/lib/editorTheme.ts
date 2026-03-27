@@ -19,6 +19,12 @@ const baseTheme = EditorView.theme({
   },
 })
 
+/**
+ * Produce editor typography metrics derived from a base font size.
+ *
+ * @param fontSize - Base font size in pixels (number, interpreted as px)
+ * @returns An object containing `fontSize` (the input value) and `lineHeight` (a pixel string rounded to `Math.round(fontSize * 1.6)`), e.g. `{ fontSize: 13, lineHeight: "21px" }`
+ */
 export function getEditorMetrics(fontSize: number): { fontSize: number; lineHeight: string } {
   return {
     fontSize,
@@ -26,6 +32,12 @@ export function getEditorMetrics(fontSize: number): { fontSize: number; lineHeig
   }
 }
 
+/**
+ * Create a CodeMirror theme extension that applies the editor's font size and line height.
+ *
+ * @param fontSize - Base font size in pixels to apply to the editor
+ * @returns An EditorView theme extension that sets `fontSize` on the editor root, content, gutters and gutter elements, and applies a computed `lineHeight` to lines and those elements; the `lineHeight` is computed as `Math.round(fontSize * 1.6)` pixels.
+ */
 export function getEditorMetricsExtension(fontSize: number): Extension {
   const metrics = getEditorMetrics(fontSize)
   return EditorView.theme({

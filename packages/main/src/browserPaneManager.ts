@@ -29,6 +29,16 @@ interface BrowserPaneManagerOptions {
 
 const EMPTY_BOUNDS = { x: 0, y: 0, width: 0, height: 0 }
 
+/**
+ * Normalize a user-provided URL or hostname into a fully qualified URL string.
+ *
+ * Trims surrounding whitespace and returns an empty string when the trimmed input is empty.
+ * If the trimmed input is already a valid URL, returns its canonical string form.
+ * Otherwise, prepends `https://` to the trimmed input and returns the resulting URL string.
+ *
+ * @param input - The raw URL or hostname provided by the user
+ * @returns `''` when `input` is empty after trimming; otherwise the fully qualified URL string
+ */
 function normalizeUrl(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return ''
@@ -40,6 +50,11 @@ function normalizeUrl(input: string): string {
   }
 }
 
+/**
+ * Determines whether the given URL should be opened externally rather than in-app.
+ *
+ * @returns `true` if the URL uses a protocol other than `http:`, `https:`, `file:`, or `about:`; `false` if it uses one of those protocols or cannot be parsed as a URL.
+ */
 function shouldOpenExternally(url: string): boolean {
   try {
     const parsed = new URL(url)
@@ -344,6 +359,13 @@ export class BrowserPaneManager {
   }
 }
 
+/**
+ * Determines whether two bounding rectangles have identical x, y, width, and height.
+ *
+ * @param a - First bounds object
+ * @param b - Second bounds object
+ * @returns `true` if `a` and `b` have equal `x`, `y`, `width`, and `height`, `false` otherwise.
+ */
 function sameBounds(
   a: { x: number; y: number; width: number; height: number },
   b: { x: number; y: number; width: number; height: number },
