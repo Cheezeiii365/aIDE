@@ -269,6 +269,7 @@ async function activateWorkspace(id: string): Promise<void> {
   stopGitPolling()
   stopWorktreePolling()
   stopWatcher()
+  setDiffRoot(entry.rootPath ?? null)
 
   if (entry.rootPath) {
     await ensureAideFolder(entry.rootPath)
@@ -283,7 +284,6 @@ async function activateWorkspace(id: string): Promise<void> {
     }
 
     const getWc = () => contentView?.webContents ?? null
-    setDiffRoot(entry.rootPath)
     await startGitPolling(entry.rootPath, getWc)
     if (activationSeq !== workspaceActivationSeq) {
       stopGitPolling()

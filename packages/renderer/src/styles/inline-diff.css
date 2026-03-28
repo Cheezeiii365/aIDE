@@ -100,7 +100,7 @@
   border-radius: 3px;
   font-size: 11px;
   color: var(--text-info, hsl(219, 79%, 66%));
-  background-color: rgba(82, 139, 255, 0.1);
+  background-color: var(--bg-info);
   cursor: pointer;
   user-select: none;
   position: absolute;
@@ -111,5 +111,5 @@
 }
 
 .editor-pane__diff-badge:hover {
-  background-color: rgba(82, 139, 255, 0.2);
+  background-color: var(--bg-info-hover);
 }
