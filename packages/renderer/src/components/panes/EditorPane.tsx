@@ -21,6 +21,7 @@ import '../../styles/inline-diff.css'
 
 interface EditorPaneParams {
   filePath: string
+  workspaceRoot?: string | null
   jumpToLine?: number
   jumpToColumn?: number
   zoomFactor?: number
@@ -57,6 +58,14 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const [diffActive, setDiffActive] = useState(false)
 
   const filePath = params.filePath
+  const workspaceRoot = params.workspaceRoot ?? null
+  const toggleInlineDiffForView = useCallback(async (view: EditorView) => {
+    const diffRoot = workspaceRoot ?? await window.api.getWorkspaceRoot()
+    const enabled = await toggleInlineDiff(view, diffRoot, filePath)
+    setDiffActive(enabled)
+    showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
+    return enabled
+  }, [filePath, workspaceRoot])
 
   useEffect(() => {
     paramsRef.current = params
@@ -148,10 +157,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
           {
             key: 'Mod-Shift-d',
             run: (view) => {
-              toggleInlineDiff(view, filePath).then((enabled) => {
-                setDiffActive(enabled)
-                showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
-              })
+              void toggleInlineDiffForView(view)
               return true
             },
           },
@@ -364,18 +370,15 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   // Listen for external toggle-inline-diff events (e.g., command palette)
   useEffect(() => {
     if (loading) return
+    const view = viewRef.current
+    if (!view) return
 
     const handler = () => {
-      const view = viewRef.current
-      if (!view) return
-      toggleInlineDiff(view, filePath).then((enabled) => {
-        setDiffActive(enabled)
-        showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
-      })
+      void toggleInlineDiffForView(view)
     }
     window.addEventListener('aide:toggle-inline-diff', handler)
     return () => window.removeEventListener('aide:toggle-inline-diff', handler)
-  }, [filePath, loading])
+  }, [loading, toggleInlineDiffForView])
 
   // Push cursor status when this panel becomes active
   useEffect(() => {
@@ -408,11 +411,8 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const handleDiffBadgeClick = useCallback(() => {
     const view = viewRef.current
     if (!view) return
-    toggleInlineDiff(view, filePath).then((enabled) => {
-      setDiffActive(enabled)
-      showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
-    })
-  }, [filePath])
+    void toggleInlineDiffForView(view)
+  }, [toggleInlineDiffForView])
 
   return (
     <div className="editor-pane">
