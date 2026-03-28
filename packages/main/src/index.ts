@@ -524,9 +524,11 @@ ipcMain.handle(IpcChannels.SETTINGS_GET_USER, () => {
 })
 
 ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value: unknown) => {
-  const current = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
+  let current = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
   if (value === undefined || value === null) {
-    delete current[key]
+    current = Object.fromEntries(
+      Object.entries(current).filter(([entryKey]) => entryKey !== key),
+    )
   } else {
     current[key] = value
   }
@@ -575,7 +577,9 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, v
   }
 
   if (value === undefined || value === null) {
-    delete current[key]
+    current = Object.fromEntries(
+      Object.entries(current).filter(([entryKey]) => entryKey !== key),
+    )
   } else {
     current[key] = value
   }

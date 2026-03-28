@@ -74,16 +74,18 @@ export function useSettings(): UseSettingsReturn {
     if (scope === 'user') {
       setUserSettings((prev) => {
         if (!prev) return prev
-        const next = { ...prev }
-        delete (next as Record<string, unknown>)[key]
+        const next = Object.fromEntries(
+          Object.entries(prev as Record<string, unknown>).filter(([entryKey]) => entryKey !== key),
+        )
         return next
       })
       await window.api.setUserSetting(key, undefined)
     } else {
       setWorkspaceSettings((prev) => {
         if (!prev) return prev
-        const next = { ...prev }
-        delete (next as Record<string, unknown>)[key]
+        const next = Object.fromEntries(
+          Object.entries(prev as Record<string, unknown>).filter(([entryKey]) => entryKey !== key),
+        )
         return next
       })
       await window.api.setWorkspaceSetting(key, undefined)
