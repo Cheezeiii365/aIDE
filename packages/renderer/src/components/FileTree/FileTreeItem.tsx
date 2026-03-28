@@ -15,6 +15,7 @@ export interface FileTreeNode {
 export type VirtualRow =
   | { type: 'node'; node: FileTreeNode }
   | { type: 'create-input'; parentDir: string; depth: number; inputType: 'file' | 'folder' }
+  | { type: 'search-result'; filePath: string; fileName: string; relativePath: string }
 
 interface Props {
   node: FileTreeNode
@@ -198,6 +199,27 @@ export function FileTreeItem({
           {node.isDirectory ? '\u2022' : GIT_STATUS_LABELS[gitStatus]}
         </span>
       )}
+    </div>
+  )
+}
+
+/**
+ * Renders a flat search result row showing the file name and its relative directory path.
+ */
+export function SearchResultItem({
+  fileName,
+  relativePath,
+  onFileOpen,
+}: {
+  fileName: string
+  relativePath: string
+  onFileOpen: () => void
+}) {
+  return (
+    <div className="file-tree__row file-tree__row--search-result" style={{ paddingLeft: 8 }} onClick={onFileOpen}>
+      <FileTypeIcon name={fileName} />
+      <span className="file-tree__name">{fileName}</span>
+      <span className="file-tree__search-path">{relativePath}</span>
     </div>
   )
 }
