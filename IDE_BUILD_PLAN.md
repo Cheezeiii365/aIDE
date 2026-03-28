@@ -9,30 +9,33 @@
 - Move worktree storage from `../.aide-worktrees/` to `<repoRoot>/.aide/worktrees/` (match Claude Code convention, add `.aide/` to `.gitignore`)
 - Add `@` prefix in Quick Open (Cmd+P) to go to symbol, `:` prefix to go to line (VS Code-style)
 - Clicking the line number indicator in the status bar should open the go-to-line command palette (`:` mode)
-- Upgrade pane/tab cycling from immediate navigation to a VS Code-style `Ctrl+Tab` switcher overlay with MRU preview and commit-on-release behavior
+- Add a visual switcher overlay for MRU cycling (shows tab/pane list, highlights current selection during cycling session)
+
+### MRU Cycling Sessions (Implemented)
+
+`DockviewNavigation` now supports VS Code-style MRU cycling sessions for both pane and tab navigation:
+
+- On first cycle keystroke: a session begins, the MRU order is frozen, and `recordActivation` is suppressed
+- On subsequent keystrokes (while modifier held): the frozen MRU list is walked in order
+- On modifier key-up (Ctrl/Alt/Meta): the selection is committed, `recordActivation` fires, and the session ends
+- A global `keyup` listener is installed when cycling starts and removed when done
+
+This replaces the previous toggle-most-recent behavior that could only ping-pong between the two most recent entries.
 
 ### Deferred V2: Pane/Tab Switcher Overlay
 
-V1 ships immediate commands for pane and tab cycling:
-
-- `Ctrl+Tab` / `Ctrl+Shift+Tab` move through tabs in visual order inside the focused pane
-- `Ctrl+Alt+Tab` / `Ctrl+Alt+Shift+Tab` cycle MRU panes
-
-V2 should upgrade this to a real switcher session instead of firing the command on every `keydown`.
+V2 should add a visual switcher overlay on top of the existing MRU cycling session mechanism.
 
 Requirements:
 
-- Holding the modifier should open a transient switcher overlay showing recent tabs for the focused pane
-- Repeated `Tab` presses should advance selection inside the overlay without committing immediately
+- Holding the modifier should open a transient switcher overlay showing the frozen MRU list
+- The overlay should highlight the currently selected entry as the user cycles
 - Releasing the modifier should commit the selected target and close the overlay
-- A parallel pane switcher should exist for pane MRU, not just tab MRU
 - The overlay should show enough metadata to disambiguate duplicates: tab title, pane type/icon, and path when relevant
 
 Implementation notes:
 
-- Extend the keybinding/input layer beyond `keydown` only. The current keybinding service does not model `keyup`, modifier-hold sessions, or transient navigation state.
-- Add a small switcher controller in the renderer that can start, advance, reverse, cancel, and commit a navigation session.
-- Keep MRU tracking in the Dockview navigation service; the V2 switcher should consume that state instead of building its own history model.
+- The cycling session logic already exists in `DockviewNavigation` (`isCycling`, `endCyclingSession`). The overlay should consume this state.
 - Suppress switcher activation while modal text inputs are focused, unless the focused surface explicitly opts in.
 - Prefer a generic switcher primitive so the same mechanism can later power workspace MRU switching if desired.
 
