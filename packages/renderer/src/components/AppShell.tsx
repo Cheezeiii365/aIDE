@@ -506,13 +506,14 @@ export function AppShell() {
       })
   }, [persistWorkspaceRuntime])
 
-  // Register app-wide action dispatch layer
+  // Register app-wide action dispatch layer — re-register when onFileOpen changes
+  // so workspace root stays current after workspace switches.
   useEffect(() => {
     registerAppActions({
       openFile: (filePath: string, opts?: OpenFileOpts) => onFileOpen(filePath, opts),
       openUrl: (url: string) => window.open(url),
     })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onFileOpen])
 
   // Ctrl+` — open a new terminal tab
   useCommand('terminal.new', {
