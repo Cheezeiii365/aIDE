@@ -506,15 +506,6 @@ export function AppShell() {
       })
   }, [persistWorkspaceRuntime])
 
-  // Register app-wide action dispatch layer — re-register when onFileOpen changes
-  // so workspace root stays current after workspace switches.
-  useEffect(() => {
-    registerAppActions({
-      openFile: (filePath: string, opts?: OpenFileOpts) => onFileOpen(filePath, opts),
-      openUrl: (url: string) => window.open(url),
-    })
-  }, [onFileOpen])
-
   // Ctrl+` — open a new terminal tab
   useCommand('terminal.new', {
     label: 'New Terminal',
@@ -841,6 +832,15 @@ export function AppShell() {
       })
     }
   }, [openMarkdownPreview, workspaceRoot])
+
+  // Register app-wide action dispatch layer — re-register when onFileOpen changes
+  // so workspace root stays current after workspace switches.
+  useEffect(() => {
+    registerAppActions({
+      openFile: (filePath: string, opts?: OpenFileOpts) => onFileOpen(filePath, opts),
+      openUrl: (url: string) => window.open(url),
+    })
+  }, [onFileOpen])
 
   const handleCreateBrowserPane = useCallback((sessionMode: BrowserSessionMode, url: string) => {
     const api = dockviewApiRef.current
