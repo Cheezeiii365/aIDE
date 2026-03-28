@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { serializeWorkspaceState } from '@renderer/lib/workspaceStateSerializer'
 
 vi.mock('@renderer/lib/editorStateCache', () => ({
-  getCachedState: () => null,
+  peekCachedState: () => null,
   getAllCachedPaths: () => [],
 }))
 

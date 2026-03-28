@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
-import { EditorState, StateEffect } from '@codemirror/state'
+import { EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { getLanguageExtension, getLanguageName } from '../../lib/languageExtension'
 import { themeCompartment, editorMetricsCompartment, getThemeExtension, getEditorMetricsExtension } from '../../lib/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editorWrap'
-import { getCachedState, setCachedState } from '../../lib/editorStateCache'
+import { consumeCachedState, setCachedState } from '../../lib/editorStateCache'
 import { isDirty, setDirty, onDirtyChange } from '../../lib/editorDirtyState'
 import { publishContent, clearContent } from '../../lib/editorContentBus'
 import { getPanelZoomFactor } from '../../lib/panelZoom'
@@ -82,7 +82,10 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     /**
      * Initialize and mount the CodeMirror editor for the current filePath and publish its initial state.
      *
-     * Reads the file from disk, records the last-known clean baseline, restores a cached editor state when available or creates a new state with theme, metrics/zoom, wrap, indentation, language, update listeners, and keybindings, then mounts the EditorView, publishes the document content to the external bus, clears the loading indicator, and updates the initial cursor position status. On read failure, sets the component error and clears loading state.
+     * Reads the file from disk, records the last-known clean baseline, creates a fresh EditorState
+     * (restoring cursor position from cache if available), mounts the EditorView, publishes the
+     * document content to the external bus, clears the loading indicator, and updates the initial
+     * cursor position status. On read failure, sets the component error and clears loading state.
      */
     async function init() {
       const result = await window.api.readFile(filePath)
@@ -98,79 +101,89 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       // Store clean content baseline
       cleanContentMap.set(filePath, result.content)
 
-      const cached = getCachedState(filePath)
+      // Restore cursor position from cached state if available, then discard cache
+      const cached = consumeCachedState(filePath)
+      const restoredSelection = cached?.selection
       const languageName = getLanguageName(filePath)
 
-      let state: EditorState
-      if (cached) {
-        state = cached
-      } else {
-        const extensions = [
-          basicSetup,
-          themeCompartment.of(getThemeExtension(themeRef.current)),
-          editorMetricsCompartment.of(
-            getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(paramsRef.current))),
-          ),
-          wrapCompartment.of(getWrapExtension(false)),
-          indentationMarkers(),
-          EditorView.updateListener.of((update) => {
-            if (update.selectionSet || update.docChanged) {
-              const pos = update.state.selection.main.head
-              const line = update.state.doc.lineAt(pos)
-              setStatusRef.current({
-                line: line.number,
-                col: pos - line.from + 1,
-                language: languageName,
+      const extensions = [
+        basicSetup,
+        themeCompartment.of(getThemeExtension(themeRef.current)),
+        editorMetricsCompartment.of(
+          getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(paramsRef.current))),
+        ),
+        wrapCompartment.of(getWrapExtension(false)),
+        indentationMarkers(),
+        EditorView.updateListener.of((update) => {
+          if (update.selectionSet || update.docChanged) {
+            const pos = update.state.selection.main.head
+            const line = update.state.doc.lineAt(pos)
+            setStatusRef.current({
+              line: line.number,
+              col: pos - line.from + 1,
+              language: languageName,
+            })
+          }
+          if (update.docChanged && !isReloadingRef.current) {
+            setDirty(filePath, true)
+            publishContent(filePath, update.state.doc.toString())
+          }
+        }),
+        diffCompartment.of([]),
+        keymap.of([
+          {
+            key: 'Mod-s',
+            run: (view) => {
+              const content = view.state.doc.toString()
+              window.api.writeFile(filePath, content).then((res) => {
+                if ('success' in res) {
+                  cleanContentMap.set(filePath, content)
+                  setDirty(filePath, false)
+                }
               })
-            }
-            if (update.docChanged && !isReloadingRef.current) {
-              setDirty(filePath, true)
-              publishContent(filePath, update.state.doc.toString())
-            }
-          }),
-          diffCompartment.of([]),
-          keymap.of([
-            {
-              key: 'Mod-s',
-              run: (view) => {
-                const content = view.state.doc.toString()
-                window.api.writeFile(filePath, content).then((res) => {
-                  if ('success' in res) {
-                    cleanContentMap.set(filePath, content)
-                    setDirty(filePath, false)
-                  }
-                })
-                return true
-              },
+              return true
             },
-            {
-              key: 'Mod-Alt-w',
-              run: (view) => {
-                const enabled = toggleWrap()
-                view.dispatch({
-                  effects: wrapCompartment.reconfigure(getWrapExtension(enabled)),
-                })
-                return true
-              },
+          },
+          {
+            key: 'Mod-Alt-w',
+            run: (view) => {
+              const enabled = toggleWrap()
+              view.dispatch({
+                effects: wrapCompartment.reconfigure(getWrapExtension(enabled)),
+              })
+              return true
             },
-            {
-              key: 'Mod-Shift-d',
-              run: (view) => {
-                void toggleInlineDiffForView(view)
-                return true
-              },
+          },
+          {
+            key: 'Mod-Shift-d',
+            run: (view) => {
+              void toggleInlineDiffForView(view)
+              return true
             },
-          ]),
-        ]
+          },
+        ]),
+      ]
 
-        const langExt = getLanguageExtension(filePath)
-        if (langExt) extensions.push(langExt)
+      const langExt = getLanguageExtension(filePath)
+      if (langExt) extensions.push(langExt)
 
-        state = EditorState.create({
-          doc: result.content,
-          extensions,
-        })
-      }
+      // Clamp restored selection to document bounds
+      const docLen = result.content.length
+      const selection = restoredSelection
+        ? EditorState.create({
+            doc: result.content,
+            selection: {
+              anchor: Math.min(restoredSelection.main.anchor, docLen),
+              head: Math.min(restoredSelection.main.head, docLen),
+            },
+          }).selection
+        : undefined
+
+      const state = EditorState.create({
+        doc: result.content,
+        extensions,
+        selection,
+      })
 
       if (destroyed || !hostRef.current) return
 
@@ -192,16 +205,6 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       }
       view.dom.addEventListener('focusin', handleFocusIn)
       view.dom.addEventListener('focusout', handleFocusOut)
-
-      if (cached) {
-        view.dispatch({
-          effects: StateEffect.appendConfig.of([
-            editorMetricsCompartment.of(
-              getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(paramsRef.current))),
-            ),
-          ]),
-        })
-      }
 
       viewRef.current = view
       publishContent(filePath, state.doc.toString())
@@ -227,9 +230,16 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     }
 
     let cleanupFocus: (() => void) | undefined
-    init().then((cleanup) => {
-      cleanupFocus = cleanup
-    })
+    init()
+      .then((cleanup) => {
+        cleanupFocus = cleanup
+      })
+      .catch(() => {
+        if (!destroyed) {
+          setError('Failed to initialize editor')
+          setLoading(false)
+        }
+      })
 
     return () => {
       destroyed = true
@@ -271,10 +281,12 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
   // Subscribe to file watcher events for external change detection
   useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
+    if (loading) return
 
     const unsub = window.api.onFsWatchEvent(async (events) => {
+      const view = viewRef.current
+      if (!view) return
+
       const relevant = events.filter((e) => e.path === filePath && !e.isDirectory)
       if (relevant.length === 0) return
 
@@ -357,6 +369,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
   // Listen for external toggle-inline-diff events (e.g., command palette)
   useEffect(() => {
+    if (loading) return
     const view = viewRef.current
     if (!view) return
 
