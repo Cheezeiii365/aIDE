@@ -40,15 +40,16 @@ interface CategoryItemProps {
 
 function CategoryItem({ category, activeCategory, onSelect, categoriesWithSettings, depth }: CategoryItemProps) {
   const [expanded, setExpanded] = useState(true)
-  const hasChildren = category.children && category.children.length > 0
+  const children = category.children ?? []
+  const hasChildren = children.length > 0
   const isActive = activeCategory === category.id
-  const isParentActive = hasChildren && category.children!.some(
+  const isParentActive = hasChildren && children.some(
     (c) => c.id === activeCategory,
   )
 
   // Check if this category or any children have settings
   const hasSettings = categoriesWithSettings.has(category.id) || (
-    hasChildren && category.children!.some((c) => categoriesWithSettings.has(c.id))
+    hasChildren && children.some((c) => categoriesWithSettings.has(c.id))
   )
 
   return (
@@ -60,8 +61,9 @@ function CategoryItem({ category, activeCategory, onSelect, categoriesWithSettin
           if (hasChildren) {
             setExpanded(!expanded)
             // Select first child if clicking parent
-            if (!expanded && category.children![0]) {
-              onSelect(category.children![0].id)
+            const firstChild = children[0]
+            if (!expanded && firstChild) {
+              onSelect(firstChild.id)
             }
           } else {
             onSelect(category.id)
@@ -77,7 +79,7 @@ function CategoryItem({ category, activeCategory, onSelect, categoriesWithSettin
       </button>
       {hasChildren && expanded && (
         <div className="settings-sidebar__children">
-          {category.children!.map((child) => (
+          {children.map((child) => (
             <CategoryItem
               key={child.id}
               category={child}
