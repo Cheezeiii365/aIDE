@@ -99,7 +99,7 @@ export function useSettings(): UseSettingsReturn {
 
   const getEffectiveValue = useCallback((key: string): unknown => {
     if (!resolved) return undefined
-    return (resolved as Record<string, unknown>)[key]
+    return resolved[key as keyof ResolvedSettings]
   }, [resolved])
 
   const getScopeValue = useCallback((key: string): unknown => {
@@ -109,7 +109,7 @@ export function useSettings(): UseSettingsReturn {
     if (val !== undefined) return val
     // Fall back to resolved (effective) value for display
     if (!resolved) return undefined
-    return (resolved as Record<string, unknown>)[key]
+    return resolved[key as keyof ResolvedSettings]
   }, [scope, userSettings, workspaceSettings, resolved])
 
   return {
