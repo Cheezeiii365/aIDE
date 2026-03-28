@@ -19,6 +19,7 @@ import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
 import { WorkspaceRegistry } from './workspaceRegistry'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
+import { registerGitDiffHandlers, setDiffRoot } from './gitDiff'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -282,6 +283,7 @@ async function activateWorkspace(id: string): Promise<void> {
     }
 
     const getWc = () => contentView?.webContents ?? null
+    setDiffRoot(entry.rootPath)
     await startGitPolling(entry.rootPath, getWc)
     if (activationSeq !== workspaceActivationSeq) {
       stopGitPolling()
@@ -929,6 +931,7 @@ app.whenReady().then(async () => {
 
   const getWebContents = () => contentView?.webContents ?? null
 registerGitStatusHandlers()
+  registerGitDiffHandlers()
   registerWorktreeHandlers(getWebContents, store)
 
   // Notify renderer of crash recovery after window loads

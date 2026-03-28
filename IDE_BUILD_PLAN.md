@@ -1,6 +1,6 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 27, 2026
+> **Last updated:** March 28, 2026
 > **Status:** Active development (Phase 2 in progress)
 
 ---
@@ -96,7 +96,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Plugin system with npm-based distribution
 - [ ] Broad language support — the goal is to support all languages via individually installable language packs. Use off-the-shelf LSP servers and linters where available; only build custom integrations when necessary. No language tooling installed by default — user installs what they need
 - [ ] Chrome extension support (limited — see Known Hard Problems)
-- [ ] AI-powered inline diff review in editor
+- [x] AI-powered inline diff review in editor (CodeMirror `@codemirror/merge` unified view with accept/reject, Cmd+Shift+D toggle, git HEAD comparison)
 - [ ] Agent permission system — configurable guardrails per workspace via `.agentconfig` (file access scope, shell command scope, network scope, package installation). Default: "ask before running destructive commands." Requires approval UI in agent panel that surfaces to workspace tab even when in another workspace
 - [ ] Workspace onboarding wizard — auto-detect project type, Python interpreter, `package.json` scripts, `CLAUDE.md`/`.agentconfig`, git remote, dev server command/port. Surface as a checklist of suggestions on first open
 - [ ] Agent project memory — track which files agent has seen, maintain auto-generated `project-summary.md`, surface "unseen files" in agent panel for context priming
