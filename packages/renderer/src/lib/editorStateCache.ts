@@ -4,12 +4,14 @@ const MAX_CACHE_SIZE = 64
 
 const cache = new Map<string, EditorState>()
 
-export function getCachedState(filePath: string): EditorState | undefined {
+export function peekCachedState(filePath: string): EditorState | undefined {
+  return cache.get(filePath)
+}
+
+export function consumeCachedState(filePath: string): EditorState | undefined {
   const state = cache.get(filePath)
   if (state !== undefined) {
-    // Move to end (most-recently-used) by re-inserting
     cache.delete(filePath)
-    cache.set(filePath, state)
   }
   return state
 }

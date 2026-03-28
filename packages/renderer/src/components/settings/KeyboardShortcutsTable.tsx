@@ -26,7 +26,7 @@ export function KeyboardShortcutsTable() {
     const rules = getAllKeybindingRules()
 
     // Build rows from keybinding rules
-    const ruleRows: ShortcutRow[] = rules.map((entry, _index) => {
+    const ruleRows: ShortcutRow[] = rules.map((entry) => {
       const cmd = commandMap.get(entry.rule.command)
       // Determine override index: find this rule in the user overrides array
       let overrideIndex = -1

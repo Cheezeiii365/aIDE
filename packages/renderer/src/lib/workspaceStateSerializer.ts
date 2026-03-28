@@ -8,7 +8,7 @@
 
 import type { DockviewApi } from 'dockview-react'
 import type { AideLocalState, TabState } from '@aide/shared'
-import { getCachedState, getAllCachedPaths } from './editorStateCache'
+import { peekCachedState, getAllCachedPaths } from './editorStateCache'
 import { isDirty } from './editorDirtyState'
 import { serializeBrowserPaneState } from './browserState'
 
@@ -55,7 +55,7 @@ export function serializeWorkspaceState(
       const filePath = (panel.params as Record<string, unknown>)?.filePath as string | undefined
       if (!filePath) continue
 
-      const cachedState = getCachedState(filePath)
+      const cachedState = peekCachedState(filePath)
       const cursorPos = cachedState?.selection?.main
       const cursorLine = cursorPos && cachedState ? cachedState.doc.lineAt(cursorPos.head) : null
       const dirty = isDirty(filePath)

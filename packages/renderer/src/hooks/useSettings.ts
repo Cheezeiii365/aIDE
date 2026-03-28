@@ -74,16 +74,18 @@ export function useSettings(): UseSettingsReturn {
     if (scope === 'user') {
       setUserSettings((prev) => {
         if (!prev) return prev
-        const next = { ...prev }
-        delete (next as Record<string, unknown>)[key]
+        const next = Object.fromEntries(
+          Object.entries(prev as Record<string, unknown>).filter(([entryKey]) => entryKey !== key),
+        )
         return next
       })
       await window.api.setUserSetting(key, undefined)
     } else {
       setWorkspaceSettings((prev) => {
         if (!prev) return prev
-        const next = { ...prev }
-        delete (next as Record<string, unknown>)[key]
+        const next = Object.fromEntries(
+          Object.entries(prev as Record<string, unknown>).filter(([entryKey]) => entryKey !== key),
+        )
         return next
       })
       await window.api.setWorkspaceSetting(key, undefined)
@@ -99,7 +101,7 @@ export function useSettings(): UseSettingsReturn {
 
   const getEffectiveValue = useCallback((key: string): unknown => {
     if (!resolved) return undefined
-    return (resolved as Record<string, unknown>)[key]
+    return resolved[key as keyof ResolvedSettings]
   }, [resolved])
 
   const getScopeValue = useCallback((key: string): unknown => {
@@ -109,7 +111,7 @@ export function useSettings(): UseSettingsReturn {
     if (val !== undefined) return val
     // Fall back to resolved (effective) value for display
     if (!resolved) return undefined
-    return (resolved as Record<string, unknown>)[key]
+    return resolved[key as keyof ResolvedSettings]
   }, [scope, userSettings, workspaceSettings, resolved])
 
   return {

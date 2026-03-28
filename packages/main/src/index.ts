@@ -19,7 +19,7 @@ import { detectTasks, generateTasksFile, hasTasksFile } from './taskAutoDetect'
 import { WorkspaceRegistry } from './workspaceRegistry'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
-import { registerGitDiffHandlers, setDiffRoot } from './gitDiff'
+import { registerGitDiffHandlers } from './gitDiff'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -269,8 +269,6 @@ async function activateWorkspace(id: string): Promise<void> {
   stopGitPolling()
   stopWorktreePolling()
   stopWatcher()
-  setDiffRoot(entry.rootPath ?? null)
-
   if (entry.rootPath) {
     await ensureAideFolder(entry.rootPath)
     if (activationSeq !== workspaceActivationSeq) return
@@ -526,9 +524,11 @@ ipcMain.handle(IpcChannels.SETTINGS_GET_USER, () => {
 })
 
 ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value: unknown) => {
-  const current = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
+  let current = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
   if (value === undefined || value === null) {
-    delete current[key]
+    current = Object.fromEntries(
+      Object.entries(current).filter(([entryKey]) => entryKey !== key),
+    )
   } else {
     current[key] = value
   }
@@ -577,7 +577,9 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, v
   }
 
   if (value === undefined || value === null) {
-    delete current[key]
+    current = Object.fromEntries(
+      Object.entries(current).filter(([entryKey]) => entryKey !== key),
+    )
   } else {
     current[key] = value
   }
