@@ -7,7 +7,7 @@ import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { getLanguageExtension, getLanguageName } from '../../lib/languageExtension'
 import { themeCompartment, editorMetricsCompartment, getThemeExtension, getEditorMetricsExtension } from '../../lib/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editorWrap'
-import { getCachedState, setCachedState } from '../../lib/editorStateCache'
+import { consumeCachedState, setCachedState } from '../../lib/editorStateCache'
 import { isDirty, setDirty, onDirtyChange } from '../../lib/editorDirtyState'
 import { publishContent, clearContent } from '../../lib/editorContentBus'
 import { getPanelZoomFactor } from '../../lib/panelZoom'
@@ -93,7 +93,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       cleanContentMap.set(filePath, result.content)
 
       // Restore cursor position from cached state if available, then discard cache
-      const cached = getCachedState(filePath)
+      const cached = consumeCachedState(filePath)
       const restoredSelection = cached?.selection
       const languageName = getLanguageName(filePath)
 
