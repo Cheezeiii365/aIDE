@@ -12,6 +12,8 @@
   --merge-delete-gutter: #e06c75;
   --merge-insert-bg: rgba(152, 195, 121, 0.12);
   --merge-insert-gutter: #98c379;
+  --merge-char-insert: rgba(152, 195, 121, 0.25);
+  --merge-char-delete: rgba(224, 108, 117, 0.25);
 }
 
 [data-theme="one-light"] .cm-editor {
@@ -19,6 +21,8 @@
   --merge-delete-gutter: #e45649;
   --merge-insert-bg: rgba(80, 161, 79, 0.10);
   --merge-insert-gutter: #50a14f;
+  --merge-char-insert: rgba(80, 161, 79, 0.25);
+  --merge-char-delete: rgba(228, 86, 73, 0.25);
 }
 
 /* Deleted chunks (original content that was removed) */
@@ -57,12 +61,12 @@
 
 /* Inline character-level changes */
 .cm-editor .cm-changedText {
-  background-color: rgba(152, 195, 121, 0.25);
+  background-color: var(--merge-char-insert, rgba(152, 195, 121, 0.25));
   border-radius: 2px;
 }
 
 .cm-editor .cm-deletedChunk .cm-changedText {
-  background-color: rgba(224, 108, 117, 0.25);
+  background-color: var(--merge-char-delete, rgba(224, 108, 117, 0.25));
   border-radius: 2px;
 }
 
