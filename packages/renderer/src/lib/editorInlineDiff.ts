@@ -3,20 +3,29 @@ import type { Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { unifiedMergeView, acceptChunk, rejectChunk, getOriginalDoc } from '@codemirror/merge'
 
+/** Who produced the diff — determines whether accept/decline controls appear. */
+export type DiffSource = 'git' | 'agent'
+
+export interface DiffOptions {
+  original: string
+  source: DiffSource
+}
+
 /** Compartment used to toggle inline diff on/off. */
 export const diffCompartment = new Compartment()
 
 /**
  * Create the unified merge view extension configured for aIDE.
- * Shows deleted lines inline, gutter indicators, and accept/reject controls.
+ * Shows deleted lines inline, gutter indicators, and optionally accept/reject controls.
+ * Controls only appear for agent-sourced diffs.
  */
-function createMergeExtension(original: string): Extension {
+function createMergeExtension(options: DiffOptions): Extension {
   return unifiedMergeView({
-    original,
+    original: options.original,
     highlightChanges: true,
     gutter: true,
     syntaxHighlightDeletions: true,
-    mergeControls: true,
+    mergeControls: options.source === 'agent',
     allowInlineDiffs: true,
   })
 }
@@ -25,9 +34,9 @@ function createMergeExtension(original: string): Extension {
  * Enable inline diff mode by comparing against the given original content.
  * The current editor content is treated as the "new" version.
  */
-export function enableInlineDiff(view: EditorView, originalContent: string): void {
+export function enableInlineDiff(view: EditorView, options: DiffOptions): void {
   view.dispatch({
-    effects: diffCompartment.reconfigure(createMergeExtension(originalContent)),
+    effects: diffCompartment.reconfigure(createMergeExtension(options)),
   })
 }
 
@@ -57,20 +66,19 @@ export function isInlineDiffActive(view: EditorView): boolean {
  * content from git via the preload API.
  * Returns true if diff was enabled, false if disabled.
  */
-export async function toggleInlineDiff(view: EditorView, filePath: string): Promise<boolean> {
+export async function toggleInlineDiff(
+  view: EditorView,
+  filePath: string,
+  source: DiffSource = 'git',
+): Promise<boolean> {
   if (isInlineDiffActive(view)) {
     disableInlineDiff(view)
     return false
   }
 
   const result = await window.api.getGitFileOriginal(filePath)
-  if (result.content === null) {
-    // File is untracked or not in a git repo — use empty string
-    // so all lines show as "added"
-    enableInlineDiff(view, '')
-  } else {
-    enableInlineDiff(view, result.content)
-  }
+  const original = result.content ?? ''
+  enableInlineDiff(view, { original, source })
   return true
 }
 
