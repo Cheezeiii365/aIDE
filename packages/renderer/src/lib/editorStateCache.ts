@@ -7,9 +7,7 @@ const cache = new Map<string, EditorState>()
 export function getCachedState(filePath: string): EditorState | undefined {
   const state = cache.get(filePath)
   if (state !== undefined) {
-    // Move to end (most-recently-used) by re-inserting
     cache.delete(filePath)
-    cache.set(filePath, state)
   }
   return state
 }
