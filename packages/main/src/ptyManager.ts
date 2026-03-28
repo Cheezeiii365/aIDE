@@ -64,7 +64,8 @@ export function registerPtyHandlers(
     const cwd = fs.existsSync(preferredCwd) ? preferredCwd : os.homedir()
     const shell = opts?.shell || detectShell()
 
-    const pty = spawn(shell, [], {
+    const args = process.platform === 'win32' ? [] : ['-l']
+    const pty = spawn(shell, args, {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,

@@ -295,7 +295,8 @@ export class TaskRunner {
 
     // Spawn PTY
     const ptyId = randomUUID()
-    const pty = spawn(shell, ['-c', fullCommand], {
+    const shellArgs = process.platform === 'win32' ? ['-c', fullCommand] : ['-lc', fullCommand]
+    const pty = spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,

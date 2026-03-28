@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DirEntry, FsWatchEvent, GitFileStatus } from '@aide/shared'
-import { FileTreeItem } from './FileTreeItem'
+import { FileTreeItem, SearchResultItem } from './FileTreeItem'
 import type { FileTreeNode, VirtualRow } from './FileTreeItem'
 import { ContextMenu } from './ContextMenu'
 
@@ -98,6 +98,9 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
   const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(new Set())
   const loadingPaths = useRef<Set<string>>(new Set())
+  // Full file list for deep search (cached, invalidated on fs events)
+  const [allFiles, setAllFiles] = useState<string[] | null>(null)
+  const allFilesStale = useRef(true)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -109,6 +112,25 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     parentDir: string
     type: 'file' | 'folder'
   } | null>(null)
+
+  // Fetch full file list for deep search when filter is active
+  useEffect(() => {
+    if (!filter) return
+    if (!allFilesStale.current && allFiles !== null) return
+    let cancelled = false
+    window.api.listAllFiles(rootPath).then((files) => {
+      if (cancelled) return
+      setAllFiles(files)
+      allFilesStale.current = false
+    })
+    return () => { cancelled = true }
+  }, [filter, rootPath, allFiles])
+
+  // Invalidate cached file list when rootPath changes
+  useEffect(() => {
+    allFilesStale.current = true
+    setAllFiles(null)
+  }, [rootPath])
 
   // Load root children on mount or when rootPath changes
   useEffect(() => {
@@ -157,6 +179,8 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
   // Subscribe to file watcher events for incremental tree updates
   useEffect(() => {
     const unsub = window.api.onFsWatchEvent((events: FsWatchEvent[]) => {
+      // Invalidate cached file list so search picks up changes
+      allFilesStale.current = true
       setNodes((prev) => {
         const next = new Map(prev)
         let changed = false
@@ -423,9 +447,26 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
 
   const filterLower = filter.toLowerCase()
 
-  // When filtering, pre-compute which paths match and their ancestors
+  // When filtering with full file list available, compute search results as flat list
+  const searchResults = useMemo<VirtualRow[] | null>(() => {
+    if (!filterLower || !allFiles) return null
+    const rootPrefix = rootPath.endsWith('/') ? rootPath : rootPath + '/'
+    const results: VirtualRow[] = []
+    for (const filePath of allFiles) {
+      const fileName = filePath.split('/').pop() ?? filePath
+      if (!fileName.toLowerCase().includes(filterLower)) continue
+      const relativePath = filePath.startsWith(rootPrefix) ? filePath.slice(rootPrefix.length) : filePath
+      // Show the parent directory portion of the relative path
+      const dirPart = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''
+      results.push({ type: 'search-result', filePath, fileName, relativePath: dirPart })
+      if (results.length >= 200) break // cap results for performance
+    }
+    return results
+  }, [filterLower, allFiles, rootPath])
+
+  // Fallback: filter loaded nodes only (used when allFiles hasn't loaded yet)
   const filterMatchSet = useMemo(() => {
-    if (!filterLower) return null
+    if (!filterLower || searchResults) return null
     const matched = new Set<string>()
     for (const [path, node] of nodes) {
       if (path === rootPath) continue
@@ -442,10 +483,13 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
       }
     }
     return matched
-  }, [filterLower, nodes, rootPath])
+  }, [filterLower, nodes, rootPath, searchResults])
 
   // Build flat VirtualRow[] with create-input rows merged in
   const virtualRows = useMemo<VirtualRow[]>(() => {
+    // When deep search results are available, use them
+    if (searchResults) return searchResults
+
     const rows: VirtualRow[] = []
     const rootNode = nodes.get(rootPath)
     if (!rootNode) return rows
@@ -497,7 +541,7 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     }
 
     return rows
-  }, [nodes, rootPath, filterMatchSet, creatingIn])
+  }, [nodes, rootPath, filterMatchSet, searchResults, creatingIn])
 
   // ── Virtualizer ─────────────────────────────
 
@@ -510,7 +554,9 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     overscan: 15,
     getItemKey: (index) => {
       const row = virtualRows[index]
-      return row.type === 'node' ? row.node.path : `__create__${row.parentDir}`
+      if (row.type === 'node') return row.node.path
+      if (row.type === 'search-result') return `__search__${row.filePath}`
+      return `__create__${row.parentDir}`
     },
   })
 
@@ -558,6 +604,12 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
                       : (gitStatus[row.node.path] ?? dirGitStatus.get(row.node.path))
                   }
                   isIgnored={isGitIgnored(row.node.path, ignoredPaths, rootPath)}
+                />
+              ) : row.type === 'search-result' ? (
+                <SearchResultItem
+                  fileName={row.fileName}
+                  relativePath={row.relativePath}
+                  onFileOpen={() => onFileOpen(row.filePath)}
                 />
               ) : (
                 <div
