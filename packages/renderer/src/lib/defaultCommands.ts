@@ -80,6 +80,11 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
     () => showToast('Symbol search requires LSP (coming in Phase 3)'),
   )
 
+  registerCommand(
+    { id: 'editor.toggleInlineDiff', label: 'Toggle Inline Diff', category: 'Editor' },
+    () => window.dispatchEvent(new CustomEvent('aide:toggle-inline-diff')),
+  )
+
   // Full .aide project initialization
   registerCommand(
     { id: 'aide.init', label: 'Initialize Project', category: 'aIDE' },

@@ -72,6 +72,10 @@ const api: WindowApi = {
     return () => ipcRenderer.removeListener(IpcChannels.GIT_BRANCH_CHANGED, handler)
   },
 
+  // Git diff
+  getGitFileOriginal: (filePath: string): Promise<{ content: string | null }> =>
+    ipcRenderer.invoke(IpcChannels.GIT_DIFF_ORIGINAL, filePath),
+
   // Terminal
   ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) =>
     ipcRenderer.invoke(IpcChannels.PTY_CREATE, opts),

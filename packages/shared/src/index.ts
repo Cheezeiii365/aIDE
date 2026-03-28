@@ -63,6 +63,9 @@ export const IpcChannels = {
   GIT_STATUS_CHANGED: 'git:status-changed',
   GIT_BRANCH_CHANGED: 'git:branch-changed',
 
+  // Git diff
+  GIT_DIFF_ORIGINAL: 'git:diff-original',
+
   // Terminal / PTY
   PTY_CREATE: 'pty:create',
   PTY_DATA_IN: 'pty:data-in',
@@ -559,6 +562,9 @@ export interface WindowApi {
   getGitStatus: () => Promise<GitStatusResult | null>
   onGitStatusChanged: (callback: (status: GitStatusResult) => void) => () => void
   onGitBranchChanged: (callback: (branch: string) => void) => () => void
+
+  // Git diff
+  getGitFileOriginal: (filePath: string) => Promise<{ content: string | null }>
 
   // Terminal
   ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) => Promise<{ id: string; scrollback: string }>

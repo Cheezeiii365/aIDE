@@ -1,0 +1,119 @@
+/* ─── Inline Diff Styling ─────────────────────────────────── */
+
+/* Gutter indicator for changed chunks */
+.cm-editor .cm-changedLine .cm-changeGutter {
+  width: 3px;
+}
+
+/* Override merge view colors for dark theme */
+[data-theme="one-dark"] .cm-editor {
+  /* Deleted lines (shown as inserted readonly blocks) */
+  --merge-delete-bg: rgba(224, 108, 117, 0.12);
+  --merge-delete-gutter: #e06c75;
+  --merge-insert-bg: rgba(152, 195, 121, 0.12);
+  --merge-insert-gutter: #98c379;
+  --merge-char-insert: rgba(152, 195, 121, 0.25);
+  --merge-char-delete: rgba(224, 108, 117, 0.25);
+}
+
+[data-theme="one-light"] .cm-editor {
+  --merge-delete-bg: rgba(228, 86, 73, 0.10);
+  --merge-delete-gutter: #e45649;
+  --merge-insert-bg: rgba(80, 161, 79, 0.10);
+  --merge-insert-gutter: #50a14f;
+  --merge-char-insert: rgba(80, 161, 79, 0.25);
+  --merge-char-delete: rgba(228, 86, 73, 0.25);
+}
+
+/* Deleted chunks (original content that was removed) */
+.cm-editor .cm-deletedChunk {
+  background-color: var(--merge-delete-bg, rgba(224, 108, 117, 0.12));
+  border-left: none;
+}
+
+.cm-editor .cm-deletedChunk .cm-deletedLine {
+  background-color: transparent;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+/* Inserted/changed lines in current document */
+.cm-editor .cm-changedLine {
+  background-color: var(--merge-insert-bg, rgba(152, 195, 121, 0.12));
+}
+
+/* Gutter markers for changes */
+.cm-editor .cm-changeGutter .cm-gutterElement {
+  padding: 0;
+  min-width: 4px;
+  width: 4px;
+}
+
+/* Gutter marker for inserted lines */
+.cm-editor .cm-changeGutter .cm-changedLineGutter {
+  background-color: var(--merge-insert-gutter, #98c379);
+}
+
+/* Gutter marker for deleted lines */
+.cm-editor .cm-changeGutter .cm-deletedLineGutter {
+  background-color: var(--merge-delete-gutter, #e06c75);
+}
+
+/* Inline character-level changes */
+.cm-editor .cm-changedText {
+  background-color: var(--merge-char-insert, rgba(152, 195, 121, 0.25));
+  border-radius: 2px;
+}
+
+.cm-editor .cm-deletedChunk .cm-changedText {
+  background-color: var(--merge-char-delete, rgba(224, 108, 117, 0.25));
+  border-radius: 2px;
+}
+
+/* Accept/Reject buttons styling */
+.cm-editor .cm-mergeControls {
+  display: flex;
+  gap: 2px;
+  padding: 0 4px;
+  align-items: center;
+}
+
+.cm-editor .cm-mergeControls button {
+  background: none;
+  border: 1px solid var(--border-subtle, #2e333b);
+  border-radius: 3px;
+  color: var(--text-secondary, #7f8694);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 6px;
+  line-height: 1.4;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.cm-editor .cm-mergeControls button:hover {
+  background-color: var(--bg-hover, rgba(255, 255, 255, 0.04));
+  color: var(--text-primary, #abb2bf);
+}
+
+/* Diff status bar indicator */
+.editor-pane__diff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text-info, hsl(219, 79%, 66%));
+  background-color: var(--bg-info);
+  cursor: pointer;
+  user-select: none;
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  z-index: 5;
+  transition: background-color 0.15s;
+}
+
+.editor-pane__diff-badge:hover {
+  background-color: var(--bg-info-hover);
+}

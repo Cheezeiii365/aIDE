@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
 import { EditorState, StateEffect } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
@@ -16,6 +16,8 @@ import { setContext } from '../../lib/ContextKeys'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 import { showToast } from '../Toast'
+import { diffCompartment, toggleInlineDiff, isInlineDiffActive } from '../../lib/editorInlineDiff'
+import '../../styles/inline-diff.css'
 
 interface EditorPaneParams {
   filePath: string
@@ -52,6 +54,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const setStatusRef = useRef(setStatus)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [diffActive, setDiffActive] = useState(false)
 
   const filePath = params.filePath
 
@@ -116,6 +119,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
               publishContent(filePath, update.state.doc.toString())
             }
           }),
+          diffCompartment.of([]),
           keymap.of([
             {
               key: 'Mod-s',
@@ -136,6 +140,16 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
                 const enabled = toggleWrap()
                 view.dispatch({
                   effects: wrapCompartment.reconfigure(getWrapExtension(enabled)),
+                })
+                return true
+              },
+            },
+            {
+              key: 'Mod-Shift-d',
+              run: (view) => {
+                toggleInlineDiff(view, filePath).then((enabled) => {
+                  setDiffActive(enabled)
+                  showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
                 })
                 return true
               },
@@ -335,6 +349,21 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     return unsub
   }, [filePath, api])
 
+  // Listen for external toggle-inline-diff events (e.g., command palette)
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+
+    const handler = () => {
+      toggleInlineDiff(view, filePath).then((enabled) => {
+        setDiffActive(enabled)
+        showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
+      })
+    }
+    window.addEventListener('aide:toggle-inline-diff', handler)
+    return () => window.removeEventListener('aide:toggle-inline-diff', handler)
+  }, [filePath, loading])
+
   // Push cursor status when this panel becomes active
   useEffect(() => {
     const disposable = api.onDidActiveChange(({ isActive }) => {
@@ -363,9 +392,27 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     )
   }
 
+  const handleDiffBadgeClick = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    toggleInlineDiff(view, filePath).then((enabled) => {
+      setDiffActive(enabled)
+      showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
+    })
+  }, [filePath])
+
   return (
     <div className="editor-pane">
       {loading && <div className="editor-pane__loading">Loading…</div>}
+      {diffActive && (
+        <div
+          className="editor-pane__diff-badge"
+          onClick={handleDiffBadgeClick}
+          title="Click to close diff view (Cmd+Shift+D)"
+        >
+          DIFF
+        </div>
+      )}
       <div
         ref={hostRef}
         className="editor-pane__cm-host"
