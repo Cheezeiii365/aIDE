@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { formatKeybinding } from '../../lib/formatKeybinding'
-import { getAllKeybindingRules } from '../../lib/KeybindingService'
+import { getAllKeybindingRules, setRecordingMode } from '../../lib/KeybindingService'
 import { getCommand } from '../../lib/CommandRegistry'
 
 interface KeybindingRecorderProps {
@@ -20,6 +20,12 @@ export function KeybindingRecorder({ commandId, onRecord, onCancel }: Keybinding
   const [conflict, setConflict] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const pendingKeybinding = useRef<string | null>(null)
+
+  // Suppress global shortcut dispatch while recording
+  useEffect(() => {
+    setRecordingMode(true)
+    return () => setRecordingMode(false)
+  }, [])
 
   const buildKeybindingString = useCallback((e: KeyboardEvent): string | null => {
     const key = e.key

@@ -31,6 +31,16 @@ let listening = false
 let pendingChord: { parts: ShortcutParts; timestamp: number } | null = null
 const CHORD_TIMEOUT = 1500
 
+// Recording mode — when true, handleKeyDown is bypassed so the
+// KeybindingRecorder can capture keystrokes without triggering shortcuts.
+let recordingMode = false
+
+export function setRecordingMode(active: boolean): void {
+  recordingMode = active
+  // Clear any pending chord so it doesn't fire after recording ends
+  if (active) pendingChord = null
+}
+
 // ── Listener setup ─────────────────────────────
 
 function ensureListener() {
@@ -214,6 +224,9 @@ export function formatRuleKey(rule: KeybindingRule): string {
  * Evaluates `when` clauses, skips suppressed rules, fires executeCommand().
  */
 function handleKeyDown(e: KeyboardEvent) {
+  // Skip dispatch while the keybinding recorder is capturing input
+  if (recordingMode) return
+
   // ── Chord continuation ──
   if (pendingChord) {
     const elapsed = Date.now() - pendingChord.timestamp
