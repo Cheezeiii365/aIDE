@@ -3,15 +3,6 @@ import { ipcMain } from 'electron'
 import simpleGit from 'simple-git'
 import { IpcChannels } from '@aide/shared'
 
-let currentRoot: string | null = null
-
-/**
- * Set the workspace root used for git diff operations.
- */
-export function setDiffRoot(rootPath: string | null): void {
-  currentRoot = rootPath
-}
-
 /**
  * Get the original (HEAD) content of a file from git.
  * Returns the file content as it exists in the HEAD commit,
@@ -41,9 +32,9 @@ async function getOriginalContent(rootPath: string, absolutePath: string): Promi
  * Register IPC handlers for git diff operations.
  */
 export function registerGitDiffHandlers(): void {
-  ipcMain.handle(IpcChannels.GIT_DIFF_ORIGINAL, async (_event, filePath: string) => {
-    if (!currentRoot) return { content: null }
-    const content = await getOriginalContent(currentRoot, filePath)
+  ipcMain.handle(IpcChannels.GIT_DIFF_ORIGINAL, async (_event, rootPath: string | null, filePath: string) => {
+    if (!rootPath) return { content: null }
+    const content = await getOriginalContent(rootPath, filePath)
     return { content }
   })
 }

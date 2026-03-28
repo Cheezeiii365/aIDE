@@ -564,7 +564,7 @@ export interface WindowApi {
   onGitBranchChanged: (callback: (branch: string) => void) => () => void
 
   // Git diff
-  getGitFileOriginal: (filePath: string) => Promise<{ content: string | null }>
+  getGitFileOriginal: (rootPath: string | null, filePath: string) => Promise<{ content: string | null }>
 
   // Terminal
   ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) => Promise<{ id: string; scrollback: string }>

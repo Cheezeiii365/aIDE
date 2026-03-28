@@ -73,8 +73,8 @@ const api: WindowApi = {
   },
 
   // Git diff
-  getGitFileOriginal: (filePath: string): Promise<{ content: string | null }> =>
-    ipcRenderer.invoke(IpcChannels.GIT_DIFF_ORIGINAL, filePath),
+  getGitFileOriginal: (rootPath: string | null, filePath: string): Promise<{ content: string | null }> =>
+    ipcRenderer.invoke(IpcChannels.GIT_DIFF_ORIGINAL, rootPath, filePath),
 
   // Terminal
   ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) =>

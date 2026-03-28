@@ -506,14 +506,6 @@ export function AppShell() {
       })
   }, [persistWorkspaceRuntime])
 
-  // Register app-wide action dispatch layer
-  useEffect(() => {
-    registerAppActions({
-      openFile: (filePath: string, opts?: OpenFileOpts) => onFileOpen(filePath, opts),
-      openUrl: (url: string) => window.open(url),
-    })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Ctrl+` — open a new terminal tab
   useCommand('terminal.new', {
     label: 'New Terminal',
@@ -828,7 +820,7 @@ export function AppShell() {
       component: 'editorPane',
       tabComponent: 'editorTab',
       title: name,
-      params: { filePath, jumpToLine: opts?.line, jumpToColumn: opts?.column },
+      params: { filePath, workspaceRoot, jumpToLine: opts?.line, jumpToColumn: opts?.column },
       position,
     })
 
@@ -839,7 +831,16 @@ export function AppShell() {
         onClick: () => openMarkdownPreview(filePath),
       })
     }
-  }, [openMarkdownPreview])
+  }, [openMarkdownPreview, workspaceRoot])
+
+  // Register app-wide action dispatch layer — re-register when onFileOpen changes
+  // so workspace root stays current after workspace switches.
+  useEffect(() => {
+    registerAppActions({
+      openFile: (filePath: string, opts?: OpenFileOpts) => onFileOpen(filePath, opts),
+      openUrl: (url: string) => window.open(url),
+    })
+  }, [onFileOpen])
 
   const handleCreateBrowserPane = useCallback((sessionMode: BrowserSessionMode, url: string) => {
     const api = dockviewApiRef.current

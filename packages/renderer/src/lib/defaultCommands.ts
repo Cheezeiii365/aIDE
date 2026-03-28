@@ -13,13 +13,14 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
       const active = dockviewApi.activePanel
       if (!active) return
       const filePath = (active.params as Record<string, unknown>)?.filePath as string | undefined
+      const workspaceRoot = (active.params as Record<string, unknown>)?.workspaceRoot as string | null | undefined
       if (!filePath) return
       dockviewApi.addPanel({
         id: `${filePath}:split-${Date.now()}`,
         component: 'editorPane',
         tabComponent: 'editorTab',
         title: filePath.split('/').pop() ?? filePath,
-        params: { filePath },
+        params: { filePath, workspaceRoot },
         position: { referencePanel: active, direction: 'right' },
       })
     },
@@ -31,13 +32,14 @@ export function registerDefaultCommands(dockviewApi: DockviewApi): void {
       const active = dockviewApi.activePanel
       if (!active) return
       const filePath = (active.params as Record<string, unknown>)?.filePath as string | undefined
+      const workspaceRoot = (active.params as Record<string, unknown>)?.workspaceRoot as string | null | undefined
       if (!filePath) return
       dockviewApi.addPanel({
         id: `${filePath}:split-${Date.now()}`,
         component: 'editorPane',
         tabComponent: 'editorTab',
         title: filePath.split('/').pop() ?? filePath,
-        params: { filePath },
+        params: { filePath, workspaceRoot },
         position: { referencePanel: active, direction: 'below' },
       })
     },
