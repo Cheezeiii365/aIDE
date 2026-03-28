@@ -16,7 +16,7 @@ import { setContext } from '../../lib/ContextKeys'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 import { showToast } from '../Toast'
-import { diffCompartment, toggleInlineDiff, isInlineDiffActive } from '../../lib/editorInlineDiff'
+import { diffCompartment, toggleInlineDiff } from '../../lib/editorInlineDiff'
 import '../../styles/inline-diff.css'
 
 interface EditorPaneParams {
@@ -254,7 +254,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       clearContent(filePath)
       cleanContentMap.delete(filePath)
     }
-  }, [filePath])
+  }, [filePath, toggleInlineDiffForView])
 
   /**
    * Replace the editor's document with the file's current disk contents.
@@ -400,6 +400,12 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     return () => disposable.dispose()
   }, [api, filePath, setStatus])
 
+  const handleDiffBadgeClick = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    void toggleInlineDiffForView(view)
+  }, [toggleInlineDiffForView])
+
   if (error) {
     return (
       <div className="editor-pane">
@@ -407,12 +413,6 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       </div>
     )
   }
-
-  const handleDiffBadgeClick = useCallback(() => {
-    const view = viewRef.current
-    if (!view) return
-    void toggleInlineDiffForView(view)
-  }, [toggleInlineDiffForView])
 
   return (
     <div className="editor-pane">
