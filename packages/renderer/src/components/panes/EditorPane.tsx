@@ -21,6 +21,7 @@ import '../../styles/inline-diff.css'
 
 interface EditorPaneParams {
   filePath: string
+  workspaceRoot: string | null
   jumpToLine?: number
   jumpToColumn?: number
   zoomFactor?: number
@@ -57,6 +58,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const [diffActive, setDiffActive] = useState(false)
 
   const filePath = params.filePath
+  const workspaceRoot = params.workspaceRoot
 
   useEffect(() => {
     paramsRef.current = params
@@ -147,7 +149,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
             {
               key: 'Mod-Shift-d',
               run: (view) => {
-                toggleInlineDiff(view, filePath).then((enabled) => {
+                toggleInlineDiff(view, workspaceRoot, filePath).then((enabled) => {
                   setDiffActive(enabled)
                   showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
                 })
@@ -355,14 +357,14 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     if (!view) return
 
     const handler = () => {
-      toggleInlineDiff(view, filePath).then((enabled) => {
+      toggleInlineDiff(view, workspaceRoot, filePath).then((enabled) => {
         setDiffActive(enabled)
         showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
       })
     }
     window.addEventListener('aide:toggle-inline-diff', handler)
     return () => window.removeEventListener('aide:toggle-inline-diff', handler)
-  }, [filePath, loading])
+  }, [filePath, loading, workspaceRoot])
 
   // Push cursor status when this panel becomes active
   useEffect(() => {
@@ -395,11 +397,11 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const handleDiffBadgeClick = useCallback(() => {
     const view = viewRef.current
     if (!view) return
-    toggleInlineDiff(view, filePath).then((enabled) => {
+    toggleInlineDiff(view, workspaceRoot, filePath).then((enabled) => {
       setDiffActive(enabled)
       showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
     })
-  }, [filePath])
+  }, [filePath, workspaceRoot])
 
   return (
     <div className="editor-pane">

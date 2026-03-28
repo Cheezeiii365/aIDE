@@ -68,6 +68,7 @@ export function isInlineDiffActive(view: EditorView): boolean {
  */
 export async function toggleInlineDiff(
   view: EditorView,
+  rootPath: string | null,
   filePath: string,
   source: DiffSource = 'git',
 ): Promise<boolean> {
@@ -76,7 +77,7 @@ export async function toggleInlineDiff(
     return false
   }
 
-  const result = await window.api.getGitFileOriginal(filePath)
+  const result = await window.api.getGitFileOriginal(rootPath, filePath)
   const original = result.content ?? ''
   enableInlineDiff(view, { original, source })
   return true

@@ -828,7 +828,7 @@ export function AppShell() {
       component: 'editorPane',
       tabComponent: 'editorTab',
       title: name,
-      params: { filePath, jumpToLine: opts?.line, jumpToColumn: opts?.column },
+      params: { filePath, workspaceRoot, jumpToLine: opts?.line, jumpToColumn: opts?.column },
       position,
     })
 
@@ -839,7 +839,7 @@ export function AppShell() {
         onClick: () => openMarkdownPreview(filePath),
       })
     }
-  }, [openMarkdownPreview])
+  }, [openMarkdownPreview, workspaceRoot])
 
   const handleCreateBrowserPane = useCallback((sessionMode: BrowserSessionMode, url: string) => {
     const api = dockviewApiRef.current
