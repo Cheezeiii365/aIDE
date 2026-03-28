@@ -41,6 +41,15 @@ export class DockviewNavigation {
   private paneHistory: string[] = []
   private tabHistoryByPane = new Map<string, string[]>()
 
+  private cycling: {
+    type: 'pane' | 'tab'
+    frozenOrder: string[]
+    index: number
+    paneId?: string // for tab cycling: which pane's tabs are being cycled
+  } | null = null
+  private suppressActivation = false
+  private keyUpHandler: ((e: KeyboardEvent) => void) | null = null
+
   constructor(private readonly api: DockviewApi) {
     for (const panel of api.panels) {
       this.ensurePane(panel)
@@ -50,7 +59,7 @@ export class DockviewNavigation {
     }
 
     api.onDidActivePanelChange((panel) => {
-      if (panel) this.recordActivation(panel)
+      if (panel && !this.suppressActivation) this.recordActivation(panel)
     })
 
     api.onDidRemovePanel((panel) => {
@@ -58,15 +67,31 @@ export class DockviewNavigation {
     })
   }
 
+  get isCycling(): boolean {
+    return this.cycling !== null
+  }
+
   focusPaneRecent(direction: 1 | -1): boolean {
-    const currentPaneId = getPaneId(this.api.activePanel)
-    if (!currentPaneId) return false
+    if (this.cycling && this.cycling.type === 'tab') {
+      this.endCyclingSession()
+    }
 
-    const orderedPaneIds = this.getPaneIdsInRecentOrder()
-    const targetPaneId = direction === 1
-      ? orderedPaneIds.find((paneId) => paneId !== currentPaneId) ?? null
-      : [...orderedPaneIds].reverse().find((paneId) => paneId !== currentPaneId) ?? null
+    if (!this.cycling) {
+      const currentPaneId = getPaneId(this.api.activePanel)
+      if (!currentPaneId) return false
 
+      const frozenOrder = this.getPaneIdsInRecentOrder()
+      if (frozenOrder.length <= 1) return false
+
+      const index = frozenOrder.indexOf(currentPaneId)
+      this.cycling = { type: 'pane', frozenOrder, index: index === -1 ? 0 : index }
+      this.suppressActivation = true
+      this.installKeyUpListener()
+    }
+
+    const { frozenOrder } = this.cycling
+    this.cycling.index = (this.cycling.index + direction + frozenOrder.length) % frozenOrder.length
+    const targetPaneId = frozenOrder[this.cycling.index]
     if (!targetPaneId) return false
     return this.focusPane(targetPaneId)
   }
@@ -82,18 +107,30 @@ export class DockviewNavigation {
   }
 
   focusTabRecent(direction: 1 | -1): boolean {
-    const activePanel = this.api.activePanel
-    const paneId = getPaneId(activePanel)
-    if (!activePanel || !paneId) return false
+    if (this.cycling && this.cycling.type === 'pane') {
+      this.endCyclingSession()
+    }
 
-    const panePanels = getPanePanels(activePanel)
-    if (panePanels.length <= 1) return false
+    if (!this.cycling) {
+      const activePanel = this.api.activePanel
+      const paneId = getPaneId(activePanel)
+      if (!activePanel || !paneId) return false
 
-    const history = this.getTabIdsInRecentOrder(paneId, panePanels)
-    const targetPanelId = direction === 1
-      ? history.find((panelId) => panelId !== activePanel.id) ?? null
-      : [...history].reverse().find((panelId) => panelId !== activePanel.id) ?? null
+      const panePanels = getPanePanels(activePanel)
+      if (panePanels.length <= 1) return false
 
+      const frozenOrder = this.getTabIdsInRecentOrder(paneId, panePanels)
+      if (frozenOrder.length <= 1) return false
+
+      const index = frozenOrder.indexOf(activePanel.id)
+      this.cycling = { type: 'tab', frozenOrder, index: index === -1 ? 0 : index, paneId }
+      this.suppressActivation = true
+      this.installKeyUpListener()
+    }
+
+    const { frozenOrder } = this.cycling
+    this.cycling.index = (this.cycling.index + direction + frozenOrder.length) % frozenOrder.length
+    const targetPanelId = frozenOrder[this.cycling.index]
     if (!targetPanelId) return false
     return this.focusPanelById(targetPanelId)
   }
@@ -108,6 +145,43 @@ export class DockviewNavigation {
 
     targetPanel.api.setActive()
     return true
+  }
+
+  endCyclingSession(): void {
+    if (!this.cycling) return
+
+    this.removeKeyUpListener()
+    this.cycling = null
+    this.suppressActivation = false
+
+    // Commit the now-active panel into MRU history
+    const activePanel = this.api.activePanel
+    if (activePanel) {
+      this.recordActivation(activePanel)
+    }
+  }
+
+  dispose(): void {
+    this.removeKeyUpListener()
+  }
+
+  private installKeyUpListener(): void {
+    if (this.keyUpHandler) return
+
+    this.keyUpHandler = (e: KeyboardEvent) => {
+      // End cycling when any modifier key is released
+      if (e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') {
+        this.endCyclingSession()
+      }
+    }
+    window.addEventListener('keyup', this.keyUpHandler, true)
+  }
+
+  private removeKeyUpListener(): void {
+    if (this.keyUpHandler) {
+      window.removeEventListener('keyup', this.keyUpHandler, true)
+      this.keyUpHandler = null
+    }
   }
 
   private ensurePane(panel: DockviewPanel): void {
