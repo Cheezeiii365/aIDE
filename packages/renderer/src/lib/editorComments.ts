@@ -64,9 +64,9 @@ function updateLineCommentsInActiveEditor(mode: CommentMode): CommentResult {
 
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
-    if (line.text.trim().length === 0) continue
 
-    const indent = line.text.match(/^\s*/)?.[0].length ?? 0
+    const isBlank = line.text.trim().length === 0
+    const indent = isBlank ? 0 : line.text.match(/^\s*/)?.[0].length ?? 0
     const offset = line.from + indent
 
     if (shouldUncomment && line.text.slice(indent).startsWith(token)) {
