@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { ipcMain } from 'electron'
 import simpleGit from 'simple-git'
 import { IpcChannels } from '@aide/shared'
@@ -22,10 +23,11 @@ async function getOriginalContent(rootPath: string, absolutePath: string): Promi
     const isRepo = await git.checkIsRepo()
     if (!isRepo) return null
 
-    // Compute the relative path from the repo root
-    const relativePath = absolutePath.startsWith(rootPath + '/')
-      ? absolutePath.slice(rootPath.length + 1)
-      : absolutePath
+    const relativePath = path.relative(rootPath, absolutePath)
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      console.warn(`[gitDiff] Path outside repo: ${absolutePath} (root: ${rootPath})`)
+      return null
+    }
 
     const content = await git.show([`HEAD:${relativePath}`])
     return content
