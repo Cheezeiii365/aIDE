@@ -202,7 +202,12 @@ async function createDefaultLayout(
       id: 'agent',
       component: 'cliAgentPane',
       title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
-      params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined, backend },
+      params: {
+        workspaceId,
+        workspaceRoot: workspaceRoot ?? undefined,
+        backend,
+        conversationId: crypto.randomUUID(),
+      },
       position: { referencePanel: editorPanel, direction: 'right' },
       initialWidth: 400,
     })

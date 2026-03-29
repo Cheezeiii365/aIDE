@@ -3,7 +3,6 @@ import type {
   AgentBackend,
   CliAgentProcessStatus,
   CliAgentMessage,
-  CliAgentSession,
   CliAgentStreamDelta,
   CliAgentStatusPayload,
   ConversationListChangedPayload,
@@ -52,17 +51,9 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
     if (!workspaceId) return
     let cancelled = false
 
+    // No workspace-wide session lookup: multiple unsaved CLI tabs must not share the first in-memory match.
     if (!conversationId) {
       setHistoryHydrated(true)
-      window.api.cliAgentGetSession(workspaceId, undefined).then((session: CliAgentSession | null) => {
-        if (cancelled || !session) return
-        sessionIdRef.current = session.id
-        messagesRef.current = session.messages
-        setProcessStatus(session.processStatus)
-        setModel(session.model ?? null)
-        setLastError(session.lastError ?? null)
-        tick()
-      })
       return () => { cancelled = true }
     }
 

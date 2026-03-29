@@ -746,7 +746,12 @@ export function AppShell() {
           id: `agent-${Date.now()}`,
           component: 'cliAgentPane',
           title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
-          params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined, backend },
+          params: {
+            workspaceId: activeWorkspaceId,
+            workspaceRoot: workspaceRoot ?? undefined,
+            backend,
+            conversationId: crypto.randomUUID(),
+          },
           position: editorPanel
             ? { referencePanel: editorPanel, direction: 'right' }
             : undefined,
