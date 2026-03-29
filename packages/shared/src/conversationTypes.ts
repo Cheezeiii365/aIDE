@@ -31,6 +31,11 @@ export interface ConversationMeta {
   worktreePath?: string
   /** Branch name for display (captured at creation, may become stale). */
   worktreeBranch?: string
+  /**
+   * When `'claude-native'`, entries are mirrored from `~/.claude/projects/<slug>/`
+   * (Claude Code app) and are not persisted in `.aide/local/conversations/`.
+   */
+  source?: 'claude-native'
 }
 
 // ---------------------------------------------------------------------------

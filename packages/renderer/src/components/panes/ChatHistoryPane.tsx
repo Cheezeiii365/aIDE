@@ -140,6 +140,9 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
               {meta.worktreeBranch && (
                 <span className="chat-history-pane__item-branch">{meta.worktreeBranch}</span>
               )}
+              {isCliBackend(meta.backend) && (
+                <span className="chat-history-pane__item-badge chat-history-pane__item-badge--cli">CLI</span>
+              )}
               <span className={`chat-history-pane__item-badge chat-history-pane__item-badge--${meta.backend}`}>
                 {backendLabel(meta.backend)}
               </span>
@@ -176,6 +179,10 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function isCliBackend(backend: AgentBackend): boolean {
+  return backend === 'claude-code' || backend === 'codex'
+}
 
 function backendLabel(backend: AgentBackend): string {
   switch (backend) {

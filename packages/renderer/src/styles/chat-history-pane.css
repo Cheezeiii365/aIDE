@@ -174,6 +174,12 @@
   background: var(--bg-info);
 }
 
+.chat-history-pane__item-badge--cli {
+  color: var(--text-secondary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+}
+
 .chat-history-pane__item-badge--claude-code {
   color: var(--text-success);
   background: color-mix(in srgb, var(--text-success) 12%, transparent);
