@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -316,6 +316,50 @@ const api: WindowApi = {
     const handler = () => callback()
     ipcRenderer.on(IpcChannels.LIFECYCLE_CRASH_DETECTED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.LIFECYCLE_CRASH_DETECTED, handler)
+  },
+
+  // ─── Agent Chat ───────────────────────────────
+  chatSendMessage: (sessionId: string, content: string) =>
+    ipcRenderer.invoke(IpcChannels.CHAT_SEND_MESSAGE, sessionId, content),
+  chatGetHistory: (workspaceId: string): Promise<ChatSession | null> =>
+    ipcRenderer.invoke(IpcChannels.CHAT_GET_HISTORY, workspaceId),
+  chatSetMode: (sessionId: string, mode: ChatMode): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CHAT_SET_MODE, sessionId, mode),
+  chatSetWorkingSet: (sessionId: string, paths: string[]): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CHAT_SET_WORKING_SET, sessionId, paths),
+  chatToolApprove: (sessionId: string, toolCallId: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CHAT_TOOL_APPROVE, sessionId, toolCallId),
+  chatToolReject: (sessionId: string, toolCallId: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CHAT_TOOL_REJECT, sessionId, toolCallId),
+  chatStop: (sessionId: string) =>
+    ipcRenderer.send(IpcChannels.CHAT_STOP, sessionId),
+  onChatStreamChunk: (callback: (chunk: ChatStreamChunk) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, chunk: ChatStreamChunk) => callback(chunk)
+    ipcRenderer.on(IpcChannels.CHAT_STREAM_CHUNK, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CHAT_STREAM_CHUNK, handler)
+  },
+  onChatStreamEnd: (callback: (end: ChatStreamEnd) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, end: ChatStreamEnd) => callback(end)
+    ipcRenderer.on(IpcChannels.CHAT_STREAM_END, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CHAT_STREAM_END, handler)
+  },
+  onChatToolCall: (callback: (payload: ChatToolCallPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ChatToolCallPayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.CHAT_TOOL_CALL, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CHAT_TOOL_CALL, handler)
+  },
+
+  // ─── MCP ──────────────────────────────────────
+  mcpListServers: (): Promise<McpServerStatus[]> =>
+    ipcRenderer.invoke(IpcChannels.MCP_LIST_SERVERS),
+  mcpRestartServer: (serverName: string) =>
+    ipcRenderer.invoke(IpcChannels.MCP_RESTART_SERVER, serverName),
+  mcpListTools: (): Promise<ToolDefinition[]> =>
+    ipcRenderer.invoke(IpcChannels.MCP_LIST_TOOLS),
+  onMcpServerStatus: (callback: (status: McpServerStatus) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: McpServerStatus) => callback(status)
+    ipcRenderer.on(IpcChannels.MCP_SERVER_STATUS, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.MCP_SERVER_STATUS, handler)
   },
 
   // Platform info (for conditional UI like traffic lights)

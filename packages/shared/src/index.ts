@@ -4,6 +4,19 @@
  */
 
 export type { CommandDefinition, KeybindingRule } from './commands'
+export type {
+  ChatMode, ChatSessionStatus, ToolCallStatus,
+  ToolCall, ToolResult, ChatMessage, ChatSession,
+  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  ToolDefinition,
+  McpServerConfig, McpServerConnectionStatus, McpServerStatus,
+  PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
+  LlmProviderConfig,
+} from './agentTypes'
+import type {
+  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  McpServerStatus, ToolDefinition,
+} from './agentTypes'
 export {
   adjustZoomFactor,
   clampZoomFactor,
@@ -170,6 +183,24 @@ export const IpcChannels = {
   LIFECYCLE_REQUEST_SAVE: 'lifecycle:request-save',
   LIFECYCLE_SAVE_COMPLETE: 'lifecycle:save-complete',
   LIFECYCLE_CRASH_DETECTED: 'lifecycle:crash-detected',
+
+  // ─── Agent Chat ───────────────────────────────
+  CHAT_SEND_MESSAGE: 'chat:send-message',
+  CHAT_STREAM_CHUNK: 'chat:stream-chunk',
+  CHAT_STREAM_END: 'chat:stream-end',
+  CHAT_TOOL_CALL: 'chat:tool-call',
+  CHAT_TOOL_APPROVE: 'chat:tool-approve',
+  CHAT_TOOL_REJECT: 'chat:tool-reject',
+  CHAT_STOP: 'chat:stop',
+  CHAT_SET_MODE: 'chat:set-mode',
+  CHAT_SET_WORKING_SET: 'chat:set-working-set',
+  CHAT_GET_HISTORY: 'chat:get-history',
+
+  // ─── MCP ──────────────────────────────────────
+  MCP_LIST_SERVERS: 'mcp:list-servers',
+  MCP_SERVER_STATUS: 'mcp:server-status',
+  MCP_RESTART_SERVER: 'mcp:restart-server',
+  MCP_LIST_TOOLS: 'mcp:list-tools',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -670,6 +701,24 @@ export interface WindowApi {
   onLifecycleRequestSave: (callback: () => void) => () => void
   lifecycleSaveComplete: () => void
   onCrashDetected: (callback: () => void) => () => void
+
+  // ─── Agent Chat ───────────────────────────────
+  chatSendMessage: (sessionId: string, content: string) => Promise<{ messageId: string } | { error: string }>
+  chatGetHistory: (workspaceId: string) => Promise<ChatSession | null>
+  chatSetMode: (sessionId: string, mode: ChatMode) => Promise<void>
+  chatSetWorkingSet: (sessionId: string, paths: string[]) => Promise<void>
+  chatToolApprove: (sessionId: string, toolCallId: string) => Promise<void>
+  chatToolReject: (sessionId: string, toolCallId: string) => Promise<void>
+  chatStop: (sessionId: string) => void
+  onChatStreamChunk: (callback: (chunk: ChatStreamChunk) => void) => () => void
+  onChatStreamEnd: (callback: (end: ChatStreamEnd) => void) => () => void
+  onChatToolCall: (callback: (payload: ChatToolCallPayload) => void) => () => void
+
+  // ─── MCP ──────────────────────────────────────
+  mcpListServers: () => Promise<McpServerStatus[]>
+  mcpRestartServer: (serverName: string) => Promise<{ success: true } | { error: string }>
+  mcpListTools: () => Promise<ToolDefinition[]>
+  onMcpServerStatus: (callback: (status: McpServerStatus) => void) => () => void
 
   // Platform info
   platform: NodeJS.Platform
