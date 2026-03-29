@@ -151,8 +151,12 @@ These tools reuse the existing IPC infrastructure. The agent loop calls them via
 **Key files:**
 - `packages/main/src/agentManager.ts` — the loop, prompt assembly, tool dispatch
 - `packages/main/src/agentTools.ts` — built-in tool definitions + executors
-- `packages/main/src/llmClient.ts` — HTTP client for LLM API (Anthropic Messages API, OpenAI-compatible)
+- `packages/main/src/llmClient.ts` — provider-agnostic LLM client orchestrator
+- `packages/main/src/providers/anthropicProvider.ts` — Anthropic Messages API adapter
+- `packages/main/src/providers/openAiCompatibleProvider.ts` — OpenAI/Ollama/Together/Groq adapter
+- `packages/main/src/providers/sseParser.ts` — shared SSE stream parser
 - `packages/shared/src/agentTypes.ts` — shared types for tools, messages, sessions
+- `packages/shared/src/llmTypes.ts` — provider-agnostic LLM types + wire format types
 
 **LLM provider config** (stored in `.aide/settings.json` or user settings):
 
@@ -291,7 +295,11 @@ packages/
 ├── main/src/
 │   ├── agentManager.ts       # Agent loop: prompt → LLM → tools → loop
 │   ├── agentTools.ts         # Built-in tool definitions + executors
-│   ├── llmClient.ts          # LLM API client (Anthropic + OpenAI-compatible)
+│   ├── llmClient.ts          # Provider-agnostic LLM client orchestrator
+│   ├── providers/
+│   │   ├── sseParser.ts      # Shared SSE stream parser
+│   │   ├── anthropicProvider.ts     # Anthropic Messages API adapter
+│   │   └── openAiCompatibleProvider.ts  # OpenAI/Ollama/Together/Groq adapter
 │   ├── mcpManager.ts         # MCP server lifecycle (spawn, communicate, restart)
 │   └── toolRegistry.ts       # Unified tool registry (built-in + MCP)
 ├── renderer/src/
@@ -308,7 +316,8 @@ packages/
 │   └── hooks/
 │       └── useChat.ts        # IPC hook for chat operations
 └── shared/src/
-    └── agentTypes.ts         # Shared types: ChatMessage, ToolCall, etc.
+    ├── agentTypes.ts         # Shared types: ChatMessage, ToolCall, etc.
+    └── llmTypes.ts           # Provider-agnostic LLM types + wire formats
 ```
 
 **Files to modify:**
@@ -322,11 +331,11 @@ packages/
 
 ## Implementation Order
 
-### Step 1: Types + IPC plumbing
+### Step 1: Types + IPC plumbing ✅
 Add all shared types (`agentTypes.ts`), IPC channels, and WindowApi surface. No UI, no logic — just the contract.
 
-### Step 2: LLM client
-`llmClient.ts` — streaming HTTP client for Anthropic Messages API. Support `tool_use` content blocks in responses. This is the foundation everything else depends on.
+### Step 2: LLM client ✅
+Provider-agnostic streaming LLM client using adapter pattern. `LlmClient` orchestrator delegates to provider adapters (`AnthropicProvider`, `OpenAiCompatibleProvider`). Shared SSE parser, `${env:VAR}` API key interpolation, AbortController-based cancellation. New providers added by implementing `LlmProvider` interface. Uses Node.js v22 native `fetch()`, no external deps.
 
 ### Step 3: Built-in tools + registry
 `agentTools.ts` + `toolRegistry.ts` — define the 8 built-in tools with JSON Schema inputs. Wire executors to existing IPC handlers (readFile, writeFile, ptyCreate, searchStart, etc.).

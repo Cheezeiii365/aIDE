@@ -13,6 +13,12 @@ export type {
   PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
   LlmProviderConfig,
 } from './agentTypes'
+export type {
+  LlmMessage, LlmContentBlock, LlmToolDefinition, LlmUsage,
+  LlmStreamEvent, StreamParams, LlmProvider, SseEvent,
+  AnthropicRequest, AnthropicMessage, AnthropicContentBlock, AnthropicTool, AnthropicStreamEvent,
+  OpenAiRequest, OpenAiMessage, OpenAiToolCall, OpenAiTool, OpenAiStreamChunk, OpenAiStreamToolCall,
+} from './llmTypes'
 import type {
   ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
   McpServerStatus, ToolDefinition,

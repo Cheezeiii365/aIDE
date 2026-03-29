@@ -1264,6 +1264,8 @@ Track milestone completion here. Update as you go.
 ### Phase 5: Agent Integration (Weeks 14–17)
 | Milestone | Status | Notes |
 |---|---|---|
+| 5.0a Types + IPC plumbing | ✅ Complete | `agentTypes.ts` (16 types), 14 IPC channels (10 chat + 4 MCP), WindowApi methods, preload bridge. 17 tests. |
+| 5.0b LLM client | ✅ Complete | Provider-agnostic `LlmClient` with adapter pattern. `AnthropicProvider` + `OpenAiCompatibleProvider` (covers OpenAI/Ollama/Together/Groq). Shared SSE parser, `${env:VAR}` key interpolation, AbortController cancellation. 78 tests total. |
 | 5.1 Agent panel pane type | ⬜ Not started | |
 | 5.2 Claude Agent SDK integration | ⬜ Not started | |
 | 5.3 Diff preview before apply | ⬜ Not started | |

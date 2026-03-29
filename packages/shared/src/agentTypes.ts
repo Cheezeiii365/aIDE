@@ -108,7 +108,8 @@ export interface AgentPermissionSettings {
 // ─── LLM Provider Config ────────────────────────────────────────────
 
 export interface LlmProviderConfig {
-  provider: 'anthropic' | 'openai-compatible'
+  /** Known values: 'anthropic', 'openai-compatible'. Extensible for custom providers. */
+  provider: string
   model: string
   apiKey: string
   baseUrl?: string

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { IpcChannels } from './index'
+import { IpcChannels } from '@shared/index'
 import type {
   ChatMode, ChatSessionStatus, ToolCallStatus,
   ToolCall, ToolResult, ChatMessage, ChatSession,
@@ -8,7 +8,7 @@ import type {
   McpServerConfig, McpServerConnectionStatus, McpServerStatus,
   PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
   LlmProviderConfig,
-} from './agentTypes'
+} from '@shared/agentTypes'
 
 describe('Agent IPC channels', () => {
   it('defines all chat channels', () => {
