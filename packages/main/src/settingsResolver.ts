@@ -143,24 +143,21 @@ export async function resolveSettings(
       ...projectSettings.searchExclude,
     },
 
-    // Agent / LLM
+    // Agent / LLM (provider & model may be project-scoped; credentials are user-only)
     'agent.provider': projectSettings['agent.provider'] ?? appDefaults['agent.provider'],
     'agent.model': projectSettings['agent.model'] ?? appDefaults['agent.model'],
-    'agent.apiKey': projectSettings['agent.apiKey'] ?? appDefaults['agent.apiKey'],
-    'agent.baseUrl': projectSettings['agent.baseUrl'] ?? appDefaults['agent.baseUrl'],
+    'agent.apiKey': appDefaults['agent.apiKey'],
+    'agent.baseUrl': appDefaults['agent.baseUrl'],
     'agent.maxTurns': projectSettings['agent.maxTurns'] ?? appDefaults['agent.maxTurns'],
     'agent.maxTokens': projectSettings['agent.maxTokens'] ?? appDefaults['agent.maxTokens'],
 
-    // Agent / Permissions
-    'agent.permissionTier': projectSettings['agent.permissionTier'] ?? appDefaults['agent.permissionTier'],
-    'agent.autoApprove': {
-      ...appDefaults['agent.autoApprove'],
-      ...(projectSettings['agent.autoApprove'] ?? {}),
-    },
+    // Agent / Permissions (user-only — project settings must not weaken the trust boundary)
+    'agent.permissionTier': appDefaults['agent.permissionTier'],
+    'agent.autoApprove': appDefaults['agent.autoApprove'],
 
-    // Agent / Backend
-    'agent.backend': projectSettings['agent.backend'] ?? appDefaults['agent.backend'],
-    'agent.claudeCodePath': projectSettings['agent.claudeCodePath'] ?? appDefaults['agent.claudeCodePath'],
-    'agent.codexPath': projectSettings['agent.codexPath'] ?? appDefaults['agent.codexPath'],
+    // Agent / Backend (user-only — executable paths must not come from untrusted repos)
+    'agent.backend': appDefaults['agent.backend'],
+    'agent.claudeCodePath': appDefaults['agent.claudeCodePath'],
+    'agent.codexPath': appDefaults['agent.codexPath'],
   }
 }

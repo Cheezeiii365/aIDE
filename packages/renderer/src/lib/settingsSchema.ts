@@ -137,7 +137,7 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
       { value: 'codex', label: 'Codex' },
     ],
     category: 'agent.backend',
-    scope: 'both',
+    scope: 'user',
   },
   {
     key: 'agent.claudeCodePath',
@@ -145,7 +145,7 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     description: 'Path to the Claude Code CLI binary. Leave empty to auto-detect from node_modules or PATH.',
     type: 'string',
     category: 'agent.backend',
-    scope: 'both',
+    scope: 'user',
   },
   {
     key: 'agent.codexPath',
@@ -153,7 +153,7 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     description: 'Path to the Codex CLI binary. Leave empty to auto-detect from PATH.',
     type: 'string',
     category: 'agent.backend',
-    scope: 'both',
+    scope: 'user',
   },
 
   // Agent > LLM Configuration
@@ -191,7 +191,7 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     description: 'Custom API endpoint for OpenAI-compatible providers (e.g. http://localhost:11434/v1). Leave empty for default.',
     type: 'string',
     category: 'agent.llm',
-    scope: 'both',
+    scope: 'user',
   },
   {
     key: 'agent.maxTurns',
@@ -226,7 +226,7 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
       { value: 'autopilot', label: 'Autopilot (no prompts)' },
     ],
     category: 'agent.permissions',
-    scope: 'both',
+    scope: 'user',
   },
 ]
 

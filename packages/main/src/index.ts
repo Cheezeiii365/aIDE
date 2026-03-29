@@ -4,7 +4,7 @@ import { existsSync, readdirSync } from 'fs'
 import { execFile } from 'child_process'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
-import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
+import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
 import { registerFileWatcherHandlers, startWatchers, stopWatcher } from './fileWatcher'
@@ -801,6 +801,9 @@ ipcMain.handle(IpcChannels.SETTINGS_GET_WORKSPACE, async () => {
 })
 
 ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, value: unknown) => {
+  // Block sensitive agent keys from being written to project-level settings
+  if (SENSITIVE_AGENT_KEYS.has(key)) return
+
   const rootPath = store.get('workspaceRoot')
   if (!rootPath) return
 

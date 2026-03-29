@@ -391,6 +391,22 @@ export interface ResolvedSettings {
   'agent.codexPath': string
 }
 
+/**
+ * Agent settings that must never be overridden by project-level
+ * `.aide/settings.json`.  These control trust-boundary decisions
+ * (credentials, executable paths, permission policy) and must only
+ * come from user-scoped (app-level) settings.
+ */
+export const SENSITIVE_AGENT_KEYS: ReadonlySet<string> = new Set([
+  'agent.apiKey',
+  'agent.baseUrl',
+  'agent.backend',
+  'agent.claudeCodePath',
+  'agent.codexPath',
+  'agent.permissionTier',
+  'agent.autoApprove',
+])
+
 // .aide/local/workspace.json
 export interface AideLocalWorkspace {
   id: string
