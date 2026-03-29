@@ -101,11 +101,12 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
       ctx.dockviewApi.fromJSON(savedState.layout as Parameters<DockviewApi['fromJSON']>[0])
     } catch {
       // Layout restore failed — use default
-      await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
+      await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals, () => gen === switchGeneration)
     }
   } else {
-    await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
+    await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals, () => gen === switchGeneration)
   }
+  if (gen !== switchGeneration) return false
   ctx.onAfterRestorePanels?.()
 
   // 5. RESTORE sidebar
@@ -156,6 +157,7 @@ async function createDefaultLayout(
   workspaceId: string,
   workspaceRoot: string | null,
   savedTerminals: AideLocalTerminals | null,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   const editorPanel = api.addPanel({
     id: 'editor',
@@ -195,6 +197,8 @@ async function createDefaultLayout(
 
   // Choose agent pane based on backend setting
   const resolvedSettings = await window.api.getResolvedSettings().catch(() => null)
+  if (!isCurrent()) return
+
   const backend: AgentBackend = resolvedSettings?.['agent.backend'] ?? 'built-in'
 
   if (backend === 'claude-code' || backend === 'codex') {
@@ -217,6 +221,7 @@ async function createDefaultLayout(
       workspaceId,
       backend: 'built-in',
     }).then((meta) => meta.id).catch(() => undefined)
+    if (!isCurrent()) return
 
     api.addPanel({
       id: 'agent',
