@@ -343,8 +343,8 @@ Provider-agnostic streaming LLM client using adapter pattern. `LlmClient` orches
 ### Step 4: Agent loop ✅
 `agentManager.ts` — `AgentManager` class orchestrates the full agent loop: session management, prompt building, LLM streaming via `LlmClient`, tool execution with Promise-based approval gates, retry tracking (5 per tool), turn limits, and chat persistence to `.aide/local/chat.json`. IPC handlers registered in `index.ts` for all `CHAT_*` channels. "Confirm everything" permission tier (Step 6 adds tiers). Fire-and-forget loop design — `sendMessage` returns immediately, streams events to renderer asynchronously.
 
-### Step 5: Chat UI
-`ChatPane.tsx` + child components. Render messages, stream chunks, show tool call cards with approve/reject. Wire to IPC. Register as Dockview pane.
+### Step 5: Chat UI ✅
+`ChatPane.tsx` Dockview pane with 6 child components: `ModeSelector` (Ask/Edit/Agent segmented control), `MessageList` (sticky auto-scroll, status line), `MessageBubble` (markdown rendering via shared `markdownRenderer.ts`, streaming cursor), `ToolCallCard` (inline approval with Allow/Deny), `ChatInput` (auto-resize textarea, Enter to send, stop button), `WorkingSetPicker` (file chips with type-to-filter dropdown). `useChat` hook manages all IPC subscriptions with rAF-throttled streaming. Refactored `MarkdownPreviewPane` to share renderer. Default layout updated from placeholder to `chatPane`.
 
 ### Step 6: Permission system
 Add tier logic to agentManager. Add per-tool auto-approve config. Add the settings UI entries.

@@ -9,6 +9,7 @@ import { MarkdownPreviewPane } from './panes/MarkdownPreviewPane'
 import { FindInFilesPane } from './panes/FindInFilesPane'
 import { BrowserPane } from './panes/BrowserPane'
 import { SettingsPane } from './panes/SettingsPane'
+import { ChatPane } from './panes/ChatPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
@@ -21,6 +22,7 @@ const components = {
   findInFiles: FindInFilesPane,
   browserPane: BrowserPane,
   settingsPane: SettingsPane,
+  chatPane: ChatPane,
 }
 
 const tabComponents = {

@@ -90,6 +90,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Global command palette (`Cmd+Shift+P`) — cross-workspace search and global commands
 
 ### Nice-to-have (v2+)
+- [x] Agent chat panel UI — Dockview `chatPane` with Ask/Edit/Agent modes, streaming message display, tool call approval cards, working set picker, markdown rendering with syntax highlighting
 - [ ] Cursor-style agent panel UI (structured diffs, progress, pause/resume)
 - [ ] Claude Agent SDK integration (replacing raw Claude Code CLI)
 - [ ] Tailwind CSS IntelliSense (via tailwindcss-language-server)

@@ -195,8 +195,9 @@ function createDefaultLayout(
 
   api.addPanel({
     id: 'agent',
-    component: 'placeholder',
-    params: { title: 'Agent' },
+    component: 'chatPane',
+    title: 'Agent',
+    params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined },
     position: { referencePanel: editorPanel, direction: 'right' },
     initialWidth: 350,
   })

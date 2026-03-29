@@ -719,6 +719,38 @@ export function AppShell() {
     setNewBrowserPaneOpen(true)
   })
 
+  useCommand('agent.open', {
+    label: 'Open Agent Panel',
+    category: 'Agent',
+  }, () => {
+    const api = dockviewApiRef.current
+    if (!api || !activeWorkspaceId) return
+
+    // Focus existing agent panel if present
+    const existing = api.panels.find((p) => p.id === 'agent' || p.id.startsWith('agent-'))
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+
+    // Place next to editor or at the right
+    const editorPanel = api.panels.find(
+      (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
+    )
+
+    api.addPanel({
+      id: `agent-${Date.now()}`,
+      component: 'chatPane',
+      title: 'Agent',
+      params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
+      position: editorPanel
+        ? { referencePanel: editorPanel, direction: 'right' }
+        : undefined,
+      initialWidth: 350,
+    })
+    persistWorkspaceRuntime()
+  })
+
   useCommand('browser.back', {
     label: 'Browser Back',
     category: 'Browser',

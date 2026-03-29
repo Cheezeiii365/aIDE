@@ -43,6 +43,9 @@ export const defaultKeybindings: KeybindingRule[] = [
   // ── Browser ─────────────────────────────────────
   { key: 'Cmd+K Cmd+B', command: 'browser.new' },
 
+  // ── Agent ──────────────────────────────────────
+  { key: 'Cmd+K Cmd+A', command: 'agent.open' },
+
   // ── View ────────────────────────────────────────
   { key: 'Cmd+B', command: 'view.toggleSidebar' },
   { key: 'Cmd+W', command: 'panel.close' },
