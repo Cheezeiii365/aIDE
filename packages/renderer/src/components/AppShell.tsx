@@ -720,18 +720,11 @@ export function AppShell() {
   })
 // Agents Commands
   useCommand('agent.open', {
-    label: 'Open Agent Panel',
+    label: 'New Agent Tab',
     category: 'Agent',
   }, () => {
     const api = dockviewApiRef.current
     if (!api || !activeWorkspaceId) return
-
-    // Focus existing agent panel if present
-    const existing = api.panels.find((p) => p.id === 'agent' || p.id.startsWith('agent-'))
-    if (existing) {
-      existing.api.setActive()
-      return
-    }
 
     // Place next to editor or at the right
     const editorPanel = api.panels.find(
