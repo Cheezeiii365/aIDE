@@ -337,8 +337,8 @@ Add all shared types (`agentTypes.ts`), IPC channels, and WindowApi surface. No 
 ### Step 2: LLM client ✅
 Provider-agnostic streaming LLM client using adapter pattern. `LlmClient` orchestrator delegates to provider adapters (`AnthropicProvider`, `OpenAiCompatibleProvider`). Shared SSE parser, `${env:VAR}` API key interpolation, AbortController-based cancellation. New providers added by implementing `LlmProvider` interface. Uses Node.js v22 native `fetch()`, no external deps.
 
-### Step 3: Built-in tools + registry
-`agentTools.ts` + `toolRegistry.ts` — define the 8 built-in tools with JSON Schema inputs. Wire executors to existing IPC handlers (readFile, writeFile, ptyCreate, searchStart, etc.).
+### Step 3: Built-in tools + registry ✅
+`agentTools.ts` — 8 built-in tools (`file_read`, `file_write`, `file_list`, `terminal_exec`, `search_files`, `git_status`, `git_diff`, `browser_read`) with JSON Schema input definitions and direct main-process executors (no IPC round-trips). `terminal_exec` uses `child_process.execFile` with timeout/ANSI stripping. `search_files` spawns ripgrep independently to avoid singleton conflicts. `toolRegistry.ts` — `ToolRegistry` class provides mode-filtered tool listing (`getTools(mode)`), LLM-ready conversion (`toLlmTools()`), unified `execute()` dispatch with error wrapping, and dynamic `registerTool()`/`unregisterSource()` for MCP tools (Step 7). Exported `fetchGitStatus` from `gitStatus.ts`, added `getPageContent()` to `BrowserPaneManager`.
 
 ### Step 4: Agent loop
 `agentManager.ts` — the core loop. Takes a message, builds prompt, calls LLM, dispatches tools, feeds results back, loops. Start with "confirm everything" permission tier.

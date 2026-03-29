@@ -1266,6 +1266,7 @@ Track milestone completion here. Update as you go.
 |---|---|---|
 | 5.0a Types + IPC plumbing | ✅ Complete | `agentTypes.ts` (16 types), 14 IPC channels (10 chat + 4 MCP), WindowApi methods, preload bridge. 17 tests. |
 | 5.0b LLM client | ✅ Complete | Provider-agnostic `LlmClient` with adapter pattern. `AnthropicProvider` + `OpenAiCompatibleProvider` (covers OpenAI/Ollama/Together/Groq). Shared SSE parser, `${env:VAR}` key interpolation, AbortController cancellation. 78 tests total. |
+| 5.0c Built-in tools + registry | ✅ Complete | 8 built-in tools (`file_read`, `file_write`, `file_list`, `terminal_exec`, `search_files`, `git_status`, `git_diff`, `browser_read`) with JSON Schema inputs and direct main-process executors. `ToolRegistry` class with mode filtering, LLM-ready conversion, dynamic MCP tool registration/unregistration. `BrowserPaneManager.getPageContent()` added. 53 new tests (agentTools + toolRegistry). |
 | 5.1 Agent panel pane type | ⬜ Not started | |
 | 5.2 Claude Agent SDK integration | ⬜ Not started | |
 | 5.3 Diff preview before apply | ⬜ Not started | |

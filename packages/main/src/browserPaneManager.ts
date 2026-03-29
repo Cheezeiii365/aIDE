@@ -342,6 +342,17 @@ export class BrowserPaneManager {
     }
   }
 
+  async getPageContent(paneId?: string, selector?: string): Promise<string | null> {
+    const managed = paneId
+      ? this.panes.get(paneId)
+      : this.panes.values().next().value
+    if (!managed) return null
+    const js = selector
+      ? `document.querySelector(${JSON.stringify(selector)})?.innerText ?? ''`
+      : `document.body.innerText`
+    return managed.view.webContents.executeJavaScript(js)
+  }
+
   private getSession(workspaceId: string, sessionMode: BrowserSessionMode): Electron.Session {
     switch (sessionMode) {
       case 'shared-auth':
