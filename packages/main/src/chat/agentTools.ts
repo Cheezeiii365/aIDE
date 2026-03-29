@@ -3,8 +3,8 @@ import { dirname, join, relative } from 'path'
 import { execFile, spawn } from 'child_process'
 import { rgPath } from '@vscode/ripgrep'
 import type { ToolDefinition, ChatMode } from '@aide/shared'
-import { fetchGitStatus } from './gitStatus'
-import type { BrowserPaneManager } from './browserPaneManager'
+import { fetchGitStatus } from '../git/gitStatus'
+import type { BrowserPaneManager } from '../browserPaneManager'
 
 // ─── Context & Types ────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
-import { FileTree } from './FileTree/FileTree'
+import { FileTree } from '../FileTree/FileTree'
 import { SidebarSection } from './SidebarSection'
 
 const MIN_WIDTH = 180

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
 import { renderMarkdown } from '../../lib/markdownRenderer'
-import { getContent, subscribeContent } from '../../lib/editorContentBus'
+import { getContent, subscribeContent } from '../../lib/editor/editorContentBus'
 import { getAppActions } from '../../lib/appActions'
 import '../../styles/markdown-preview.css'
 

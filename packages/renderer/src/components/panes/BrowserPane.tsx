@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
-import { showToast } from '../Toast'
+import { showToast } from '../shared/Toast'
 import type { BrowserCanNavigatePayload, BrowserDidNavigatePayload, BrowserLoadingPayload, BrowserPageTitlePayload } from '@aide/shared'
 import type { BrowserPanelParams } from '../../lib/browserState'
 import { adjustZoomFactor, resetZoomFactor, zoomFactorToPercent } from '@aide/shared'

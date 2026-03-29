@@ -8,8 +8,8 @@
 
 import type { LlmProviderConfig } from '@aide/shared'
 import type { LlmProvider, LlmStreamEvent, StreamParams } from '@aide/shared'
-import { AnthropicProvider } from './providers/anthropicProvider'
-import { OpenAiCompatibleProvider } from './providers/openAiCompatibleProvider'
+import { AnthropicProvider } from '../providers/anthropicProvider'
+import { OpenAiCompatibleProvider } from '../providers/openAiCompatibleProvider'
 
 const ENV_VAR_RE = /\$\{([^}]+)\}/g
 

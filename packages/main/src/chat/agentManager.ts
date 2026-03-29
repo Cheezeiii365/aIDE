@@ -31,7 +31,7 @@ import {
 import type { LlmMessage, LlmContentBlock, LlmStreamEvent } from '@aide/shared'
 import { LlmClient } from './llmClient'
 import { ToolRegistry } from './toolRegistry'
-import type { BrowserPaneManager } from './browserPaneManager'
+import type { BrowserPaneManager } from '../browserPaneManager'
 import type { ConversationStore } from './conversationStore'
 
 // ─── Constants ─────────────────────────────────────────────────────

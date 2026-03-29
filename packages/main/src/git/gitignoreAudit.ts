@@ -9,7 +9,7 @@
 import { existsSync } from 'fs'
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { readLocalWorkspace, updateLocalWorkspace } from './aideInit'
+import { readLocalWorkspace, updateLocalWorkspace } from '../workspace/aideInit'
 
 /**
  * Security-critical patterns that every project's .gitignore should include.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BrowserSessionMode } from '@aide/shared'
-import '../styles/modal.css'
+import '../../styles/modal.css'
 
 interface NewBrowserPaneModalProps {
   onClose: () => void

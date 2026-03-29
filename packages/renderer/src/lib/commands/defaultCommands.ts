@@ -1,6 +1,6 @@
 import type { DockviewApi } from 'dockview-react'
 import { registerCommand } from './CommandRegistry'
-import { showToast } from '../components/Toast'
+import { showToast } from '../../components/shared/Toast'
 
 /**
  * Register all remaining built-in commands that aren't component-scoped.

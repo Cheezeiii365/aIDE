@@ -5,7 +5,7 @@ import { mkdir } from 'fs/promises'
 import { IpcChannels } from '@aide/shared'
 import type { WorktreeInfo, WorktreeCreateOpts, AppSettings } from '@aide/shared'
 import type Store from 'electron-store'
-import { startGitPolling } from './gitStatus'
+import { startGitPolling } from '../git/gitStatus'
 import { startWatchers } from './fileWatcher'
 
 let pollTimer: ReturnType<typeof setInterval> | null = null

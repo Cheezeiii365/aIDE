@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
-import { SearchPanel, type SearchPanelItem } from './SearchPanel'
-import { getAppActions } from '../lib/appActions'
-import { FileTypeIcon } from './FileTree/FileTypeIcon'
+import { SearchPanel, type SearchPanelItem } from '../layout/SearchPanel'
+import { getAppActions } from '../../lib/appActions'
+import { FileTypeIcon } from '../FileTree/FileTypeIcon'
 
 interface QuickOpenProps {
   onClose: () => void

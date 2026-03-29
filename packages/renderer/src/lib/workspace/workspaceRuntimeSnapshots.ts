@@ -1,6 +1,6 @@
 import type { DockviewApi } from 'dockview-react'
 import type { AideLocalState, AideLocalTerminals } from '@aide/shared'
-import { serializeTerminalState } from './terminalState'
+import { serializeTerminalState } from '../terminal/terminalState'
 import { serializeWorkspaceState } from './workspaceStateSerializer'
 
 export interface WorkspaceRuntimeSnapshot {

@@ -8,9 +8,9 @@
 
 import type { DockviewApi } from 'dockview-react'
 import type { AideLocalState, TabState } from '@aide/shared'
-import { peekCachedState, getAllCachedPaths } from './editorStateCache'
-import { isDirty } from './editorDirtyState'
-import { serializeBrowserPaneState } from './browserState'
+import { peekCachedState, getAllCachedPaths } from '../editor/editorStateCache'
+import { isDirty } from '../editor/editorDirtyState'
+import { serializeBrowserPaneState } from '../browserState'
 
 /**
  * Create an AideLocalState snapshot of the current workspace, including Dockview layout, open editor tabs, active tab, sidebar settings, and serialized browser pane state.

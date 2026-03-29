@@ -7,9 +7,9 @@
 
 import type { DockviewApi } from 'dockview-react'
 import type { AgentBackend, AideLocalState, AideLocalTerminals } from '@aide/shared'
-import { clearCache } from './editorStateCache'
-import { clearAllDirty } from './editorDirtyState'
-import { createRestoredTerminalPanelParams, createTerminalPanelParams } from './terminalState'
+import { clearCache } from '../editor/editorStateCache'
+import { clearAllDirty } from '../editor/editorDirtyState'
+import { createRestoredTerminalPanelParams, createTerminalPanelParams } from '../terminal/terminalState'
 import {
   captureWorkspaceRuntimeSnapshot,
   getWorkspaceRuntimeSnapshot,

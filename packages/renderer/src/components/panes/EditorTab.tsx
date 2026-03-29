@@ -1,5 +1,5 @@
 import { DockviewDefaultTab, type IDockviewPanelHeaderProps } from 'dockview-react'
-import { isDirty } from '../../lib/editorDirtyState'
+import { isDirty } from '../../lib/editor/editorDirtyState'
 
 interface EditorTabParams {
   filePath: string

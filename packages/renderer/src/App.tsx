@@ -1,4 +1,4 @@
-import { AppShell } from './components/AppShell'
+import { AppShell } from './components/layout/AppShell'
 
 export function App() {
   return <AppShell />

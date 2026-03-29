@@ -25,7 +25,7 @@ import type {
   CliAgentStatusPayload, CliAgentResultPayload,
   ConversationListChangedPayload,
 } from '@aide/shared'
-import { StructuredOutputParser, type ParsedEvent } from './structuredOutputParser'
+import { StructuredOutputParser, type ParsedEvent } from '../terminal/structuredOutputParser'
 import type { ConversationStore } from './conversationStore'
 
 // ---------------------------------------------------------------------------

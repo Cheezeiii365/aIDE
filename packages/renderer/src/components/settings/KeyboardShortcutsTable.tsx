@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
-import { getAllCommands } from '../../lib/CommandRegistry'
-import { getAllKeybindingRules } from '../../lib/KeybindingService'
-import { formatKeybinding } from '../../lib/formatKeybinding'
+import { getAllCommands } from '../../lib/commands/CommandRegistry'
+import { getAllKeybindingRules } from '../../lib/commands/KeybindingService'
+import { formatKeybinding } from '../../lib/commands/formatKeybinding'
 import { useKeybindingOverrides } from '../../hooks/useKeybindingOverrides'
 import { KeybindingRecorder } from './KeybindingRecorder'
 

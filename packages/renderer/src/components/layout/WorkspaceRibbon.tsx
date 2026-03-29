@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ThemeToggle } from './ThemeToggle'
-import { AgentStatusDot } from './AgentStatusDot'
+import { AgentStatusDot } from '../shared/AgentStatusDot'
 import type { WorkspaceEntry } from '@aide/shared'
 
 interface Props {

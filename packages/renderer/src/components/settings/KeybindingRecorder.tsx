@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { formatKeybinding } from '../../lib/formatKeybinding'
-import { getAllKeybindingRules, setRecordingMode } from '../../lib/KeybindingService'
-import { getCommand } from '../../lib/CommandRegistry'
+import { formatKeybinding } from '../../lib/commands/formatKeybinding'
+import { getAllKeybindingRules, setRecordingMode } from '../../lib/commands/KeybindingService'
+import { getCommand } from '../../lib/commands/CommandRegistry'
 
 interface KeybindingRecorderProps {
   commandId: string

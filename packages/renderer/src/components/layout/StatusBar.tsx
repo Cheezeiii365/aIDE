@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useEditorStatus } from '../hooks/useEditorStatus'
+import { useEditorStatus } from '../../hooks/useEditorStatus'
 import type { TaskExecution } from '@aide/shared'
 
 /**
