@@ -15,9 +15,9 @@ import { spawn } from 'child_process'
 import { execFileSync } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { randomUUID } from 'crypto'
-import type { WebContents } from 'electron'
+import { app, type WebContents } from 'electron'
 import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
   AgentBackend, CliAgentProcessStatus, CliAgentMessage,
@@ -61,6 +61,12 @@ export interface CliAgentManagerOpts {
   claudeCodePath?: string
   codexPath?: string
   conversationStore?: ConversationStore
+}
+
+interface ResolvedCliLaunch {
+  command: string
+  args: string[]
+  env: NodeJS.ProcessEnv
 }
 
 // ---------------------------------------------------------------------------
@@ -111,8 +117,8 @@ export class CliAgentManager {
     }
 
     // Resolve binary path eagerly so we can report errors before first send
-    const binaryPath = this.resolveBinaryPath(backend)
-    if (!binaryPath) {
+    const launch = this.resolveLaunch(backend)
+    if (!launch) {
       return {
         error: 'Claude Code CLI not found. Install @anthropic-ai/claude-code globally or set agent.claudeCodePath in settings.',
       }
@@ -185,8 +191,8 @@ export class CliAgentManager {
       return { error: 'Agent is already processing a request. Stop it first or wait.' }
     }
 
-    const binaryPath = this.resolveBinaryPath(session.backend)
-    if (!binaryPath) {
+    const launch = this.resolveLaunch(session.backend)
+    if (!launch) {
       return { error: 'Claude Code CLI not found.' }
     }
 
@@ -229,10 +235,10 @@ export class CliAgentManager {
       console.warn('[CliAgentManager] parse error:', err.message)
     })
 
-    const proc = spawn(binaryPath, args, {
+    const proc = spawn(launch.command, [...launch.args, ...args], {
       cwd: session.worktreePath ?? this.workspaceRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: launch.env,
     })
     session.process = proc
 
@@ -356,19 +362,54 @@ export class CliAgentManager {
 
   // ─── Binary Resolution ───────────────────────
 
-  private resolveBinaryPath(backend: AgentBackend): string | null {
+  private resolveLaunch(backend: AgentBackend): ResolvedCliLaunch | null {
     if (backend === 'claude-code') {
-      // 1. Explicit setting
-      if (this.claudeCodePath && existsSync(this.claudeCodePath)) {
-        return this.claudeCodePath
+      const explicit = this.resolveExplicitClaudeLaunch()
+      if (explicit) return explicit
+
+      const bundledCli = this.resolveBundledClaudeCliPath()
+      if (bundledCli) {
+        const runtime = this.resolveNodeRuntime()
+        if (runtime) {
+          return {
+            command: runtime.command,
+            args: [bundledCli],
+            env: runtime.env,
+          }
+        }
       }
-      // 2. node_modules/.bin in workspace
+
+      const workspaceCli = join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      if (existsSync(workspaceCli)) {
+        const runtime = this.resolveNodeRuntime()
+        if (runtime) {
+          return {
+            command: runtime.command,
+            args: [workspaceCli],
+            env: runtime.env,
+          }
+        }
+      }
+
+      // Fallback for projects that have Claude installed locally in the workspace.
       const localBin = join(this.workspaceRoot, 'node_modules', '.bin', 'claude')
-      if (existsSync(localBin)) return localBin
-      // 3. Try to find in PATH
+      if (existsSync(localBin)) {
+        return {
+          command: localBin,
+          args: [],
+          env: { ...process.env },
+        }
+      }
+
       try {
         const result = execFileSync('which', ['claude'], { encoding: 'utf-8' }).trim()
-        if (result) return result
+        if (result) {
+          return {
+            command: result,
+            args: [],
+            env: { ...process.env },
+          }
+        }
       } catch {
         // Not found in PATH
       }
@@ -376,14 +417,111 @@ export class CliAgentManager {
     }
 
     if (backend === 'codex') {
-      if (this.codexPath && existsSync(this.codexPath)) return this.codexPath
+      if (this.codexPath && existsSync(this.codexPath)) {
+        return {
+          command: this.codexPath,
+          args: [],
+          env: { ...process.env },
+        }
+      }
       try {
         const result = execFileSync('which', ['codex'], { encoding: 'utf-8' }).trim()
-        if (result) return result
+        if (result) {
+          return {
+            command: result,
+            args: [],
+            env: { ...process.env },
+          }
+        }
       } catch {
         // Not found
       }
       return null
+    }
+
+    return null
+  }
+
+  private resolveExplicitClaudeLaunch(): ResolvedCliLaunch | null {
+    if (!this.claudeCodePath || !existsSync(this.claudeCodePath)) {
+      return null
+    }
+
+    const directCli = this.resolveClaudeCliPathFromBin(this.claudeCodePath)
+    if (directCli) {
+      const runtime = this.resolveNodeRuntime()
+      if (runtime) {
+        return {
+          command: runtime.command,
+          args: [directCli],
+          env: runtime.env,
+        }
+      }
+    }
+
+    return {
+      command: this.claudeCodePath,
+      args: [],
+      env: { ...process.env },
+    }
+  }
+
+  private resolveClaudeCliPathFromBin(candidatePath: string): string | null {
+    if (candidatePath.endsWith('/cli.js') && existsSync(candidatePath)) {
+      return candidatePath
+    }
+
+    const siblingCli = join(dirname(candidatePath), '..', '@anthropic-ai', 'claude-code', 'cli.js')
+    if (existsSync(siblingCli)) {
+      return siblingCli
+    }
+
+    return null
+  }
+
+  private resolveBundledClaudeCliPath(): string | null {
+    const candidates: string[] = []
+
+    if (app.isPackaged) {
+      candidates.push(
+        join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      )
+    }
+
+    candidates.push(
+      join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+    )
+
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate
+      }
+    }
+
+    return null
+  }
+
+  private resolveNodeRuntime(): { command: string, env: NodeJS.ProcessEnv } | null {
+    if (process.versions.electron && process.execPath) {
+      return {
+        command: process.execPath,
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: '1',
+        },
+      }
+    }
+
+    try {
+      const result = execFileSync('which', ['node'], { encoding: 'utf-8' }).trim()
+      if (result) {
+        return {
+          command: result,
+          env: { ...process.env },
+        }
+      }
+    } catch {
+      // Not found in PATH
     }
 
     return null

@@ -14,6 +14,8 @@ files:
 asarUnpack:
   - "**/node-pty/**"
   - "**/@vscode/ripgrep/**"
+  - "**/@anthropic-ai/claude-code/**"
+  - "**/.pnpm/@anthropic-ai+claude-code@*/node_modules/@anthropic-ai/claude-code/**"
 
 extraMetadata:
   main: packages/main/dist/index.js

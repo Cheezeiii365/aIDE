@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@anthropic-ai/claude-code':
+        specifier: '*'
+        version: 2.1.81
       '@vscode/ripgrep':
         specifier: ^1.17.1
         version: 1.17.1
@@ -15,9 +18,6 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
     devDependencies:
-      '@anthropic-ai/claude-code':
-        specifier: '*'
-        version: 2.1.81
       '@electron/rebuild':
         specifier: ^4.0.3
         version: 4.0.3
