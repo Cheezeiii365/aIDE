@@ -13,9 +13,11 @@ export function MessageBubble({ message, isStreaming, streamingContent }: Messag
 
   if (message.role === 'tool_result') {
     const isError = message.toolResults?.some((r) => r.isError)
+    const output =
+      message.toolResults?.map((r) => r.output).filter(Boolean).join('\n\n') || message.content
     return (
       <div className={`chat-msg chat-msg--tool-result${isError ? ' chat-msg--tool-result-error' : ''}`}>
-        {message.content}
+        {output}
       </div>
     )
   }
