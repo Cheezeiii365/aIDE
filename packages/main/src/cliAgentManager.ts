@@ -133,6 +133,13 @@ export class CliAgentManager {
       }
     }
 
+    if (!existingClaudeSessionId && conversationId?.startsWith('claude-native:')) {
+      const raw = conversationId.slice('claude-native:'.length)
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
+        existingClaudeSessionId = raw
+      }
+    }
+
     const sessionId = conversationId ?? randomUUID()
 
     // If session already in memory, return it

@@ -230,6 +230,7 @@ export const IpcChannels = {
   CLI_AGENT_STOP: 'cli-agent:stop',
   CLI_AGENT_SEND: 'cli-agent:send',
   CLI_AGENT_GET_SESSION: 'cli-agent:get-session',
+  CLI_AGENT_LOAD_MESSAGES: 'cli-agent:load-messages',
   CLI_AGENT_STREAM_DELTA: 'cli-agent:stream-delta',
   CLI_AGENT_MESSAGE: 'cli-agent:message',
   CLI_AGENT_STATUS: 'cli-agent:status',
@@ -800,6 +801,7 @@ export interface WindowApi {
   cliAgentStop: (sessionId: string) => void
   cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
   cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
+  cliAgentLoadMessages: (conversationId: string) => Promise<CliAgentMessage[]>
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
   onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void

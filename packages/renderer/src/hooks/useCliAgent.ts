@@ -10,6 +10,8 @@ import type {
 } from '@aide/shared'
 
 export interface UseCliAgentReturn {
+  /** False while loading persisted/native history for an existing conversation. */
+  historyHydrated: boolean
   messages: CliAgentMessage[]
   processStatus: CliAgentProcessStatus
   streamingContent: string
@@ -37,6 +39,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
   const [model, setModel] = useState<string | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
   const [conversationTitle, setConversationTitle] = useState('New Chat')
+  const [historyHydrated, setHistoryHydrated] = useState(() => !options.conversationId)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const streamingContentRef = useRef('')
   const [streamingContent, setStreamingContent] = useState('')
@@ -44,28 +47,53 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
 
   const tick = useCallback(() => setRenderTick((n) => n + 1), [])
 
-  // Load existing session on mount / workspace change / conversationId change
+  // Load in-memory session, else hydrate from disk / native JSONL (before start()).
   useEffect(() => {
     if (!workspaceId) return
     let cancelled = false
 
-    window.api.cliAgentGetSession(workspaceId, conversationId).then((session: CliAgentSession | null) => {
-      if (cancelled || !session) return
-      if (conversationId && session.id !== conversationId) return
-      sessionIdRef.current = session.id
-      messagesRef.current = session.messages
-      setProcessStatus(session.processStatus)
-      setModel(session.model ?? null)
-      setLastError(session.lastError ?? null)
-      tick()
-    })
-
-    // Load conversation title
-    if (conversationId) {
-      window.api.conversationGet(conversationId).then(meta => {
-        if (!cancelled && meta) setConversationTitle(meta.title)
-      }).catch(() => {})
+    if (!conversationId) {
+      setHistoryHydrated(true)
+      window.api.cliAgentGetSession(workspaceId, undefined).then((session: CliAgentSession | null) => {
+        if (cancelled || !session) return
+        sessionIdRef.current = session.id
+        messagesRef.current = session.messages
+        setProcessStatus(session.processStatus)
+        setModel(session.model ?? null)
+        setLastError(session.lastError ?? null)
+        tick()
+      })
+      return () => { cancelled = true }
     }
+
+    setHistoryHydrated(false)
+    ;(async () => {
+      const session = await window.api.cliAgentGetSession(workspaceId, conversationId)
+      if (cancelled) return
+      if (session && session.id === conversationId) {
+        sessionIdRef.current = session.id
+        messagesRef.current = session.messages
+        setProcessStatus(session.processStatus)
+        setModel(session.model ?? null)
+        setLastError(session.lastError ?? null)
+        setHistoryHydrated(true)
+        tick()
+        return
+      }
+      sessionIdRef.current = conversationId
+      try {
+        const prior = await window.api.cliAgentLoadMessages(conversationId)
+        if (cancelled) return
+        messagesRef.current = prior
+      } finally {
+        if (!cancelled) setHistoryHydrated(true)
+        tick()
+      }
+    })()
+
+    window.api.conversationGet(conversationId).then(meta => {
+      if (!cancelled && meta) setConversationTitle(meta.title)
+    }).catch(() => {})
 
     return () => { cancelled = true }
   }, [workspaceId, conversationId, tick])
@@ -159,7 +187,10 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
       sessionIdRef.current = result.sessionId
       const session = await window.api.cliAgentGetSession(workspaceId, result.sessionId)
       if (session) {
-        messagesRef.current = session.messages
+        // Main starts native / external sessions with [] until first send; keep hydrated history.
+        if (session.messages.length > 0) {
+          messagesRef.current = session.messages
+        }
         setProcessStatus(session.processStatus)
         setModel(session.model ?? null)
         setLastError(session.lastError ?? null)
@@ -194,6 +225,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
   void renderTick
 
   return {
+    historyHydrated,
     messages: messagesRef.current,
     processStatus,
     streamingContent,

@@ -24,7 +24,7 @@ import { AgentManager } from './agentManager'
 import { CliAgentManager } from './cliAgentManager'
 import { ConversationStore } from './conversationStore'
 import { ClaudeNativeSessionWatcher } from './agents/claudeNativeSessionWatcher'
-import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend, ConversationCreateOpts, ConversationMeta } from '@aide/shared'
+import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend, ConversationCreateOpts, ConversationMeta, CliAgentMessage } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -567,6 +567,31 @@ ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: st
   }
   return cliAgentManager.getSession(workspaceId) ?? null
 })
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_LOAD_MESSAGES,
+  async (_event, conversationId: string): Promise<CliAgentMessage[]> => {
+    const nativeMeta =
+      nativeSessionCache.find((c) => c.id === conversationId) ??
+      nativeSessionCache.find((c) => c.claudeSessionId === conversationId)
+    if (nativeMeta?.source === 'claude-native' && nativeMeta.claudeSessionId && nativeSessionWatcher) {
+      return nativeSessionWatcher.loadMessages(nativeMeta.claudeSessionId)
+    }
+    const nativePrefix = 'claude-native:'
+    if (conversationId.startsWith(nativePrefix) && nativeSessionWatcher) {
+      const rawId = conversationId.slice(nativePrefix.length)
+      if (
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId)
+      ) {
+        return nativeSessionWatcher.loadMessages(rawId)
+      }
+    }
+    const stored = await conversationStore?.loadMessages(conversationId)
+    if (!stored || typeof stored !== 'object') return []
+    const msgs = (stored as { messages?: unknown }).messages
+    return Array.isArray(msgs) ? (msgs as CliAgentMessage[]) : []
+  },
+)
 
 ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
   cliAgentManager?.stop(sessionId)

@@ -38,15 +38,25 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
   useEffect(() => {
     if (
       workspaceId &&
+      agent.historyHydrated &&
       agent.processStatus === 'stopped' &&
       !hasAutoStartedRef.current &&
       !agent.lastError &&
-      agent.messages.length === 0
+      (conversationId || agent.messages.length === 0)
     ) {
       hasAutoStartedRef.current = true
       void agent.start(backend)
     }
-  }, [workspaceId, conversationId, agent.processStatus, agent.lastError, agent.messages.length, agent.start, backend])
+  }, [
+    workspaceId,
+    conversationId,
+    agent.historyHydrated,
+    agent.processStatus,
+    agent.lastError,
+    agent.messages.length,
+    agent.start,
+    backend,
+  ])
 
   // Auto-scroll
   useEffect(() => {

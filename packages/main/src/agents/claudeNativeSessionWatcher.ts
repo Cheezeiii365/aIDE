@@ -10,7 +10,8 @@ import { open, stat, readdir, realpath } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
 import { createInterface } from 'readline'
-import type { ConversationMeta } from '@aide/shared'
+import { randomUUID } from 'crypto'
+import type { CliAgentMessage, ConversationMeta } from '@aide/shared'
 import { deriveTitle } from '@aide/shared'
 
 const UUID_JSONL =
@@ -59,6 +60,110 @@ function parseJsonlTimestamp(raw: unknown): number | null {
 function isConversationLine(obj: Record<string, unknown>): boolean {
   const t = obj.type
   return t === 'user' || t === 'assistant'
+}
+
+function shouldSkipJsonlContentBlock(b: Record<string, unknown>): boolean {
+  const t = b.type
+  if (t === 'thinking' || t === 'redacted_thinking') return true
+  if (t === 'file_history_snapshot' || t === 'file-history-snapshot') return true
+  if (typeof t === 'string' && t.toLowerCase().includes('file_history')) return true
+  return false
+}
+
+function mapJsonlUserLine(obj: Record<string, unknown>, lineUuid: string, ts: number): CliAgentMessage[] {
+  const msg = obj.message
+  if (!msg || typeof msg !== 'object') return []
+  const m = msg as Record<string, unknown>
+  const content = m.content
+  const out: CliAgentMessage[] = []
+
+  if (typeof content === 'string') {
+    if (content) out.push({ id: lineUuid, type: 'user', content, timestamp: ts })
+    return out
+  }
+
+  if (!Array.isArray(content)) return out
+
+  let textBuf = ''
+  const flushText = () => {
+    if (!textBuf) return
+    out.push({ id: lineUuid, type: 'user', content: textBuf, timestamp: ts })
+    textBuf = ''
+  }
+
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue
+    const b = block as Record<string, unknown>
+    if (shouldSkipJsonlContentBlock(b)) continue
+    if (b.type === 'text') {
+      textBuf += String(b.text ?? '')
+    } else if (b.type === 'tool_result') {
+      flushText()
+      const toolUseId = typeof b.tool_use_id === 'string' ? b.tool_use_id : undefined
+      out.push({
+        id: toolUseId ?? randomUUID(),
+        type: 'tool_result',
+        content:
+          typeof b.content === 'string'
+            ? b.content
+            : b.content != null
+              ? JSON.stringify(b.content)
+              : '',
+        timestamp: ts,
+        toolUseId,
+      })
+    }
+  }
+  flushText()
+  return out
+}
+
+function mapJsonlAssistantLine(obj: Record<string, unknown>, lineUuid: string, ts: number): CliAgentMessage[] {
+  const msg = obj.message
+  if (!msg || typeof msg !== 'object') return []
+  const m = msg as Record<string, unknown>
+  const content = m.content
+  if (!Array.isArray(content)) return []
+
+  const out: CliAgentMessage[] = []
+  let textBuf = ''
+  let textSeg = 0
+
+  const flushText = () => {
+    if (!textBuf) return
+    out.push({
+      id: textSeg === 0 ? lineUuid : `${lineUuid}:t${textSeg}`,
+      type: 'assistant',
+      content: textBuf,
+      timestamp: ts,
+    })
+    textSeg++
+    textBuf = ''
+  }
+
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue
+    const b = block as Record<string, unknown>
+    if (shouldSkipJsonlContentBlock(b)) continue
+
+    if (b.type === 'text') {
+      textBuf += String(b.text ?? '')
+    } else if (b.type === 'tool_use') {
+      flushText()
+      const toolUseId = typeof b.id === 'string' ? b.id : randomUUID()
+      const name = typeof b.name === 'string' ? b.name : 'tool'
+      out.push({
+        id: toolUseId,
+        type: 'tool_use',
+        content: `Running ${name}...`,
+        timestamp: ts,
+        toolName: name,
+        toolUseId,
+      })
+    }
+  }
+  flushText()
+  return out
 }
 
 function extractUserPreview(msg: Record<string, unknown>): string | undefined {
@@ -450,5 +555,47 @@ export class ClaudeNativeSessionWatcher {
 
   private emitNow(): void {
     this.opts.emit(this.buildMetas())
+  }
+
+  /**
+   * Read ~/.claude/projects/<slug>/<sessionId>.jsonl and map user/assistant rows
+   * to {@link CliAgentMessage} for CLI pane hydration.
+   */
+  async loadMessages(sessionId: string): Promise<CliAgentMessage[]> {
+    const filePath = join(this.projectDir, `${sessionId}.jsonl`)
+    try {
+      await stat(filePath)
+    } catch {
+      return []
+    }
+
+    const out: CliAgentMessage[] = []
+    const stream = createReadStream(filePath, { encoding: 'utf8' })
+    const rl = createInterface({ input: stream, crlfDelay: Infinity })
+
+    for await (const line of rl) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      let obj: Record<string, unknown>
+      try {
+        obj = JSON.parse(trimmed) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      if (obj.isSidechain === true) continue
+      const topType = obj.type
+      if (topType !== 'user' && topType !== 'assistant') continue
+
+      const ts = parseJsonlTimestamp(obj.timestamp) ?? Date.now()
+      const lineUuid = typeof obj.uuid === 'string' ? obj.uuid : randomUUID()
+
+      if (topType === 'user') {
+        out.push(...mapJsonlUserLine(obj, lineUuid, ts))
+      } else {
+        out.push(...mapJsonlAssistantLine(obj, lineUuid, ts))
+      }
+    }
+
+    return out
   }
 }
