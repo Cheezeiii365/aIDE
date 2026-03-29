@@ -27,10 +27,11 @@ export interface UseCliAgentOptions {
   workspaceId?: string
   backend?: AgentBackend
   conversationId?: string
+  worktreePath?: string
 }
 
 export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
-  const { workspaceId, conversationId } = options
+  const { workspaceId, conversationId, worktreePath } = options
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<CliAgentMessage[]>([])
   const [renderTick, setRenderTick] = useState(0)
@@ -207,7 +208,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
     setLastError(null)
     tick()
 
-    const result = await window.api.cliAgentStart(workspaceId, backend, conversationId)
+    const result = await window.api.cliAgentStart(workspaceId, backend, conversationId, worktreePath)
     if ('error' in result) {
       setLastError(result.error)
       setProcessStatus('error')
@@ -225,7 +226,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
       }
       tick()
     }
-  }, [workspaceId, conversationId, tick])
+  }, [workspaceId, conversationId, worktreePath, tick])
 
   const send = useCallback(async (content: string) => {
     const sid = sessionIdRef.current

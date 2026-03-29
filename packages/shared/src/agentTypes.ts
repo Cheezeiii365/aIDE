@@ -43,6 +43,8 @@ export interface ChatSession {
   messages: ChatMessage[]
   workingSet: string[]
   status: ChatSessionStatus
+  /** Worktree path this session operates in (if any). */
+  worktreePath?: string
 }
 
 // ─── Streaming Payloads ─────────────────────────────────────────────

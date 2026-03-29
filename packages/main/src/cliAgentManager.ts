@@ -47,6 +47,8 @@ interface CliAgentSessionInternal {
   killTimer?: ReturnType<typeof setTimeout>
   /** Claude Code session ID for --resume across sends */
   claudeSessionId?: string
+  /** Worktree path this session operates in (if any). */
+  worktreePath?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +100,7 @@ export class CliAgentManager {
     workspaceId: string,
     backend: AgentBackend,
     conversationId?: string,
+    worktreePath?: string,
   ): Promise<{ sessionId: string } | { error: string }> {
     if (backend === 'codex') {
       return { error: 'Codex integration coming soon.' }
@@ -157,6 +160,7 @@ export class CliAgentManager {
       stderrBuffer: '',
       totalCostUsd: 0,
       claudeSessionId: existingClaudeSessionId,
+      worktreePath,
     }
 
     this.sessions.set(sessionId, session)
@@ -226,7 +230,7 @@ export class CliAgentManager {
     })
 
     const proc = spawn(binaryPath, args, {
-      cwd: this.workspaceRoot,
+      cwd: session.worktreePath ?? this.workspaceRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
     })
@@ -302,6 +306,16 @@ export class CliAgentManager {
     return null
   }
 
+  /** Check if any active (running/starting) session uses the given worktree path. */
+  hasActiveSessionsForWorktree(worktreePath: string): boolean {
+    for (const session of this.sessions.values()) {
+      if (session.worktreePath === worktreePath && session.process) {
+        return true
+      }
+    }
+    return false
+  }
+
   getSessionById(sessionId: string): CliAgentSession | null {
     const session = this.sessions.get(sessionId)
     if (!session) return null
@@ -319,6 +333,7 @@ export class CliAgentManager {
       sessionToolNames: session.sessionToolNames,
       lastError: session.lastError,
       totalCostUsd: session.totalCostUsd,
+      worktreePath: session.worktreePath,
     }
   }
 
@@ -577,6 +592,7 @@ export class CliAgentManager {
       messageCount: session.messages.length,
       firstMessage: session.messages.find(m => m.type === 'user')?.content.slice(0, 100),
       claudeSessionId: session.claudeSessionId,
+      worktreePath: session.worktreePath,
     })
   }
 

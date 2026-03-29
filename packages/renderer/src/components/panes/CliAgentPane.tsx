@@ -12,13 +12,15 @@ interface CliAgentPanelParams {
   workspaceRoot?: string
   backend?: AgentBackend
   conversationId?: string
+  worktreePath?: string
+  worktreeBranch?: string
   zoomFactor?: number
 }
 
 export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelParams>) {
-  const { workspaceId, workspaceRoot, backend: backendParam, conversationId, zoomFactor } = params ?? {}
+  const { workspaceId, workspaceRoot, backend: backendParam, conversationId, worktreePath, zoomFactor } = params ?? {}
   const backend = backendParam ?? 'claude-code'
-  const agent = useCliAgent({ workspaceId, backend, conversationId })
+  const agent = useCliAgent({ workspaceId, backend, conversationId, worktreePath })
   const listRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
   const hasAutoStartedRef = useRef(false)

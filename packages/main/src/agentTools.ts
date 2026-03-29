@@ -10,6 +10,8 @@ import type { BrowserPaneManager } from './browserPaneManager'
 
 export interface ToolContext {
   workspaceRoot: string
+  /** Effective root directory — worktree path if set, otherwise workspaceRoot. */
+  effectiveRoot?: string
   workingSet?: string[]
   browserPaneManager?: BrowserPaneManager
 }
@@ -222,7 +224,7 @@ const terminalExec: BuiltinTool = {
   modes: ['agent'],
   async execute(input, context) {
     const command = input.command as string
-    const cwd = (input.cwd as string | undefined) || context.workspaceRoot
+    const cwd = (input.cwd as string | undefined) || (context.effectiveRoot ?? context.workspaceRoot)
     const timeout = Math.min((input.timeout as number | undefined) ?? 30000, 120000)
     const shell = detectShell()
 
@@ -258,7 +260,7 @@ const searchFiles: BuiltinTool = {
   modes: ['ask', 'edit', 'agent'],
   execute(input, context) {
     const query = input.query as string
-    const searchPath = (input.path as string | undefined) || context.workspaceRoot
+    const searchPath = (input.path as string | undefined) || (context.effectiveRoot ?? context.workspaceRoot)
     const isRegex = input.isRegex as boolean | undefined
     const caseSensitive = input.caseSensitive as boolean | undefined
     const fileGlob = input.fileGlob as string | undefined
@@ -332,7 +334,7 @@ const gitStatus: BuiltinTool = {
   },
   modes: ['ask', 'edit', 'agent'],
   async execute(input, context) {
-    const rootPath = (input.path as string | undefined) || context.workspaceRoot
+    const rootPath = (input.path as string | undefined) || (context.effectiveRoot ?? context.workspaceRoot)
     const result = await fetchGitStatus(rootPath)
     if (!result) return 'Not a git repository'
 
@@ -370,7 +372,7 @@ const gitDiff: BuiltinTool = {
     if (commit) args.push(commit)
     if (filePath) args.push('--', filePath)
 
-    const { stdout } = await execFilePromise('git', args, { cwd: context.workspaceRoot })
+    const { stdout } = await execFilePromise('git', args, { cwd: context.effectiveRoot ?? context.workspaceRoot })
     if (!stdout.trim()) return 'No differences found.'
     return truncate(stdout, MAX_OUTPUT)
   },

@@ -4,6 +4,7 @@ import { PlaceholderPane } from './panes/PlaceholderPane'
 import { WelcomePane } from './panes/WelcomePane'
 import { EditorPane } from './panes/EditorPane'
 import { EditorTab } from './panes/EditorTab'
+import { AgentTab } from './panes/AgentTab'
 import { TerminalPane } from './panes/TerminalPane'
 import { MarkdownPreviewPane } from './panes/MarkdownPreviewPane'
 import { FindInFilesPane } from './panes/FindInFilesPane'
@@ -31,6 +32,7 @@ const components = {
 
 const tabComponents = {
   editorTab: EditorTab,
+  agentTab: AgentTab,
 }
 
 interface Props {

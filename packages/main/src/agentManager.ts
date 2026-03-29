@@ -163,10 +163,13 @@ export class AgentManager {
         if (this.sessions.has(targetId)) {
           return this.sessions.get(targetId)!
         }
+        // Load worktreePath from conversation metadata
+        const meta = await this.conversationStore.get(targetId)
         // Load from disk
         const loaded = await this.conversationStore.loadMessages(targetId) as ChatSession | null
         if (loaded) {
           loaded.status = 'idle' // Reset status on load
+          if (meta?.worktreePath) loaded.worktreePath = meta.worktreePath
           this.sessions.set(loaded.id, loaded)
           return loaded
         }
@@ -182,6 +185,14 @@ export class AgentManager {
 
     // Create a new session — also register in ConversationStore if available
     const sessionId = conversationId ?? randomUUID()
+
+    // Check if the conversation already exists with worktree metadata
+    let existingWorktreePath: string | undefined
+    if (conversationId && this.conversationStore) {
+      const existingMeta = await this.conversationStore.get(conversationId)
+      existingWorktreePath = existingMeta?.worktreePath
+    }
+
     const session: ChatSession = {
       id: sessionId,
       workspaceId,
@@ -189,6 +200,7 @@ export class AgentManager {
       messages: [],
       workingSet: [],
       status: 'idle',
+      worktreePath: existingWorktreePath,
     }
     this.sessions.set(session.id, session)
 
@@ -201,6 +213,7 @@ export class AgentManager {
         // Re-key the session with the store-generated ID
         this.sessions.delete(session.id)
         session.id = meta.id
+        if (meta.worktreePath) session.worktreePath = meta.worktreePath
         this.sessions.set(meta.id, session)
       })
     }
@@ -296,6 +309,11 @@ export class AgentManager {
     assistantMessageId: string,
     signal: AbortSignal,
   ): Promise<void> {
+    // Set per-session effective root for worktree-scoped tools
+    if (session.worktreePath) {
+      this.toolRegistry.updateContext({ effectiveRoot: session.worktreePath })
+    }
+
     let turnCount = 0
     let currentMessageId = assistantMessageId
 
@@ -377,6 +395,8 @@ export class AgentManager {
       this.activeLoops.delete(session.id)
       this.activeRequestIds.delete(session.id)
       this.toolRetryCounters.delete(session.id)
+      // Reset effective root after loop completes
+      this.toolRegistry.updateContext({ effectiveRoot: undefined })
       await this.persistSession(session).catch(() => {})
     }
   }

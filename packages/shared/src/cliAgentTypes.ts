@@ -71,6 +71,8 @@ export interface CliAgentSession {
   sessionToolNames?: string[]
   lastError?: string
   totalCostUsd?: number
+  /** Worktree path this session operates in (if any). */
+  worktreePath?: string
 }
 
 // ---------------------------------------------------------------------------

@@ -548,9 +548,9 @@ ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
 
 // ─── CLI Agent IPC handlers ─────────────────────────────────────
 
-ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend, conversationId?: string) => {
+ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) => {
   if (!cliAgentManager) return { error: 'No workspace open' }
-  return cliAgentManager.start(workspaceId, backend, conversationId)
+  return cliAgentManager.start(workspaceId, backend, conversationId, worktreePath)
 })
 
 ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, content: string) => {

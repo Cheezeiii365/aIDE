@@ -127,7 +127,7 @@ export class ConversationStore {
 
   async updateMeta(
     conversationId: string,
-    patch: Partial<Pick<ConversationMeta, 'title' | 'autoTitled' | 'updatedAt' | 'messageCount' | 'firstMessage' | 'claudeSessionId'>>,
+    patch: Partial<Pick<ConversationMeta, 'title' | 'autoTitled' | 'updatedAt' | 'messageCount' | 'firstMessage' | 'claudeSessionId' | 'worktreePath'>>,
   ): Promise<void> {
     const index = await this.loadIndex()
     const entry = index.find(c => c.id === conversationId)

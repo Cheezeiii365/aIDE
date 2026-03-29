@@ -738,6 +738,7 @@ export function AppShell() {
         api.addPanel({
           id: `agent-${Date.now()}`,
           component: 'cliAgentPane',
+          tabComponent: 'agentTab',
           title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
           params: {
             workspaceId: activeWorkspaceId,
@@ -759,6 +760,7 @@ export function AppShell() {
           api.addPanel({
             id: `agent-${Date.now()}`,
             component: 'chatPane',
+            tabComponent: 'agentTab',
             title: 'Agent',
             params: {
               workspaceId: activeWorkspaceId,
@@ -775,6 +777,7 @@ export function AppShell() {
           api.addPanel({
             id: `agent-${Date.now()}`,
             component: 'chatPane',
+            tabComponent: 'agentTab',
             title: 'Agent',
             params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
             position: editorPanel
@@ -795,6 +798,7 @@ export function AppShell() {
         api.addPanel({
           id: `agent-${Date.now()}`,
           component: 'chatPane',
+          tabComponent: 'agentTab',
           title: 'Agent',
           params: {
             workspaceId: activeWorkspaceId,
@@ -811,6 +815,7 @@ export function AppShell() {
         api.addPanel({
           id: `agent-${Date.now()}`,
           component: 'chatPane',
+          tabComponent: 'agentTab',
           title: 'Agent',
           params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
           position: editorPanel
@@ -839,11 +844,14 @@ export function AppShell() {
           conv.source === 'claude-native' || conv.backend === 'claude-code' || conv.backend === 'codex'
             ? 'cliAgentPane'
             : 'chatPane',
+        tabComponent: 'agentTab',
         params: {
           workspaceId: activeWorkspaceId,
           workspaceRoot: workspaceRoot ?? undefined,
           backend: conv.backend,
           conversationId: conv.id,
+          worktreePath: conv.worktreePath,
+          worktreeBranch: conv.worktreeBranch,
         },
       })
     }
@@ -1047,15 +1055,82 @@ export function AppShell() {
                     api.addPanel({
                       id,
                       component: 'terminalPane',
+                      tabComponent: branch ? 'agentTab' : undefined,
                       title: branch ? `Terminal (${branch})` : 'Terminal',
-                      params: createTerminalPanelParams(
-                        activeWorkspaceId ?? undefined,
-                        worktreePath,
-                        branch ? `Terminal (${branch})` : 'Terminal',
-                      ),
+                      params: {
+                        ...createTerminalPanelParams(
+                          activeWorkspaceId ?? undefined,
+                          worktreePath,
+                          branch ? `Terminal (${branch})` : 'Terminal',
+                        ),
+                        worktreeBranch: branch,
+                      },
                       position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
                     })
                     persistWorkspaceRuntime()
+                  }}
+                  onStartAgent={(worktreePath) => {
+                    const api = dockviewApiRef.current
+                    if (!api || !activeWorkspaceId) return
+                    const branch = worktrees.find((w) => w.path === worktreePath)?.branch
+
+                    const editorPanel = api.panels.find(
+                      (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
+                    )
+
+                    window.api.getResolvedSettings().then((resolved) => {
+                      const backend = resolved['agent.backend'] ?? 'built-in'
+
+                      if (backend === 'claude-code' || backend === 'codex') {
+                        api.addPanel({
+                          id: `agent-${Date.now()}`,
+                          component: 'cliAgentPane',
+                          tabComponent: 'agentTab',
+                          title: branch
+                            ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
+                            : backend === 'claude-code' ? 'Claude Code' : 'Codex',
+                          params: {
+                            workspaceId: activeWorkspaceId,
+                            workspaceRoot: workspaceRoot ?? undefined,
+                            backend,
+                            conversationId: crypto.randomUUID(),
+                            worktreePath,
+                            worktreeBranch: branch,
+                          },
+                          position: editorPanel
+                            ? { referencePanel: editorPanel, direction: 'right' }
+                            : undefined,
+                          initialWidth: 400,
+                        })
+                        persistWorkspaceRuntime()
+                      } else {
+                        void window.api.conversationCreate({
+                          workspaceId: activeWorkspaceId,
+                          backend: 'built-in',
+                          worktreePath,
+                          worktreeBranch: branch,
+                        }).then((meta) => {
+                          api.addPanel({
+                            id: `agent-${Date.now()}`,
+                            component: 'chatPane',
+                            tabComponent: 'agentTab',
+                            title: branch ? `Agent (${branch})` : 'Agent',
+                            params: {
+                              workspaceId: activeWorkspaceId,
+                              workspaceRoot: workspaceRoot ?? undefined,
+                              conversationId: meta.id,
+                              worktreePath,
+                              worktreeBranch: branch,
+                            },
+                            position: editorPanel
+                              ? { referencePanel: editorPanel, direction: 'right' }
+                              : undefined,
+                            initialWidth: 350,
+                          })
+                          persistWorkspaceRuntime()
+                        }).catch(() => {})
+                      }
+                    }).catch(() => {})
                   }}
                 />
               </SidebarSection>

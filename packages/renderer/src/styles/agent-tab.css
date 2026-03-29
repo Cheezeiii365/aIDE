@@ -1,0 +1,24 @@
+/* ─── Agent Tab with Worktree Badge ─────────────────── */
+
+.agent-tab {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.agent-tab__worktree-badge {
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-right: 4px;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}

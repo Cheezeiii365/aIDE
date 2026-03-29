@@ -11,6 +11,8 @@ interface ChatPanelParams {
   workspaceId?: string
   workspaceRoot?: string
   conversationId?: string
+  worktreePath?: string
+  worktreeBranch?: string
   zoomFactor?: number
 }
 

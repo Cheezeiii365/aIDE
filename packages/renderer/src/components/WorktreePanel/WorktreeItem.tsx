@@ -5,6 +5,7 @@ interface Props {
   onClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
   onOpenTerminal: (path: string) => void
+  onStartAgent: (path: string) => void
   onMoreActions: (e: React.MouseEvent, worktree: WorktreeInfo) => void
 }
 
@@ -18,7 +19,7 @@ interface Props {
  * @param onMoreActions - Called with the mouse event and the `worktree` when the "More actions" button is invoked
  * @returns The rendered worktree row element
  */
-export function WorktreeItem({ worktree, onClick, onContextMenu, onOpenTerminal, onMoreActions }: Props) {
+export function WorktreeItem({ worktree, onClick, onContextMenu, onOpenTerminal, onStartAgent, onMoreActions }: Props) {
   return (
     <div
       className={`worktree-item${worktree.isCurrent ? ' worktree-item--active' : ''}${worktree.isMain ? ' worktree-item--main' : ''}`}
@@ -33,6 +34,19 @@ export function WorktreeItem({ worktree, onClick, onContextMenu, onOpenTerminal,
       {worktree.isDirty && <span className="worktree-item__dirty" title="Uncommitted changes">M</span>}
 
       <div className="worktree-item__actions">
+        {/* Agent button */}
+        <button
+          className="worktree-item__action-btn"
+          title="Start Agent in Worktree"
+          onClick={(e) => {
+            e.stopPropagation()
+            onStartAgent(worktree.path)
+          }}
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <path d="M2 1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h9.586a2 2 0 0 1 1.414.586l2 2V2a1 1 0 0 0-1-1H2zm12-1a2 2 0 0 1 2 2v12.793a.5.5 0 0 1-.854.353l-2.853-2.853A1 1 0 0 0 11.586 12H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h12z" />
+          </svg>
+        </button>
         {/* Terminal button */}
         <button
           className="worktree-item__action-btn"

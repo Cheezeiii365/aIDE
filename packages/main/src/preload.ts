@@ -363,8 +363,8 @@ const api: WindowApi = {
   },
 
   // ─── CLI Agent ───────────────────────────────
-  cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string) =>
-    ipcRenderer.invoke(IpcChannels.CLI_AGENT_START, workspaceId, backend, conversationId),
+  cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_START, workspaceId, backend, conversationId, worktreePath),
   cliAgentStop: (sessionId: string) =>
     ipcRenderer.send(IpcChannels.CLI_AGENT_STOP, sessionId),
   cliAgentSend: (sessionId: string, content: string) =>

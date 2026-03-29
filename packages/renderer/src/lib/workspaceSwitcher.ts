@@ -201,6 +201,7 @@ async function createDefaultLayout(
     api.addPanel({
       id: 'agent',
       component: 'cliAgentPane',
+      tabComponent: 'agentTab',
       title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
       params: {
         workspaceId,
@@ -220,6 +221,7 @@ async function createDefaultLayout(
     api.addPanel({
       id: 'agent',
       component: 'chatPane',
+      tabComponent: 'agentTab',
       title: 'Agent',
       params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined, conversationId },
       position: { referencePanel: editorPanel, direction: 'right' },
