@@ -1,8 +1,14 @@
+/**
+ * @fileoverview Built-in accelerator table: each row maps a chord to a command id in the command registry.
+ *
+ * Loaded by `AppShell` after Dockview init, merged with user overrides from the main process.
+ * `when` values refer to keys maintained in `ContextKeys`. Keep ids in sync with `commands/domains/*`.
+ */
+
 import type { KeybindingRule } from '@aide/shared'
 
 /**
- * Default keybinding rules — single source of truth for all built-in key bindings.
- * Order matters: later entries with the same key override earlier ones (last match wins).
+ * Default keybinding rules for the renderer. Order matters: later entries with the same key win (last match wins).
  */
 export const defaultKeybindings: KeybindingRule[] = [
   // ── Editor ──────────────────────────────────────

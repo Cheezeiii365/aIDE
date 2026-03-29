@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { SearchPanel, type SearchPanelItem } from '../layout/SearchPanel'
-import { getAllCommands, getRecentlyUsed, isEnabled, executeCommand } from '../../lib/commands/CommandRegistry'
-import { getKeybindingsForCommand } from '../../lib/commands/KeybindingService'
-import { formatKeybinding } from '../../lib/commands/formatKeybinding'
+import { getAllCommands, getRecentlyUsed, isEnabled, executeCommand } from '../../commands/CommandRegistry'
+import { getKeybindingsForCommand } from '../../commands/KeybindingService'
+import { formatKeybinding } from '../../commands/formatKeybinding'
 
 interface CommandPaletteProps {
   onClose: () => void

@@ -1,6 +1,9 @@
-// ── Context key system ──────────────────────────
-// Tracks boolean context keys (e.g. editorFocused, sidebarVisible)
-// and evaluates when-clause expressions for command enablement.
+/**
+ * @fileoverview Boolean “when context” store for keybinding dispatch and UI enablement.
+ *
+ * AppShell and panes call `setContext` when focus or layout changes. `KeybindingService` consults
+ * `evaluateWhen` before running a bound command. Keys are plain strings (e.g. `editorInFocus`).
+ */
 
 type Listener = () => void
 

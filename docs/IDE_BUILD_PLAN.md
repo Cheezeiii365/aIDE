@@ -39,6 +39,10 @@ Implementation notes:
 - Suppress switcher activation while modal text inputs are focused, unless the focused surface explicitly opts in.
 - Prefer a generic switcher primitive so the same mechanism can later power workspace MRU switching if desired.
 
+### Command registration (renderer)
+
+App-wide commands register once from `AppShell` on mount via `registerAppCommands` ([`packages/renderer/src/commands/registerAppCommands.ts`](../packages/renderer/src/commands/registerAppCommands.ts)); handlers read a ref updated each layout pass so state stays current. Handler implementations are split by domain under [`packages/renderer/src/commands/domains/`](../packages/renderer/src/commands/domains/). A `CommandContext` object is assigned each layout pass so commands read current workspace, Dockview, and UI state without duplicate `useCommand` registration or `window` `CustomEvent` indirection for internal actions. `useCommand` in [`CommandRegistry.ts`](../packages/renderer/src/commands/CommandRegistry.ts) is reserved for rare component-scoped commands. `KeybindingService`, `defaultKeybindings`, and `ContextKeys` live under the same `commands/` folder.
+
 ---
 
 ## Table of Contents

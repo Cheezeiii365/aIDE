@@ -1,15 +1,29 @@
+/**
+ * @fileoverview Central command registry for the renderer process.
+ *
+ * Holds a single `Map` of command id → metadata + synchronous handler. {@link registerAppCommands}
+ * populates this map once at app startup; `KeybindingService` and the command palette call
+ * `executeCommand` by id. Keybindings and `when` clauses live in KeybindingService and ContextKeys, not here.
+ *
+ * @see registerAppCommands
+ * @see useCommand
+ */
+
 import { useEffect, useRef } from 'react'
 import type { CommandDefinition } from '@shared/index'
 
 // ── Types ──────────────────────────────────────
 
+/** A registered command: shared {@link CommandDefinition} fields plus the runnable handler. */
 export interface CommandEntry extends CommandDefinition {
   handler: () => void
 }
 
 // ── Singleton state ────────────────────────────
 
+/** In-memory registry; last registration wins for a given id. */
 const commands: Map<string, CommandEntry> = new Map()
+/** Most-recently executed command ids (palette ordering); capped for memory. */
 const recentlyUsed: string[] = []
 const MAX_RECENT = 20
 
@@ -79,7 +93,8 @@ export function isEnabled(id: string): boolean {
 // ── React hook ─────────────────────────────────
 
 /**
- * Register a command scoped to the component lifecycle.
+ * Register a command scoped to the component lifecycle (e.g. a pane-specific action).
+ * App-wide commands should be registered once via `registerAppCommands` in AppShell.
  * Keybindings are separate — use defaultKeybindings.ts or user overrides.
  */
 export function useCommand(

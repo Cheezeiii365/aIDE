@@ -1,11 +1,11 @@
 import type { IDockviewPanelProps } from 'dockview-react'
+import { executeCommand } from '../../commands/CommandRegistry'
 
 /**
  * Render the welcome pane UI with title, action buttons, and keyboard shortcut hints.
  *
  * The pane applies `--panel-zoom` from `params?.zoomFactor` to scale its contents.
- * Clicking the primary and secondary action buttons dispatches `aide:workspace-open-folder`
- * and `aide:workspace-new-blank` CustomEvents on `window`, respectively.
+ * Primary and secondary actions run the same commands as the workspace keybindings.
  *
  * @param params - Panel parameters; `params.zoomFactor` (optional) sets the CSS `--panel-zoom` value
  * @returns A React element representing the welcome pane
@@ -23,7 +23,7 @@ export function WelcomePane({ params }: IDockviewPanelProps<{ zoomFactor?: numbe
         <div className="welcome-pane__actions">
           <button
             className="welcome-pane__action welcome-pane__action--primary"
-            onClick={() => window.dispatchEvent(new CustomEvent('aide:workspace-open-folder'))}
+            onClick={() => executeCommand('workspace.openFolder')}
           >
             <span className="welcome-pane__action-label">Open Folder</span>
             <kbd className="welcome-pane__kbd">{mod}+O</kbd>
@@ -31,7 +31,7 @@ export function WelcomePane({ params }: IDockviewPanelProps<{ zoomFactor?: numbe
 
           <button
             className="welcome-pane__action"
-            onClick={() => window.dispatchEvent(new CustomEvent('aide:workspace-new-blank'))}
+            onClick={() => executeCommand('workspace.new')}
           >
             <span className="welcome-pane__action-label">New Workspace</span>
             <kbd className="welcome-pane__kbd">{mod}+Shift+N</kbd>

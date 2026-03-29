@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Global keyboard dispatch: parses shortcut rules, handles chords, evaluates `when` clauses, runs commands.
+ *
+ * Rules are loaded via `loadKeybindings` (defaults + user overrides). A capture-phase `keydown` listener
+ * matches the last winning rule and calls `executeCommand`. Recording mode suppresses dispatch so the
+ * settings `KeybindingRecorder` can capture keys. Negative rules (`command: '-foo'`) suppress defaults (VS Code style).
+ */
+
 import { useEffect, useRef } from 'react'
 import type { KeybindingRule } from '@aide/shared'
 import { evaluateWhen } from './ContextKeys'
@@ -5,6 +13,7 @@ import { executeCommand } from './CommandRegistry'
 
 // ── Types ──────────────────────────────────────
 
+/** Parsed modifier + key for one segment of a shortcut or chord. */
 interface ShortcutParts {
   key: string
   cmd: boolean
@@ -15,11 +24,14 @@ interface ShortcutParts {
 
 type RuleSource = 'default' | 'user'
 
+/** Internal representation after parsing `rule.key` (one or two `ShortcutParts` for chords). */
 interface ResolvedRule {
   rule: KeybindingRule
-  parts: ShortcutParts[]  // length 1 = single, length 2 = chord
+  /** Length 1 = single shortcut; length 2 = two-stroke chord. */
+  parts: ShortcutParts[]
   source: RuleSource
-  suppressed: boolean     // marked true by negative-rule preprocessing
+  /** True when a negative user rule removed this default binding. */
+  suppressed: boolean
 }
 
 // ── Singleton state ────────────────────────────
@@ -35,6 +47,7 @@ const CHORD_TIMEOUT = 1500
 // KeybindingRecorder can capture keystrokes without triggering shortcuts.
 let recordingMode = false
 
+/** When true, the global keydown handler skips dispatch so the settings recorder can capture the shortcut. */
 export function setRecordingMode(active: boolean): void {
   recordingMode = active
   // Clear any pending chord so it doesn't fire after recording ends
@@ -43,6 +56,7 @@ export function setRecordingMode(active: boolean): void {
 
 // ── Listener setup ─────────────────────────────
 
+/** Idempotent: registers the capture-phase listener the first time rules are loaded. */
 function ensureListener() {
   if (listening) return
   window.addEventListener('keydown', handleKeyDown, true)
@@ -50,7 +64,7 @@ function ensureListener() {
 }
 
 // ── Key alias normalisation ─────────────────────
-// Maps friendly shortcut-string names to their canonical KeyboardEvent.key (lowercased).
+// Maps friendly shortcut-string names to canonical KeyboardEvent.key (lowercased).
 
 const KEY_ALIASES: Record<string, string> = {
   space: ' ',
@@ -220,8 +234,8 @@ export function formatRuleKey(rule: KeybindingRule): string {
 // ── Keydown dispatch ───────────────────────────
 
 /**
- * Handles keydown events. Iterates rules in REVERSE (last match wins).
- * Evaluates `when` clauses, skips suppressed rules, fires executeCommand().
+ * Capture-phase handler: chord continuation, chord start, then single-key rules (all reverse order for last-wins).
+ * Respects `when` via `evaluateWhen`; calls `executeCommand(commandId)` on match.
  */
 function handleKeyDown(e: KeyboardEvent) {
   // Skip dispatch while the keybinding recorder is capturing input
