@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, use } from 'react'
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, use } from 'react'
 import type { DockviewApi } from 'dockview-react'
 import { WorkspaceRibbon } from './WorkspaceRibbon'
 import { Sidebar } from './Sidebar'
@@ -7,19 +7,20 @@ import { StatusBar } from './StatusBar'
 import { WorktreePanel } from '../WorktreePanel/WorktreePanel'
 import { SidebarSection } from './SidebarSection'
 import { registerAppActions, type OpenFileOpts } from '../../lib/appActions'
-import { useCommand } from '../../lib/commands/CommandRegistry'
-import { setContext } from '../../lib/commands/ContextKeys'
+import { setContext } from '../../commands/ContextKeys'
+import { registerAppCommands } from '../../commands/registerAppCommands'
+import type { CommandContext, TaskPickerItem } from '../../commands/context'
 import { useWorktrees } from '../../hooks/useWorktrees'
 import { ToastContainer, showToast } from '../shared/Toast'
 import { CommandPalette } from '../modals/CommandPalette'
 import { QuickOpen } from '../modals/QuickOpen'
 import { GitignoreReviewModal } from '../modals/GitignoreReviewModal'
 import { TaskInputModal } from '../modals/TaskInputModal'
+import { TaskSelectModal } from '../modals/TaskSelectModal'
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { NewBrowserPaneModal } from '../modals/NewBrowserPaneModal'
-import { registerDefaultCommands } from '../../lib/commands/defaultCommands'
-import { loadKeybindings } from '../../lib/commands/KeybindingService'
-import { defaultKeybindings } from '../../lib/commands/defaultKeybindings'
+import { loadKeybindings } from '../../commands/KeybindingService'
+import { defaultKeybindings } from '../../commands/defaultKeybindings'
 import { useTasks } from '../../hooks/useTasks'
 import { useWorkspaces } from '../../hooks/useWorkspaces'
 import { autoSave, switchWorkspace as doSwitchWorkspace } from '../../lib/workspace/workspaceSwitcher'
@@ -28,16 +29,11 @@ import { createBrowserPanelParams, getBrowserParams } from '../../lib/browserSta
 import { getPanelZoomFactor, updatePanelZoomParams } from '../../lib/panelZoom'
 import { DockviewNavigation } from '../../lib/dockviewNavigation'
 import {
-  commentLineInActiveEditor,
-  toggleLineCommentInActiveEditor,
-  uncommentLineInActiveEditor,
-} from '../../lib/editor/editorComments'
-import {
   captureWorkspaceRuntimeSnapshot,
   clearWorkspaceRuntimeSnapshot,
   saveWorkspaceRuntimeSnapshot,
 } from '../../lib/workspace/workspaceRuntimeSnapshots'
-import type { AideTask, BrowserSessionMode, ConversationMeta, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
+import type { AideTask, BrowserSessionMode, GitignoreAuditResult, TaskExecution, TaskInputRequest } from '@aide/shared'
 import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
 
 /**
@@ -65,9 +61,19 @@ export function AppShell() {
   const [taskInputRequest, setTaskInputRequest] = useState<TaskInputRequest | null>(null)
   const [wsContextMenu, setWsContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [newBrowserPaneOpen, setNewBrowserPaneOpen] = useState(false)
+  const [taskPickerItems, setTaskPickerItems] = useState<TaskPickerItem[] | null>(null)
+  const [terminatePickerExecutions, setTerminatePickerExecutions] = useState<TaskExecution[] | null>(null)
   const [activeBrowserPaneId, setActiveBrowserPaneId] = useState<string | null>(null)
   const [activePanelId, setActivePanelId] = useState<string | null>(null)
-  const { runningTasks } = useTasks()
+  const commandContextRef = useRef<CommandContext | null>(null)
+  const {
+    runningTasks,
+    runTask,
+    killTask,
+    reloadTasks,
+    getLastTaskId,
+    getRunningTasks,
+  } = useTasks()
 
   // Workspace registry
   const {
@@ -244,29 +250,18 @@ export function AppShell() {
     prevWorkspaceIdRef.current = activeWorkspaceId
   }, [activeWorkspaceId, persistWorkspaceRuntime, showWelcomeLayout, sidebarCollapsed, workspaceRoot])
 
-  // Listen for gitignore audit results from main process and command palette
-  useEffect(() => {
-    const handleAudit = (result: GitignoreAuditResult) => {
-      setGitignoreAudit(result)
-      showToast(
-        `Found ${result.missing.length} missing .gitignore pattern${result.missing.length !== 1 ? 's' : ''} for sensitive files`,
-        { label: 'Review', onClick: () => setGitignoreModalOpen(true) },
-      )
-    }
-
-    const unsub = window.api.onGitignoreAuditResult(handleAudit)
-
-    // Also listen for command-palette-triggered audits
-    const handleCustom = (e: Event) => {
-      handleAudit((e as CustomEvent<GitignoreAuditResult>).detail)
-    }
-    window.addEventListener('aide:gitignore-audit', handleCustom)
-
-    return () => {
-      unsub()
-      window.removeEventListener('aide:gitignore-audit', handleCustom)
-    }
+  const presentGitignoreAudit = useCallback((result: GitignoreAuditResult) => {
+    setGitignoreAudit(result)
+    showToast(
+      `Found ${result.missing.length} missing .gitignore pattern${result.missing.length !== 1 ? 's' : ''} for sensitive files`,
+      { label: 'Review', onClick: () => setGitignoreModalOpen(true) },
+    )
   }, [])
+
+  useEffect(() => {
+    const unsub = window.api.onGitignoreAuditResult(presentGitignoreAudit)
+    return unsub
+  }, [presentGitignoreAudit])
 
   // Listen for task input requests
   useEffect(() => {
@@ -297,60 +292,34 @@ export function AppShell() {
     return unsub
   }, [])
 
-  // Cmd+1-9 and Cmd+Shift+[/] workspace switching
-  useEffect(() => {
-    const handleSwitch = (e: Event) => {
-      const { index } = (e as CustomEvent<{ index: number }>).detail
-      if (index < workspaces.length) {
-        switchWorkspace(workspaces[index].id)
-      }
-    }
-    const handleCycle = (e: Event) => {
-      const { direction } = (e as CustomEvent<{ direction: number }>).detail
-      if (workspaces.length === 0 || !activeWorkspaceId) return
-      const currentIdx = workspaces.findIndex((w) => w.id === activeWorkspaceId)
-      const nextIdx = (currentIdx + direction + workspaces.length) % workspaces.length
-      switchWorkspace(workspaces[nextIdx].id)
-    }
-    window.addEventListener('aide:workspace-switch', handleSwitch)
-    window.addEventListener('aide:workspace-cycle', handleCycle)
-    return () => {
-      window.removeEventListener('aide:workspace-switch', handleSwitch)
-      window.removeEventListener('aide:workspace-cycle', handleCycle)
-    }
-  }, [workspaces, activeWorkspaceId, switchWorkspace])
-
-  // Cmd+Shift+W close, Cmd+Shift+N new blank, Cmd+O open folder
-  useEffect(() => {
-    const handleClose = () => {
-      if (activeWorkspaceId) handleCloseWorkspace(activeWorkspaceId)
-    }
-    const handleNewBlank = () => handleNewBlankWorkspace()
-    const handleOpenFolderEvt = () => handleOpenFolder()
-
-    window.addEventListener('aide:workspace-close', handleClose)
-    window.addEventListener('aide:workspace-new-blank', handleNewBlank)
-    window.addEventListener('aide:workspace-open-folder', handleOpenFolderEvt)
-    return () => {
-      window.removeEventListener('aide:workspace-close', handleClose)
-      window.removeEventListener('aide:workspace-new-blank', handleNewBlank)
-      window.removeEventListener('aide:workspace-open-folder', handleOpenFolderEvt)
-    }
-  }, [activeWorkspaceId, handleCloseWorkspace, handleOpenFolder, handleNewBlankWorkspace])
-
   // Keep sidebarVisible context key in sync
   useEffect(() => {
     setContext('sidebarVisible', !sidebarCollapsed)
   }, [sidebarCollapsed])
 
   useEffect(() => {
-    const shouldSuppress = commandPaletteOpen || quickOpenOpen || gitignoreModalOpen || !!taskInputRequest || newBrowserPaneOpen
+    const shouldSuppress =
+      commandPaletteOpen
+      || quickOpenOpen
+      || gitignoreModalOpen
+      || !!taskInputRequest
+      || newBrowserPaneOpen
+      || !!taskPickerItems
+      || !!terminatePickerExecutions
     if (shouldSuppress) {
       window.api.browserSuppressOverlays()
     } else {
       window.api.browserUnsuppressOverlays()
     }
-  }, [commandPaletteOpen, gitignoreModalOpen, newBrowserPaneOpen, quickOpenOpen, taskInputRequest])
+  }, [
+    commandPaletteOpen,
+    gitignoreModalOpen,
+    newBrowserPaneOpen,
+    quickOpenOpen,
+    taskInputRequest,
+    taskPickerItems,
+    terminatePickerExecutions,
+  ])
 
   useEffect(() => {
     const unsub = window.api.onBrowserFocusChanged(({ paneId, focused }) => {
@@ -444,6 +413,111 @@ export function AppShell() {
     return unsub
   }, [])
 
+  const openMarkdownPreview = useCallback((filePath: string) => {
+    const api = dockviewApiRef.current
+    if (!api) return
+
+    const previewId = `preview:${filePath}`
+    const existing = api.panels.find((p) => p.id === previewId)
+    if (existing) {
+      existing.api.close()
+      return
+    }
+
+    const editorPanel = api.panels.find((p) => p.id === filePath)
+    const name = filePath.split('/').pop() ?? filePath
+
+    api.addPanel({
+      id: previewId,
+      component: 'markdownPreview',
+      title: `Preview: ${name}`,
+      params: { filePath },
+      position: editorPanel
+        ? { referencePanel: editorPanel, direction: 'right' }
+        : undefined,
+    })
+  }, [])
+
+  useLayoutEffect(() => {
+    commandContextRef.current = {
+      getDockviewApi: () => dockviewApiRef.current,
+      getDockviewNavigation: () => dockviewNavigationRef.current,
+      getActiveWorkspaceId: () => activeWorkspaceId,
+      getWorkspaceRoot: () => workspaceRoot,
+      getActiveWorktreeRoot: () => activeRoot,
+      getActiveBrowserPaneId: () => activeBrowserPaneId,
+      getWorkspaces: () => workspaces,
+      switchWorkspaceByIndex: (index: number) => {
+        if (index < workspaces.length) void switchWorkspace(workspaces[index].id)
+      },
+      cycleWorkspace: (direction: 1 | -1) => {
+        if (workspaces.length === 0 || !activeWorkspaceId) return
+        const currentIdx = workspaces.findIndex((w) => w.id === activeWorkspaceId)
+        const nextIdx = (currentIdx + direction + workspaces.length) % workspaces.length
+        void switchWorkspace(workspaces[nextIdx].id)
+      },
+      closeActiveWorkspace: () => {
+        if (activeWorkspaceId) void handleCloseWorkspace(activeWorkspaceId)
+      },
+      openFolder: () => void handleOpenFolder(),
+      newBlankWorkspace: () => void handleNewBlankWorkspace(),
+      toggleSidebar: () => setSidebarCollapsed((prev) => !prev),
+      openCommandPalette: () => {
+        setQuickOpenOpen(false)
+        setCommandPaletteOpen(true)
+      },
+      openQuickOpen: () => {
+        setCommandPaletteOpen(false)
+        setQuickOpenOpen(true)
+      },
+      openNewBrowserModal: () => {
+        setCommandPaletteOpen(false)
+        setQuickOpenOpen(false)
+        setNewBrowserPaneOpen(true)
+      },
+      persistWorkspaceRuntime,
+      presentGitignoreAudit,
+      openTaskPicker: (items) => setTaskPickerItems(items),
+      openTerminateTaskPicker: (executions) => setTerminatePickerExecutions(executions),
+      runTaskById: (id) => void runTask(id),
+      getLastTaskId,
+      getRunningTasks,
+      killTaskByExecutionId: (executionId) => killTask(executionId),
+      reloadTasksDefinitions: () => reloadTasks(),
+      toggleMarkdownPreview: () => {
+        const api = dockviewApiRef.current
+        if (!api) return
+        const active = api.activePanel
+        if (!active) return
+        const filePath = (active.params as Record<string, unknown>)?.filePath as string | undefined
+        if (!filePath || !filePath.endsWith('.md')) return
+        openMarkdownPreview(filePath)
+      },
+    }
+  }, [
+    activeWorkspaceId,
+    activeBrowserPaneId,
+    activeRoot,
+    getLastTaskId,
+    getRunningTasks,
+    handleCloseWorkspace,
+    handleNewBlankWorkspace,
+    handleOpenFolder,
+    killTask,
+    openMarkdownPreview,
+    persistWorkspaceRuntime,
+    presentGitignoreAudit,
+    reloadTasks,
+    runTask,
+    switchWorkspace,
+    workspaceRoot,
+    workspaces,
+  ])
+
+  useEffect(() => {
+    registerAppCommands(() => commandContextRef.current!)
+  }, [])
+
   const onApiReady = useCallback((api: DockviewApi) => {
     dockviewApiRef.current = api
     dockviewNavigationRef.current = new DockviewNavigation(api)
@@ -492,8 +566,6 @@ export function AppShell() {
       setContext('editorFocused', !isTerminal && !isBrowser)
     })
 
-    registerDefaultCommands(api)
-
     // Initialize keybinding service: load defaults, then layer user overrides
     window.api
       .getKeybindingOverrides()
@@ -505,453 +577,6 @@ export function AppShell() {
         loadKeybindings(defaultKeybindings, [])
       })
   }, [persistWorkspaceRuntime])
-
-  // Ctrl+` — open a new terminal tab
-  useCommand('terminal.new', {
-    label: 'New Terminal',
-    category: 'Terminal',
-  }, () => {
-    const api = dockviewApiRef.current
-    if (!api) return
-
-    const id = `terminal-${Date.now()}`
-    const existingTerminal = api.panels.find(
-      (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
-    )
-    const position = existingTerminal
-      ? { referencePanel: existingTerminal }
-      : undefined
-
-    api.addPanel({
-      id,
-      component: 'terminalPane',
-      title: 'Terminal',
-      params: createTerminalPanelParams(activeWorkspaceId ?? undefined, activeRoot ?? undefined, 'Terminal'),
-      position,
-    })
-    persistWorkspaceRuntime()
-  })
-
-  useCommand('editor.toggleComment', {
-    label: 'Toggle Line Comment',
-    category: 'Editor',
-  }, () => {
-    const result = toggleLineCommentInActiveEditor()
-    if (result === 'no-editor') {
-      showToast('No active editor')
-      return
-    }
-    if (result === 'unsupported') {
-      showToast('Line comments are not available for this file type')
-    }
-  })
-
-  useCommand('editor.commentLine', {
-    label: 'Comment Line',
-    category: 'Editor',
-  }, () => {
-    const result = commentLineInActiveEditor()
-    if (result === 'no-editor') {
-      showToast('No active editor')
-      return
-    }
-    if (result === 'unsupported') {
-      showToast('Line comments are not available for this file type')
-    }
-  })
-
-  useCommand('editor.uncommentLine', {
-    label: 'Uncomment Line',
-    category: 'Editor',
-  }, () => {
-    const result = uncommentLineInActiveEditor()
-    if (result === 'no-editor') {
-      showToast('No active editor')
-      return
-    }
-    if (result === 'unsupported') {
-      showToast('Line comments are not available for this file type')
-    }
-  })
-
-  // Cmd+B — toggle sidebar
-  useCommand('view.toggleSidebar', {
-    label: 'Toggle Sidebar',
-    category: 'View',
-  }, () => {
-    setSidebarCollapsed((prev) => !prev)
-  })
-
-  // Cmd+W — close active panel
-  useCommand('panel.close', {
-    label: 'Close Active Panel',
-    category: 'Panel',
-  }, () => {
-    const api = dockviewApiRef.current
-    if (!api) return
-    const active = api.activePanel
-    if (active) {
-      active.api.close()
-    }
-  })
-
-  useCommand('pane.cycleRecent', {
-    label: 'Cycle Recent Pane',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusPaneRecent(1)
-  })
-
-  useCommand('pane.cycleRecentReverse', {
-    label: 'Cycle Recent Pane Backward',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusPaneRecent(-1)
-  })
-
-  useCommand('pane.focusNext', {
-    label: 'Focus Next Pane',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusPaneLinear(1)
-  })
-
-  useCommand('pane.focusPrevious', {
-    label: 'Focus Previous Pane',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusPaneLinear(-1)
-  })
-
-  useCommand('pane.tab.cycleRecent', {
-    label: 'Cycle Recent Tab In Pane',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusTabRecent(1)
-  })
-
-  useCommand('pane.tab.cycleRecentReverse', {
-    label: 'Cycle Recent Tab In Pane Backward',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusTabRecent(-1)
-  })
-
-  useCommand('pane.tab.focusNext', {
-    label: 'Focus Next Tab In Pane',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusTabLinear(1)
-  })
-
-  useCommand('pane.tab.focusPrevious', {
-    label: 'Focus Previous Tab In Pane',
-    category: 'Pane',
-  }, () => {
-    dockviewNavigationRef.current?.focusTabLinear(-1)
-  })
-
-  // Open or toggle markdown preview for a file
-  const openMarkdownPreview = useCallback((filePath: string) => {
-    const api = dockviewApiRef.current
-    if (!api) return
-
-    const previewId = `preview:${filePath}`
-    const existing = api.panels.find((p) => p.id === previewId)
-    if (existing) {
-      existing.api.close()
-      return
-    }
-
-    const editorPanel = api.panels.find((p) => p.id === filePath)
-    const name = filePath.split('/').pop() ?? filePath
-
-    api.addPanel({
-      id: previewId,
-      component: 'markdownPreview',
-      title: `Preview: ${name}`,
-      params: { filePath },
-      position: editorPanel
-        ? { referencePanel: editorPanel, direction: 'right' }
-        : undefined,
-    })
-  }, [])
-
-  // Cmd+Shift+V — toggle markdown preview for active .md file
-  useCommand('markdown.togglePreview', {
-    label: 'Toggle Markdown Preview',
-    category: 'Markdown',
-  }, () => {
-    const api = dockviewApiRef.current
-    if (!api) return
-    const active = api.activePanel
-    if (!active) return
-    const filePath = (active.params as Record<string, unknown>)?.filePath as string | undefined
-    if (!filePath || !filePath.endsWith('.md')) return
-    openMarkdownPreview(filePath)
-  })
-
-  // Cmd+Shift+P — command palette
-  useCommand('commandPalette.open', {
-    label: 'Command Palette',
-    category: 'View',
-  }, () => {
-    setQuickOpenOpen(false)
-    setCommandPaletteOpen(true)
-  })
-
-  // Cmd+P — quick open
-  useCommand('quickOpen.open', {
-    label: 'Quick Open',
-    category: 'View',
-  }, () => {
-    setCommandPaletteOpen(false)
-    setQuickOpenOpen(true)
-  })
-
-  useCommand('browser.new', {
-    label: 'New Browser Pane',
-    category: 'Browser',
-  }, () => {
-    if (!activeWorkspaceId) return
-    setCommandPaletteOpen(false)
-    setQuickOpenOpen(false)
-    setNewBrowserPaneOpen(true)
-  })
-// Agents Commands
-  useCommand('agent.open', {
-    label: 'New Agent Tab',
-    category: 'Agent',
-  }, () => {
-    const api = dockviewApiRef.current
-    if (!api || !activeWorkspaceId) return
-
-    // Place next to editor or at the right
-    const editorPanel = api.panels.find(
-      (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
-    )
-
-    // Check backend setting to decide which pane to open
-    window.api.getResolvedSettings().then((resolved) => {
-      const backend = resolved['agent.backend'] ?? 'built-in'
-      if (backend === 'claude-code' || backend === 'codex') {
-        api.addPanel({
-          id: `agent-${Date.now()}`,
-          component: 'cliAgentPane',
-          tabComponent: 'agentTab',
-          title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
-          params: {
-            workspaceId: activeWorkspaceId,
-            workspaceRoot: workspaceRoot ?? undefined,
-            backend,
-            conversationId: crypto.randomUUID(),
-          },
-          position: editorPanel
-            ? { referencePanel: editorPanel, direction: 'right' }
-            : undefined,
-          initialWidth: 400,
-        })
-        persistWorkspaceRuntime()
-      } else {
-        void window.api.conversationCreate({
-          workspaceId: activeWorkspaceId,
-          backend: 'built-in',
-        }).then((meta) => {
-          api.addPanel({
-            id: `agent-${Date.now()}`,
-            component: 'chatPane',
-            tabComponent: 'agentTab',
-            title: 'Agent',
-            params: {
-              workspaceId: activeWorkspaceId,
-              workspaceRoot: workspaceRoot ?? undefined,
-              conversationId: meta.id,
-            },
-            position: editorPanel
-              ? { referencePanel: editorPanel, direction: 'right' }
-              : undefined,
-            initialWidth: 350,
-          })
-          persistWorkspaceRuntime()
-        }).catch(() => {
-          api.addPanel({
-            id: `agent-${Date.now()}`,
-            component: 'chatPane',
-            tabComponent: 'agentTab',
-            title: 'Agent',
-            params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
-            position: editorPanel
-              ? { referencePanel: editorPanel, direction: 'right' }
-              : undefined,
-            initialWidth: 350,
-          })
-          persistWorkspaceRuntime()
-        })
-        return
-      }
-    }).catch(() => {
-      // Fallback to built-in
-      void window.api.conversationCreate({
-        workspaceId: activeWorkspaceId,
-        backend: 'built-in',
-      }).then((meta) => {
-        api.addPanel({
-          id: `agent-${Date.now()}`,
-          component: 'chatPane',
-          tabComponent: 'agentTab',
-          title: 'Agent',
-          params: {
-            workspaceId: activeWorkspaceId,
-            workspaceRoot: workspaceRoot ?? undefined,
-            conversationId: meta.id,
-          },
-          position: editorPanel
-            ? { referencePanel: editorPanel, direction: 'right' }
-            : undefined,
-          initialWidth: 350,
-        })
-        persistWorkspaceRuntime()
-      }).catch(() => {
-        api.addPanel({
-          id: `agent-${Date.now()}`,
-          component: 'chatPane',
-          tabComponent: 'agentTab',
-          title: 'Agent',
-          params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
-          position: editorPanel
-            ? { referencePanel: editorPanel, direction: 'right' }
-            : undefined,
-          initialWidth: 350,
-        })
-        persistWorkspaceRuntime()
-      })
-    })
-  })
-
-  // Open Chat History Pane
-  // TODO: Register a key command
-  useCommand('agent.history.open', {
-    label: 'Open Chat History',
-    category: 'Agent',
-  }, () => {
-    const api = dockviewApiRef.current
-    if (!api || !activeWorkspaceId) return
-
-    const onOpenConversation = (conv: ConversationMeta) => {
-      api.addPanel({
-        id: `agent-${Date.now()}`,
-        component:
-          conv.source === 'claude-native' || conv.backend === 'claude-code' || conv.backend === 'codex'
-            ? 'cliAgentPane'
-            : 'chatPane',
-        tabComponent: 'agentTab',
-        params: {
-          workspaceId: activeWorkspaceId,
-          workspaceRoot: workspaceRoot ?? undefined,
-          backend: conv.backend,
-          conversationId: conv.id,
-          worktreePath: conv.worktreePath,
-          worktreeBranch: conv.worktreeBranch,
-        },
-      })
-    }
-
-    const historyParams = {
-      workspaceId: activeWorkspaceId,
-      workspaceRoot: workspaceRoot ?? undefined,
-      onOpenConversation,
-    }
-
-    // Focus existing chat history panel if present
-    const existing = api.panels.find((p) => p.id === 'agent-history')
-    if (existing) {
-      existing.api.updateParameters({ ...existing.params, ...historyParams })
-      existing.api.setActive()
-      return
-    }
-
-    // Create new chat history panel
-    api.addPanel({
-      id: 'agent-history',
-      component: 'chatHistoryPane',
-      title: 'Chat History',
-      params: historyParams,
-    })
-  })
-
-
-  useCommand('browser.back', {
-    label: 'Browser Back',
-    category: 'Browser',
-  }, () => {
-    if (activeBrowserPaneId) window.api.browserGoBack(activeBrowserPaneId)
-  })
-
-  useCommand('browser.forward', {
-    label: 'Browser Forward',
-    category: 'Browser',
-  }, () => {
-    if (activeBrowserPaneId) window.api.browserGoForward(activeBrowserPaneId)
-  })
-
-  useCommand('browser.reload', {
-    label: 'Browser Reload',
-    category: 'Browser',
-  }, () => {
-    if (activeBrowserPaneId) window.api.browserReload(activeBrowserPaneId)
-  })
-
-  // Cmd+Shift+F — find in files
-  useCommand('search.findInFiles', {
-    label: 'Find in Files',
-    category: 'Search',
-  }, () => {
-    const api = dockviewApiRef.current
-    if (!api) return
-
-    // Focus existing panel or create new one
-    const existing = api.panels.find((p) => p.id === 'findInFiles')
-    if (existing) {
-      existing.api.setActive()
-      return
-    }
-
-    const terminalPanel = api.panels.find(
-      (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
-    )
-
-    api.addPanel({
-      id: 'findInFiles',
-      component: 'findInFiles',
-      title: 'Find in Files',
-      params: { workspaceRoot: activeRoot },
-      position: terminalPanel
-        ? { referencePanel: terminalPanel }
-        : undefined,
-    })
-  })
-
-  // Cmd+, — open settings
-  useCommand('settings.open', {
-    label: 'Open Settings',
-    category: 'Preferences',
-  }, () => {
-    const api = dockviewApiRef.current
-    if (!api) return
-
-    const existing = api.panels.find((p) => p.id === 'settings')
-    if (existing) {
-      existing.api.setActive()
-      return
-    }
-
-    api.addPanel({
-      id: 'settings',
-      component: 'settingsPane',
-      title: 'Settings',
-      params: {},
-    })
-  })
 
   const onFileOpen = useCallback((filePath: string, opts?: OpenFileOpts) => {
     const api = dockviewApiRef.current
@@ -1228,6 +853,34 @@ export function AppShell() {
         <TaskInputModal
           request={taskInputRequest}
           onClose={() => setTaskInputRequest(null)}
+        />
+      )}
+      {taskPickerItems && (
+        <TaskSelectModal
+          title="Task"
+          placeholder="Select a task…"
+          items={taskPickerItems.map((t) => ({
+            id: t.id,
+            label: t.label,
+            description: t.group,
+            searchText: `${t.label} ${t.group ?? ''} ${t.id}`,
+          }))}
+          onSelect={(id) => void runTask(id)}
+          onClose={() => setTaskPickerItems(null)}
+        />
+      )}
+      {terminatePickerExecutions && (
+        <TaskSelectModal
+          title="Running task"
+          placeholder="Terminate…"
+          items={terminatePickerExecutions.map((e) => ({
+            id: e.executionId,
+            label: e.taskLabel,
+            description: e.taskId,
+            searchText: `${e.taskLabel} ${e.taskId}`,
+          }))}
+          onSelect={(id) => killTask(id)}
+          onClose={() => setTerminatePickerExecutions(null)}
         />
       )}
       {newBrowserPaneOpen && (

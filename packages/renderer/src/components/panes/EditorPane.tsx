@@ -12,7 +12,7 @@ import { isDirty, setDirty, onDirtyChange } from '../../lib/editor/editorDirtySt
 import { publishContent, clearContent } from '../../lib/editor/editorContentBus'
 import { getPanelZoomFactor } from '../../lib/panelZoom'
 import { clearActiveEditor, setActiveEditor } from '../../lib/editor/activeEditor'
-import { setContext } from '../../lib/commands/ContextKeys'
+import { setContext } from '../../commands/ContextKeys'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 import { showToast } from '../shared/Toast'
@@ -366,19 +366,6 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     })
     return unsub
   }, [filePath, api])
-
-  // Listen for external toggle-inline-diff events (e.g., command palette)
-  useEffect(() => {
-    if (loading) return
-    const view = viewRef.current
-    if (!view) return
-
-    const handler = () => {
-      void toggleInlineDiffForView(view)
-    }
-    window.addEventListener('aide:toggle-inline-diff', handler)
-    return () => window.removeEventListener('aide:toggle-inline-diff', handler)
-  }, [loading, toggleInlineDiffForView])
 
   // Push cursor status when this panel becomes active
   useEffect(() => {

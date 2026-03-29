@@ -1,8 +1,11 @@
 /**
+ * @fileoverview Display helper for shortcut strings in the command palette and settings table.
+ */
+
+/**
  * Normalize a keyboard shortcut string for compact, user-facing display.
  *
- * Cmd → ⌘, Shift → ⇧, Alt/Opt → ⌥, Ctrl → ⌃
- * Removes `+` separators and collapses whitespace.
+ * Cmd → ⌘, Shift → ⇧, Alt/Opt → ⌥, Ctrl → ⌃. Removes `+` separators and collapses whitespace.
  */
 export function formatKeybinding(kb: string): string {
   return kb

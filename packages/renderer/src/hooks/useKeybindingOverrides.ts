@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { KeybindingRule } from '@aide/shared'
-import { loadKeybindings } from '../lib/commands/KeybindingService'
-import { defaultKeybindings } from '../lib/commands/defaultKeybindings'
+import { loadKeybindings } from '../commands/KeybindingService'
+import { defaultKeybindings } from '../commands/defaultKeybindings'
 
 export interface UseKeybindingOverridesReturn {
   overrides: KeybindingRule[]

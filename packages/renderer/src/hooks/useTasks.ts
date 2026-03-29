@@ -5,7 +5,10 @@ export interface TasksState {
   tasks: AideTask[]
   compounds: CompoundTask[]
   runningTasks: TaskExecution[]
+  /** Snapshot at last render; prefer `getLastTaskId()` for command handlers. */
   lastTaskId: string | null
+  getLastTaskId: () => string | null
+  getRunningTasks: () => TaskExecution[]
   runTask: (taskId: string) => Promise<void>
   killTask: (executionId: string) => void
   reloadTasks: () => Promise<void>
@@ -21,7 +24,8 @@ export interface TasksState {
  * - `tasks`: array of available `AideTask` definitions
  * - `compounds`: array of available `CompoundTask` definitions
  * - `runningTasks`: array of active `TaskExecution` entries
- * - `lastTaskId`: the most-recently requested task id or `null`
+ * - `lastTaskId`: snapshot at last render; use `getLastTaskId()` from keybindings/commands
+ * - `getLastTaskId()`, `getRunningTasks()`: fresh reads for command handlers
  * - `runTask(taskId)`: function to start a task by id
  * - `killTask(executionId)`: function to stop an execution by id
  * - `reloadTasks()`: function to refresh task definitions
@@ -31,6 +35,8 @@ export function useTasks(): TasksState {
   const [compounds, setCompounds] = useState<CompoundTask[]>([])
   const [runningTasks, setRunningTasks] = useState<TaskExecution[]>([])
   const lastTaskIdRef = useRef<string | null>(null)
+  const runningTasksRef = useRef<TaskExecution[]>([])
+  runningTasksRef.current = runningTasks
 
   // Load tasks on mount
   useEffect(() => {
@@ -77,11 +83,17 @@ export function useTasks(): TasksState {
     setCompounds(c)
   }, [])
 
+  const getLastTaskId = useCallback(() => lastTaskIdRef.current, [])
+
+  const getRunningTasks = useCallback(() => runningTasksRef.current, [])
+
   return {
     tasks,
     compounds,
     runningTasks,
     lastTaskId: lastTaskIdRef.current,
+    getLastTaskId,
+    getRunningTasks,
     runTask,
     killTask,
     reloadTasks,
