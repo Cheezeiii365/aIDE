@@ -49,7 +49,7 @@ export function ChatPane({ params, api }: IDockviewPanelProps<ChatPanelParams>) 
           <WorkingSetPicker
             workingSet={chat.workingSet}
             onWorkingSetChange={chat.setWorkingSet}
-            workspaceRoot={params?.workspaceRoot}
+            workspaceRoot={params?.worktreePath ?? params?.workspaceRoot}
           />
         )}
       </div>
