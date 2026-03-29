@@ -1,6 +1,7 @@
 import type { IDockviewPanelProps } from 'dockview-react'
 import { useChat } from '../../hooks/useChat'
 import { ModeSelector } from '../chat/ModeSelector'
+import { PermissionTierBadge } from '../chat/PermissionTierBadge'
 import { WorkingSetPicker } from '../chat/WorkingSetPicker'
 import { MessageList } from '../chat/MessageList'
 import { ChatInput } from '../chat/ChatInput'
@@ -17,11 +18,14 @@ export function ChatPane({ params }: IDockviewPanelProps<ChatPanelParams>) {
   return (
     <div className="chat-pane" style={{ ['--panel-zoom' as string]: String(params?.zoomFactor ?? 1) }}>
       <div className="chat-pane__header">
-        <ModeSelector
-          mode={chat.mode}
-          onModeChange={chat.setMode}
-          disabled={chat.status !== 'idle'}
-        />
+        <div className="chat-pane__header-row">
+          <ModeSelector
+            mode={chat.mode}
+            onModeChange={chat.setMode}
+            disabled={chat.status !== 'idle'}
+          />
+          <PermissionTierBadge />
+        </div>
         {chat.mode === 'edit' && (
           <WorkingSetPicker
             workingSet={chat.workingSet}
