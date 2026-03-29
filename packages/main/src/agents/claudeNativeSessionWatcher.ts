@@ -349,7 +349,7 @@ export class ClaudeNativeSessionWatcher {
     this.projectDir = join(homedir(), '.claude', 'projects', slug)
   }
 
-  async start(): Promise<void> {
+  private async resolveProjectDir(): Promise<string> {
     let root: string
     try {
       root = await realpath(this.opts.workspaceRoot)
@@ -358,6 +358,11 @@ export class ClaudeNativeSessionWatcher {
     }
     const slug = encodeClaudeProjectSlug(root)
     this.projectDir = join(homedir(), '.claude', 'projects', slug)
+    return this.projectDir
+  }
+
+  async start(): Promise<void> {
+    await this.resolveProjectDir()
 
     await this.refreshTitleMap()
     await this.bootstrapSessions()
@@ -562,7 +567,8 @@ export class ClaudeNativeSessionWatcher {
    * to {@link CliAgentMessage} for CLI pane hydration.
    */
   async loadMessages(sessionId: string): Promise<CliAgentMessage[]> {
-    const filePath = join(this.projectDir, `${sessionId}.jsonl`)
+    const projectDir = await this.resolveProjectDir()
+    const filePath = join(projectDir, `${sessionId}.jsonl`)
     try {
       await stat(filePath)
     } catch {

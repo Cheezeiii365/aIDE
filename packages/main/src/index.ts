@@ -570,7 +570,10 @@ ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: st
 
 ipcMain.handle(
   IpcChannels.CLI_AGENT_LOAD_MESSAGES,
-  async (_event, conversationId: string): Promise<CliAgentMessage[]> => {
+  async (_event, workspaceId: string, conversationId: string): Promise<CliAgentMessage[]> => {
+    if (workspaceRegistry.getActiveId() !== workspaceId) {
+      return []
+    }
     const nativeMeta =
       nativeSessionCache.find((c) => c.id === conversationId) ??
       nativeSessionCache.find((c) => c.claudeSessionId === conversationId)
@@ -587,9 +590,12 @@ ipcMain.handle(
       }
     }
     const stored = await conversationStore?.loadMessages(conversationId)
-    if (!stored || typeof stored !== 'object') return []
+    if (!stored || typeof stored !== 'object') {
+      return []
+    }
     const msgs = (stored as { messages?: unknown }).messages
-    return Array.isArray(msgs) ? (msgs as CliAgentMessage[]) : []
+    const out = Array.isArray(msgs) ? (msgs as CliAgentMessage[]) : []
+    return out
   },
 )
 

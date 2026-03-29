@@ -11,6 +11,7 @@ import type {
 } from '@aide/shared'
 
 export interface UseChatReturn {
+  sessionId: string | null
   messages: ChatMessage[]
   status: ChatSessionStatus
   mode: ChatMode
@@ -235,6 +236,7 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
   void renderTick
 
   return {
+    sessionId: sessionIdRef.current,
     messages: messagesRef.current,
     status,
     mode,

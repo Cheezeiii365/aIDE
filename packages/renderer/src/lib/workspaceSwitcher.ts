@@ -212,11 +212,16 @@ async function createDefaultLayout(
       initialWidth: 400,
     })
   } else {
+    const conversationId = await window.api.conversationCreate({
+      workspaceId,
+      backend: 'built-in',
+    }).then((meta) => meta.id).catch(() => undefined)
+
     api.addPanel({
       id: 'agent',
       component: 'chatPane',
       title: 'Agent',
-      params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined },
+      params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined, conversationId },
       position: { referencePanel: editorPanel, direction: 'right' },
       initialWidth: 350,
     })

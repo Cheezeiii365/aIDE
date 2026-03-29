@@ -43,6 +43,9 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
   const streamingContentRef = useRef('')
   const [streamingContent, setStreamingContent] = useState('')
   const rafRef = useRef<number | null>(null)
+  const hydrateGenRef = useRef(0)
+  const listRetryGenRef = useRef(0)
+  const lastHydrateKeyRef = useRef<string | null>(null)
 
   const tick = useCallback(() => setRenderTick((n) => n + 1), [])
 
@@ -58,10 +61,19 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
     }
 
     setHistoryHydrated(false)
+    const myGen = ++hydrateGenRef.current
+    listRetryGenRef.current += 1
+    const hydrateKey = `${workspaceId}:${conversationId}`
+    if (lastHydrateKeyRef.current !== hydrateKey) {
+      messagesRef.current = []
+      lastHydrateKeyRef.current = hydrateKey
+    }
+    sessionIdRef.current = null
     ;(async () => {
       const session = await window.api.cliAgentGetSession(workspaceId, conversationId)
-      if (cancelled) return
+      if (cancelled || myGen !== hydrateGenRef.current) return
       if (session && session.id === conversationId) {
+        if (cancelled || myGen !== hydrateGenRef.current) return
         sessionIdRef.current = session.id
         messagesRef.current = session.messages
         setProcessStatus(session.processStatus)
@@ -73,12 +85,16 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
       }
       sessionIdRef.current = conversationId
       try {
-        const prior = await window.api.cliAgentLoadMessages(conversationId)
-        if (cancelled) return
-        messagesRef.current = prior
+        const prior = await window.api.cliAgentLoadMessages(workspaceId, conversationId)
+        if (cancelled || myGen !== hydrateGenRef.current) return
+        if (prior.length === 0 && messagesRef.current.length > 0) {
+          // Stale empty IPC (e.g. native-prefix on wrong workspace root) — keep hydrated transcript.
+        } else {
+          messagesRef.current = prior
+        }
       } finally {
-        if (!cancelled) setHistoryHydrated(true)
-        tick()
+        if (!cancelled && myGen === hydrateGenRef.current) setHistoryHydrated(true)
+        if (myGen === hydrateGenRef.current) tick()
       }
     })()
 
@@ -89,16 +105,37 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
     return () => { cancelled = true }
   }, [workspaceId, conversationId, tick])
 
-  // Subscribe to conversation list changes (for title updates)
+  // Subscribe to conversation list changes (titles + late native hydration when the watcher fills the cache).
   useEffect(() => {
     const unsub = window.api.onConversationListChanged((payload: ConversationListChangedPayload) => {
+      if (!workspaceId || payload.workspaceId !== workspaceId) return
       const sid = sessionIdRef.current ?? conversationId
       if (!sid) return
       const meta = payload.conversations.find(c => c.id === sid)
-      if (meta) setConversationTitle(meta.title)
+      if (meta) {
+        setConversationTitle(meta.title)
+      }
+      if (
+        !conversationId ||
+        !meta ||
+        meta.source !== 'claude-native' ||
+        (meta.messageCount ?? 0) < 1 ||
+        messagesRef.current.length > 0
+      ) {
+        return
+      }
+      const g = ++listRetryGenRef.current
+      void (async () => {
+        const prior = await window.api.cliAgentLoadMessages(workspaceId, conversationId)
+        if (g !== listRetryGenRef.current) return
+        if (prior.length > 0) {
+          messagesRef.current = prior
+          tick()
+        }
+      })()
     })
     return unsub
-  }, [conversationId])
+  }, [workspaceId, conversationId, tick])
 
   // Subscribe to stream deltas
   useEffect(() => {

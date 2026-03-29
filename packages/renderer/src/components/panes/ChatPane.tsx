@@ -17,6 +17,14 @@ interface ChatPanelParams {
 export function ChatPane({ params, api }: IDockviewPanelProps<ChatPanelParams>) {
   const chat = useChat(params?.workspaceId, params?.conversationId)
 
+  useEffect(() => {
+    if (!chat.sessionId || params?.conversationId === chat.sessionId) return
+    api.updateParameters({
+      ...params,
+      conversationId: chat.sessionId,
+    })
+  }, [api, chat.sessionId, params])
+
   // Auto-title the tab based on conversation title
   useEffect(() => {
     if (chat.conversationTitle && chat.conversationTitle !== 'New Chat') {

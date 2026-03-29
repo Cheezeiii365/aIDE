@@ -801,7 +801,7 @@ export interface WindowApi {
   cliAgentStop: (sessionId: string) => void
   cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
   cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
-  cliAgentLoadMessages: (conversationId: string) => Promise<CliAgentMessage[]>
+  cliAgentLoadMessages: (workspaceId: string, conversationId: string) => Promise<CliAgentMessage[]>
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
   onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void

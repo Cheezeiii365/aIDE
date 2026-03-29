@@ -750,7 +750,64 @@ export function AppShell() {
             : undefined,
           initialWidth: 400,
         })
+        persistWorkspaceRuntime()
       } else {
+        void window.api.conversationCreate({
+          workspaceId: activeWorkspaceId,
+          backend: 'built-in',
+        }).then((meta) => {
+          api.addPanel({
+            id: `agent-${Date.now()}`,
+            component: 'chatPane',
+            title: 'Agent',
+            params: {
+              workspaceId: activeWorkspaceId,
+              workspaceRoot: workspaceRoot ?? undefined,
+              conversationId: meta.id,
+            },
+            position: editorPanel
+              ? { referencePanel: editorPanel, direction: 'right' }
+              : undefined,
+            initialWidth: 350,
+          })
+          persistWorkspaceRuntime()
+        }).catch(() => {
+          api.addPanel({
+            id: `agent-${Date.now()}`,
+            component: 'chatPane',
+            title: 'Agent',
+            params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
+            position: editorPanel
+              ? { referencePanel: editorPanel, direction: 'right' }
+              : undefined,
+            initialWidth: 350,
+          })
+          persistWorkspaceRuntime()
+        })
+        return
+      }
+    }).catch(() => {
+      // Fallback to built-in
+      void window.api.conversationCreate({
+        workspaceId: activeWorkspaceId,
+        backend: 'built-in',
+      }).then((meta) => {
+        api.addPanel({
+          id: `agent-${Date.now()}`,
+          component: 'chatPane',
+          title: 'Agent',
+          params: {
+            workspaceId: activeWorkspaceId,
+            workspaceRoot: workspaceRoot ?? undefined,
+            conversationId: meta.id,
+          },
+          position: editorPanel
+            ? { referencePanel: editorPanel, direction: 'right' }
+            : undefined,
+          initialWidth: 350,
+        })
+        persistWorkspaceRuntime()
+      }).catch(() => {
         api.addPanel({
           id: `agent-${Date.now()}`,
           component: 'chatPane',
@@ -761,21 +818,8 @@ export function AppShell() {
             : undefined,
           initialWidth: 350,
         })
-      }
-      persistWorkspaceRuntime()
-    }).catch(() => {
-      // Fallback to built-in
-      api.addPanel({
-        id: `agent-${Date.now()}`,
-        component: 'chatPane',
-        title: 'Agent',
-        params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
-        position: editorPanel
-          ? { referencePanel: editorPanel, direction: 'right' }
-          : undefined,
-        initialWidth: 350,
+        persistWorkspaceRuntime()
       })
-      persistWorkspaceRuntime()
     })
   })
 
