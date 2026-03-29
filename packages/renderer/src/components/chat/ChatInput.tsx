@@ -50,7 +50,7 @@ export function ChatInput({ onSend, onStop, status, mode }: ChatInputProps) {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault()
         handleSend()
       } else if (e.key === 'Escape') {
