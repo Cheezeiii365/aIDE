@@ -1,6 +1,6 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 28, 2026
+> **Last updated:** March 29, 2026
 > **Status:** Active development (Phase 2 in progress)
 
 ---
@@ -1220,6 +1220,8 @@ These need a decision before or during the relevant phase.
 ## 12. Progress Tracker
 
 Track milestone completion here. Update as you go.
+
+**2026-03-29:** Built-in chat — `useChat` refreshes after `CHAT_STREAM_END` and tool-call IPC now call `chatGetHistory(workspaceId, sessionId)` so history stays scoped to the active tab; avoids main falling back to `getMostRecent` (multi-tab isolation + pre-persist race).
 
 ### Phase 1: Skeleton (Weeks 1–3)
 | Milestone | Status | Notes |

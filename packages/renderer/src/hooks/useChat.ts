@@ -132,7 +132,7 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
 
       // Refresh session to get full message history with tool results
       if (sessionIdRef.current) {
-        window.api.chatGetHistory(workspaceId!).then((session: ChatSession | null) => {
+        window.api.chatGetHistory(workspaceId!, end.sessionId).then((session: ChatSession | null) => {
           if (!session) return
           messagesRef.current = session.messages
           setStatus(session.status)
@@ -153,7 +153,7 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
       setStatus('awaiting_approval')
 
       // Find the assistant message and add the tool call, or refresh from backend
-      window.api.chatGetHistory(workspaceId!).then((session: ChatSession | null) => {
+      window.api.chatGetHistory(workspaceId!, payload.sessionId).then((session: ChatSession | null) => {
         if (!session) return
         messagesRef.current = session.messages
         setStatus(session.status)

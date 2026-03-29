@@ -378,19 +378,54 @@ Surface to: AgentStatusDot on workspace tab, chat-like overlay, approval interce
 - Raw terminal visible underneath (user can scroll back, see full output)
 - Status overlay extracts and surfaces: current phase (thinking/editing/running), files being modified, tool calls in progress
 - `AgentStatusDot` on workspace tab reflects CLI agent state (not just built-in agent)
-- Optional approval interception: pause CLI agent, show approval in IDE UI, resume on accept
+- Permission interception via `--permission-prompt-tool` (see below)
 - Session persistence: CLI agent can be stopped/restarted, scrollback preserved
+
+**Permission interception for CLI agents:**
+
+Claude Code CLI supports `--permission-prompt-tool <mcp-tool-name>`. When set, the CLI calls that MCP tool instead of handling permissions internally. aIDE runs a local MCP server per CLI session and injects this flag at spawn time. Flow:
+
+```
+Claude Code CLI needs permission
+    ↓
+Calls aide_permission_prompt MCP tool (stdio to cliPermissionServer.ts)
+    ↓
+cliPermissionServer emits IpcChannels.CLI_AGENT_PERMISSION_REQUEST to renderer
+    ↓
+Renderer pushes a 'permission_request' CliAgentMessage into message list
+    ↓
+CliPermissionCard shown (same shape as ToolCallCard — tool name, inputs, Allow/Deny)
+    ↓
+User clicks Allow/Deny → renderer invokes CLI_AGENT_PERMISSION_RESPONSE
+    ↓
+cliPermissionServer resolves its pending Promise → returns { approved } to Claude Code
+    ↓
+CLI resumes or aborts the tool call
+```
+
+New files for this:
+- `packages/main/src/cliPermissionServer.ts` — lightweight MCP stdio server per session; blocks on a Promise until renderer resolves via IPC; manages one pending approval at a time
+- `packages/renderer/src/components/chat/CliPermissionCard.tsx` — approval card for CLI sessions, mirrors ToolCallCard UI
+
+Changes for this:
+- `cliAgentManager.ts` — instantiate `cliPermissionServer` per session; inject `--permission-prompt-tool aide_permission_prompt` into spawn args
+- `cliAgentTypes.ts` — add `type: 'permission_request'` to `CliAgentMessage`, add `permissionInput?: Record<string,unknown>`
+- `shared/src/index.ts` — add `CLI_AGENT_PERMISSION_REQUEST` and `CLI_AGENT_PERMISSION_RESPONSE` IPC channels
+- `main/src/index.ts` — handle `CLI_AGENT_PERMISSION_RESPONSE` → resolve pending Promise in `cliPermissionServer`
+- `MessageList.tsx` — render `CliPermissionCard` for `permission_request` message type
 
 **IPC channels:**
 ```typescript
-CLI_AGENT_START:     'cli-agent:start'      // renderer → main (spawn agent)
-CLI_AGENT_STOP:      'cli-agent:stop'       // renderer → main (kill/interrupt)
-CLI_AGENT_STATUS:    'cli-agent:status'     // main → renderer (parsed status updates)
-CLI_AGENT_EVENT:     'cli-agent:event'      // main → renderer (structured output events)
+CLI_AGENT_START:               'cli-agent:start'               // renderer → main (spawn agent)
+CLI_AGENT_STOP:                'cli-agent:stop'                // renderer → main (kill/interrupt)
+CLI_AGENT_STATUS:              'cli-agent:status'              // main → renderer (parsed status updates)
+CLI_AGENT_EVENT:               'cli-agent:event'               // main → renderer (structured output events)
+CLI_AGENT_PERMISSION_REQUEST:  'cli-agent:permission-request'  // main → renderer (show approval UI)
+CLI_AGENT_PERMISSION_RESPONSE: 'cli-agent:permission-response' // renderer → main (user decision)
 ```
 
-### Step 8: MCP support
-`mcpManager.ts` — spawn stdio servers, parse tool lists, proxy tool calls. Merge MCP tools into the registry so the agent sees them alongside built-ins.
+### Step 8: MCP support (all servers in one step)
+Build all MCP infrastructure together: `mcpManager.ts` (spawn stdio servers, JSON-RPC lifecycle, tool list caching, crash restart), `toolRegistry.ts` dynamic registration, and the `cliPermissionServer.ts` MCP server for CLI permission interception (designed in Step 7). All three share the same MCP stdio transport layer — implement it once, use it for external servers and the internal permission server. Merge MCP tools into the registry so the agent sees them alongside built-ins.
 
 ### Step 9: Polish + persistence
 Chat history save/restore. Mode switching. Working set UI for edit mode. Stop button. Error states.
