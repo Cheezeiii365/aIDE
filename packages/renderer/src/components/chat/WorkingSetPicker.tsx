@@ -14,8 +14,19 @@ export function WorkingSetPicker({ workingSet, onWorkingSetChange, workspaceRoot
 
   // Load file list when dropdown opens
   useEffect(() => {
-    if (!dropdownOpen || !workspaceRoot) return
-    window.api.listAllFiles(workspaceRoot).then(setAllFiles)
+    let cancelled = false
+    if (!dropdownOpen || !workspaceRoot) return () => { cancelled = true }
+
+    setAllFiles([])
+    window.api.listAllFiles(workspaceRoot)
+      .then((files) => {
+        if (!cancelled) setAllFiles(files)
+      })
+      .catch(() => {
+        if (!cancelled) setAllFiles([])
+      })
+
+    return () => { cancelled = true }
   }, [dropdownOpen, workspaceRoot])
 
   // Focus filter input when dropdown opens
