@@ -316,6 +316,7 @@ export class AgentManager {
     if (session.worktreePath) {
       this.toolRegistry.updateContext({ effectiveRoot: session.worktreePath })
     }
+    this.toolRegistry.updateContext({ workspaceId: session.workspaceId })
 
     let turnCount = 0
     let currentMessageId = assistantMessageId

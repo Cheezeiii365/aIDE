@@ -236,6 +236,17 @@ describe('browser_read executor', () => {
     const result = await findTool('browser_read').execute({}, context)
     expect(result).toBe('Page text here')
   })
+
+  it('passes workspaceId to getPageContent for workspace-scoped fallback', async () => {
+    const mockGetPageContent = vi.fn().mockResolvedValue('Scoped content')
+    const context: ToolContext = {
+      ...defaultContext,
+      workspaceId: 'ws-123',
+      browserPaneManager: { getPageContent: mockGetPageContent } as any,
+    }
+    await findTool('browser_read').execute({}, context)
+    expect(mockGetPageContent).toHaveBeenCalledWith(undefined, undefined, 'ws-123')
+  })
 })
 
 // ─── Input Schema Validation ────────────────────────────────────────

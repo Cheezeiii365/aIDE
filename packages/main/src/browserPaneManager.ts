@@ -342,10 +342,15 @@ export class BrowserPaneManager {
     }
   }
 
-  async getPageContent(paneId?: string, selector?: string): Promise<string | null> {
-    const managed = paneId
-      ? this.panes.get(paneId)
-      : this.panes.values().next().value
+  async getPageContent(paneId?: string, selector?: string, workspaceId?: string): Promise<string | null> {
+    let managed: ManagedBrowserPane | undefined
+    if (paneId) {
+      managed = this.panes.get(paneId)
+    } else if (workspaceId) {
+      for (const p of this.panes.values()) {
+        if (p.workspaceId === workspaceId) { managed = p; break }
+      }
+    }
     if (!managed) return null
     const js = selector
       ? `document.querySelector(${JSON.stringify(selector)})?.innerText ?? ''`

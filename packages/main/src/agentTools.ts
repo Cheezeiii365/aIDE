@@ -12,6 +12,7 @@ export interface ToolContext {
   workspaceRoot: string
   /** Effective root directory — worktree path if set, otherwise workspaceRoot. */
   effectiveRoot?: string
+  workspaceId?: string
   workingSet?: string[]
   browserPaneManager?: BrowserPaneManager
 }
@@ -395,7 +396,7 @@ const browserRead: BuiltinTool = {
 
     const paneId = input.paneId as string | undefined
     const selector = input.selector as string | undefined
-    const content = await context.browserPaneManager.getPageContent(paneId, selector)
+    const content = await context.browserPaneManager.getPageContent(paneId, selector, context.workspaceId)
     if (content === null) return 'No browser pane is currently open.'
     if (!content) return '(empty page content)'
     return truncate(content, MAX_OUTPUT)
