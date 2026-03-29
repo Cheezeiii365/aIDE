@@ -317,17 +317,18 @@ async function activateWorkspace(id: string): Promise<void> {
 }
 
 /**
- * Load LLM configuration with sensible defaults.
+ * Load LLM configuration from the settings cascade.
  * API keys support ${env:VAR} interpolation (resolved by LlmClient).
- * TODO(step6): Read agent.* keys from ResolvedSettings once the settings UI is added.
  */
 function loadLlmConfig(): LlmProviderConfig {
+  const userDefaults = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
   return {
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
-    apiKey: '${env:ANTHROPIC_API_KEY}',
-    maxTurns: 25,
-    maxTokens: 8192,
+    provider: (userDefaults['agent.provider'] as string) || 'anthropic',
+    model: (userDefaults['agent.model'] as string) || 'claude-sonnet-4-20250514',
+    apiKey: (userDefaults['agent.apiKey'] as string) || '',
+    baseUrl: (userDefaults['agent.baseUrl'] as string) || undefined,
+    maxTurns: (userDefaults['agent.maxTurns'] as number) || 25,
+    maxTokens: (userDefaults['agent.maxTokens'] as number) || 8192,
   }
 }
 
@@ -595,6 +596,11 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
     current[key] = value
   }
   store.set('editorDefaults', current)
+
+  // Push agent config updates to AgentManager if an agent.* key changed
+  if (key.startsWith('agent.') && agentManager) {
+    agentManager.updateConfig(loadLlmConfig())
+  }
 
   // Broadcast resolved settings
   const rootPath = store.get('workspaceRoot')

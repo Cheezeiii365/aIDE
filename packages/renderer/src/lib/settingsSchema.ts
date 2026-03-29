@@ -1,6 +1,6 @@
 import type { SettingsScope } from '@aide/shared'
 
-export type SettingType = 'boolean' | 'number' | 'string' | 'enum'
+export type SettingType = 'boolean' | 'number' | 'string' | 'enum' | 'password'
 
 export interface SettingDescriptor {
   key: string
@@ -48,6 +48,13 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       { id: 'features.terminal', label: 'Terminal' },
       { id: 'features.browser', label: 'Browser Panes' },
       { id: 'features.explorer', label: 'Explorer' },
+    ],
+  },
+  {
+    id: 'agent',
+    label: 'Agent',
+    children: [
+      { id: 'agent.llm', label: 'LLM Configuration' },
     ],
   },
   { id: 'extensions', label: 'Extensions' },
@@ -113,6 +120,64 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     description: 'Format a file on save.',
     type: 'boolean',
     category: 'textEditor.formatting',
+    scope: 'both',
+  },
+
+  // Agent > LLM Configuration
+  {
+    key: 'agent.provider',
+    label: 'Provider',
+    description: 'LLM provider to use for agent requests.',
+    type: 'enum',
+    enumValues: [
+      { value: 'anthropic', label: 'Anthropic' },
+      { value: 'openai-compatible', label: 'OpenAI Compatible' },
+    ],
+    category: 'agent.llm',
+    scope: 'both',
+  },
+  {
+    key: 'agent.model',
+    label: 'Model',
+    description: 'Model identifier (e.g. claude-sonnet-4-20250514, gpt-4o, llama-3.3-70b).',
+    type: 'string',
+    category: 'agent.llm',
+    scope: 'both',
+  },
+  {
+    key: 'agent.apiKey',
+    label: 'API Key',
+    description: 'API key for the selected provider. Supports ${env:VAR_NAME} to read from environment variables.',
+    type: 'password',
+    category: 'agent.llm',
+    scope: 'user',
+  },
+  {
+    key: 'agent.baseUrl',
+    label: 'Base URL',
+    description: 'Custom API endpoint for OpenAI-compatible providers (e.g. http://localhost:11434/v1). Leave empty for default.',
+    type: 'string',
+    category: 'agent.llm',
+    scope: 'both',
+  },
+  {
+    key: 'agent.maxTurns',
+    label: 'Max Turns',
+    description: 'Maximum number of agent loop iterations per message before stopping.',
+    type: 'number',
+    min: 1,
+    max: 100,
+    category: 'agent.llm',
+    scope: 'both',
+  },
+  {
+    key: 'agent.maxTokens',
+    label: 'Max Tokens',
+    description: 'Maximum tokens per LLM response.',
+    type: 'number',
+    min: 256,
+    max: 65536,
+    category: 'agent.llm',
     scope: 'both',
   },
 ]

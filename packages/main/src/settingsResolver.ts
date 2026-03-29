@@ -23,6 +23,14 @@ export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   formatOnSave: false,
   filesExclude: {},
   searchExclude: {},
+
+  // Agent / LLM defaults
+  'agent.provider': 'anthropic',
+  'agent.model': 'claude-sonnet-4-20250514',
+  'agent.apiKey': '',
+  'agent.baseUrl': '',
+  'agent.maxTurns': 25,
+  'agent.maxTokens': 8192,
 }
 
 /**
@@ -52,6 +60,14 @@ export function resolveAppDefaults(
       ...BUILT_IN_DEFAULTS.searchExclude,
       ...userDefaults.searchExclude,
     },
+
+    // Agent / LLM
+    'agent.provider': userDefaults['agent.provider'] ?? BUILT_IN_DEFAULTS['agent.provider'],
+    'agent.model': userDefaults['agent.model'] ?? BUILT_IN_DEFAULTS['agent.model'],
+    'agent.apiKey': userDefaults['agent.apiKey'] ?? BUILT_IN_DEFAULTS['agent.apiKey'],
+    'agent.baseUrl': userDefaults['agent.baseUrl'] ?? BUILT_IN_DEFAULTS['agent.baseUrl'],
+    'agent.maxTurns': userDefaults['agent.maxTurns'] ?? BUILT_IN_DEFAULTS['agent.maxTurns'],
+    'agent.maxTokens': userDefaults['agent.maxTokens'] ?? BUILT_IN_DEFAULTS['agent.maxTokens'],
   }
 }
 
@@ -105,5 +121,13 @@ export async function resolveSettings(
       ...appDefaults.searchExclude,
       ...projectSettings.searchExclude,
     },
+
+    // Agent / LLM
+    'agent.provider': projectSettings['agent.provider'] ?? appDefaults['agent.provider'],
+    'agent.model': projectSettings['agent.model'] ?? appDefaults['agent.model'],
+    'agent.apiKey': projectSettings['agent.apiKey'] ?? appDefaults['agent.apiKey'],
+    'agent.baseUrl': projectSettings['agent.baseUrl'] ?? appDefaults['agent.baseUrl'],
+    'agent.maxTurns': projectSettings['agent.maxTurns'] ?? appDefaults['agent.maxTurns'],
+    'agent.maxTokens': projectSettings['agent.maxTokens'] ?? appDefaults['agent.maxTokens'],
   }
 }

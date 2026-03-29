@@ -564,3 +564,50 @@
   color: var(--text-muted);
   padding: 0 2px;
 }
+
+/* ── Password / API Key ── */
+
+.settings-password {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-input--password {
+  width: 240px;
+  font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.settings-password__toggle {
+  background: none;
+  border: 1px solid var(--border-base);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.settings-password__toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.settings-password__env-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-success);
+  background: rgba(76, 175, 80, 0.12);
+  border-radius: 3px;
+  padding: 2px 6px;
+  line-height: 1;
+}

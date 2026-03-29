@@ -306,6 +306,14 @@ export interface AideProjectSettings {
   filesExclude?: Record<string, boolean>
   searchExclude?: Record<string, boolean>
   languageOverrides?: Record<string, Partial<AideProjectSettings>>
+
+  // Agent / LLM settings
+  'agent.provider'?: string
+  'agent.model'?: string
+  'agent.apiKey'?: string
+  'agent.baseUrl'?: string
+  'agent.maxTurns'?: number
+  'agent.maxTokens'?: number
 }
 
 // Fully resolved settings (no optional fields)
@@ -319,6 +327,14 @@ export interface ResolvedSettings {
   formatOnSave: boolean
   filesExclude: Record<string, boolean>
   searchExclude: Record<string, boolean>
+
+  // Agent / LLM settings
+  'agent.provider': string
+  'agent.model': string
+  'agent.apiKey': string
+  'agent.baseUrl': string
+  'agent.maxTurns': number
+  'agent.maxTokens': number
 }
 
 // .aide/local/workspace.json

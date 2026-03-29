@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { SettingDescriptor } from '../../lib/settingsSchema'
 
 interface Props {
@@ -60,7 +61,41 @@ export function SettingControl({ descriptor, value, onChange }: Props) {
         </select>
       )
 
+    case 'password':
+      return <PasswordControl value={value} onChange={onChange} />
+
     default:
       return null
   }
+}
+
+function PasswordControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
+  const [revealed, setRevealed] = useState(false)
+  const strValue = (value as string) ?? ''
+  const isEnvRef = strValue.startsWith('${env:')
+
+  return (
+    <div className="settings-password">
+      <input
+        type={revealed ? 'text' : 'password'}
+        className="settings-input settings-input--password"
+        value={strValue}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="sk-... or ${env:ANTHROPIC_API_KEY}"
+        spellCheck={false}
+        autoComplete="off"
+      />
+      <button
+        className="settings-password__toggle"
+        onClick={() => setRevealed(!revealed)}
+        title={revealed ? 'Hide' : 'Reveal'}
+        type="button"
+      >
+        {revealed ? 'Hide' : 'Show'}
+      </button>
+      {isEnvRef && (
+        <span className="settings-password__env-badge">ENV</span>
+      )}
+    </div>
+  )
 }
