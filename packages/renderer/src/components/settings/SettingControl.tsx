@@ -71,7 +71,7 @@ export function SettingControl({ descriptor, value, onChange }: Props) {
 
 function PasswordControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
   const [revealed, setRevealed] = useState(false)
-  const strValue = (value as string) ?? ''
+  const strValue = typeof value === 'string' ? value : ''
   const isEnvRef = strValue.startsWith('${env:')
 
   return (
