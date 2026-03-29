@@ -799,7 +799,7 @@ export interface WindowApi {
   cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string) => Promise<{ sessionId: string } | { error: string }>
   cliAgentStop: (sessionId: string) => void
   cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
-  cliAgentGetSession: (workspaceId: string) => Promise<CliAgentSession | null>
+  cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
   onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void

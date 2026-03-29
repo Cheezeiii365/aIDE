@@ -558,8 +558,14 @@ ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, con
   return cliAgentManager.send(sessionId, content)
 })
 
-ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: string) => {
-  return cliAgentManager?.getSession(workspaceId) ?? null
+ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: string, sessionId?: string) => {
+  if (!cliAgentManager) return null
+  if (sessionId) {
+    const s = cliAgentManager.getSessionById(sessionId)
+    if (!s || s.workspaceId !== workspaceId) return null
+    return s
+  }
+  return cliAgentManager.getSession(workspaceId) ?? null
 })
 
 ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {

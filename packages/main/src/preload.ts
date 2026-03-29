@@ -369,8 +369,8 @@ const api: WindowApi = {
     ipcRenderer.send(IpcChannels.CLI_AGENT_STOP, sessionId),
   cliAgentSend: (sessionId: string, content: string) =>
     ipcRenderer.invoke(IpcChannels.CLI_AGENT_SEND, sessionId, content),
-  cliAgentGetSession: (workspaceId: string): Promise<CliAgentSession | null> =>
-    ipcRenderer.invoke(IpcChannels.CLI_AGENT_GET_SESSION, workspaceId),
+  cliAgentGetSession: (workspaceId: string, sessionId?: string): Promise<CliAgentSession | null> =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_GET_SESSION, workspaceId, sessionId),
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, delta: CliAgentStreamDelta) => callback(delta)
     ipcRenderer.on(IpcChannels.CLI_AGENT_STREAM_DELTA, handler)

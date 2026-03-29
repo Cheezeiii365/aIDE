@@ -37,7 +37,7 @@ import {
   clearWorkspaceRuntimeSnapshot,
   saveWorkspaceRuntimeSnapshot,
 } from '../lib/workspaceRuntimeSnapshots'
-import type { AideTask, BrowserSessionMode, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
+import type { AideTask, BrowserSessionMode, ConversationMeta, GitignoreAuditResult, TaskInputRequest } from '@aide/shared'
 import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
 
 /**
@@ -790,9 +790,32 @@ export function AppShell() {
     const api = dockviewApiRef.current
     if (!api || !activeWorkspaceId) return
 
+    const onOpenConversation = (conv: ConversationMeta) => {
+      api.addPanel({
+        id: `agent-${Date.now()}`,
+        component:
+          conv.source === 'claude-native' || conv.backend === 'claude-code' || conv.backend === 'codex'
+            ? 'cliAgentPane'
+            : 'chatPane',
+        params: {
+          workspaceId: activeWorkspaceId,
+          workspaceRoot: workspaceRoot ?? undefined,
+          backend: conv.backend,
+          conversationId: conv.id,
+        },
+      })
+    }
+
+    const historyParams = {
+      workspaceId: activeWorkspaceId,
+      workspaceRoot: workspaceRoot ?? undefined,
+      onOpenConversation,
+    }
+
     // Focus existing chat history panel if present
     const existing = api.panels.find((p) => p.id === 'agent-history')
     if (existing) {
+      existing.api.updateParameters({ ...existing.params, ...historyParams })
       existing.api.setActive()
       return
     }
@@ -802,7 +825,7 @@ export function AppShell() {
       id: 'agent-history',
       component: 'chatHistoryPane',
       title: 'Chat History',
-      params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
+      params: historyParams,
     })
   })
 

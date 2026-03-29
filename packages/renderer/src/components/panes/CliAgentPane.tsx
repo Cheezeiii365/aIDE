@@ -16,11 +16,16 @@ interface CliAgentPanelParams {
 }
 
 export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelParams>) {
-  const backend = params?.backend ?? 'claude-code'
-  const agent = useCliAgent(params?.workspaceId, params?.conversationId)
+  const { workspaceId, workspaceRoot, backend: backendParam, conversationId, zoomFactor } = params ?? {}
+  const backend = backendParam ?? 'claude-code'
+  const agent = useCliAgent({ workspaceId, backend, conversationId })
   const listRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
   const hasAutoStartedRef = useRef(false)
+
+  useEffect(() => {
+    hasAutoStartedRef.current = false
+  }, [workspaceId, conversationId])
 
   // Auto-title the tab based on conversation title
   useEffect(() => {
@@ -32,16 +37,16 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
   // Auto-create session on mount (no process yet — first send() spawns it)
   useEffect(() => {
     if (
-      params?.workspaceId &&
+      workspaceId &&
       agent.processStatus === 'stopped' &&
       !hasAutoStartedRef.current &&
       !agent.lastError &&
       agent.messages.length === 0
     ) {
       hasAutoStartedRef.current = true
-      agent.start(backend)
+      void agent.start(backend)
     }
-  }, [params?.workspaceId, agent.processStatus, backend]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [workspaceId, conversationId, agent.processStatus, agent.lastError, agent.messages.length, agent.start, backend])
 
   // Auto-scroll
   useEffect(() => {
@@ -61,7 +66,7 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
   const isActive = agent.processStatus === 'running' || agent.processStatus === 'starting' || agent.processStatus === 'rate_limited'
 
   return (
-    <div className="cli-agent-pane" style={{ ['--panel-zoom' as string]: String(params?.zoomFactor ?? 1) }}>
+    <div className="cli-agent-pane" style={{ ['--panel-zoom' as string]: String(zoomFactor ?? 1) }}>
       {/* Header */}
       <div className="cli-agent-pane__header">
         <AgentStatusDot status={agent.processStatus} />

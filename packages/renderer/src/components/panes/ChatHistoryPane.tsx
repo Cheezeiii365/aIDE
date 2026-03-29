@@ -19,6 +19,8 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const filterRef = useRef<HTMLInputElement>(null)
+  /** Dedupe double-click (two click events + dblclick) opening multiple tabs. */
+  const lastActivateRef = useRef<{ id: string; t: number } | null>(null)
 
   const filtered = filter
     ? history.conversations.filter(c =>
@@ -27,11 +29,13 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
       )
     : history.conversations
 
-  const handleClick = (meta: ConversationMeta) => {
-    if (params?.onOpenConversation) {
-      params.onOpenConversation(meta)
-    }
-  }
+  const activateConversation = useCallback((meta: ConversationMeta) => {
+    const now = Date.now()
+    const prev = lastActivateRef.current
+    if (prev && prev.id === meta.id && now - prev.t < 400) return
+    lastActivateRef.current = { id: meta.id, t: now }
+    params?.onOpenConversation?.(meta)
+  }, [params?.onOpenConversation])
 
   const handleContextMenu = (e: React.MouseEvent, meta: ConversationMeta) => {
     e.preventDefault()
@@ -58,9 +62,7 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
 
   const handleNewChat = async (backend: AgentBackend = 'built-in') => {
     const meta = await history.createConversation(backend)
-    if (params?.onOpenConversation) {
-      params.onOpenConversation(meta)
-    }
+    params?.onOpenConversation?.(meta)
   }
 
   // Close context menu on click outside
@@ -112,7 +114,8 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
           <div
             key={meta.id}
             className="chat-history-pane__item"
-            onClick={() => handleClick(meta)}
+            onClick={() => activateConversation(meta)}
+            onDoubleClick={() => activateConversation(meta)}
             onContextMenu={(e) => handleContextMenu(e, meta)}
           >
             <div className="chat-history-pane__item-row1">

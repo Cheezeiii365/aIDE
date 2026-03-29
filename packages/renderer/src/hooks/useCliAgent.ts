@@ -22,7 +22,14 @@ export interface UseCliAgentReturn {
   stop: () => void
 }
 
-export function useCliAgent(workspaceId: string | undefined, conversationId?: string): UseCliAgentReturn {
+export interface UseCliAgentOptions {
+  workspaceId?: string
+  backend?: AgentBackend
+  conversationId?: string
+}
+
+export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
+  const { workspaceId, conversationId } = options
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<CliAgentMessage[]>([])
   const [renderTick, setRenderTick] = useState(0)
@@ -42,8 +49,9 @@ export function useCliAgent(workspaceId: string | undefined, conversationId?: st
     if (!workspaceId) return
     let cancelled = false
 
-    window.api.cliAgentGetSession(workspaceId).then((session: CliAgentSession | null) => {
+    window.api.cliAgentGetSession(workspaceId, conversationId).then((session: CliAgentSession | null) => {
       if (cancelled || !session) return
+      if (conversationId && session.id !== conversationId) return
       sessionIdRef.current = session.id
       messagesRef.current = session.messages
       setProcessStatus(session.processStatus)
@@ -133,8 +141,10 @@ export function useCliAgent(workspaceId: string | undefined, conversationId?: st
   const start = useCallback(async (backend: AgentBackend) => {
     if (!workspaceId) return
 
-    // Reset state
-    messagesRef.current = []
+    // New chat: clear local state. Resuming (conversationId set): main loads history; we hydrate after start.
+    if (!conversationId) {
+      messagesRef.current = []
+    }
     streamingContentRef.current = ''
     setStreamingContent('')
     setStreamingMessageId(null)
@@ -147,6 +157,14 @@ export function useCliAgent(workspaceId: string | undefined, conversationId?: st
       setProcessStatus('error')
     } else {
       sessionIdRef.current = result.sessionId
+      const session = await window.api.cliAgentGetSession(workspaceId, result.sessionId)
+      if (session) {
+        messagesRef.current = session.messages
+        setProcessStatus(session.processStatus)
+        setModel(session.model ?? null)
+        setLastError(session.lastError ?? null)
+      }
+      tick()
     }
   }, [workspaceId, conversationId, tick])
 
