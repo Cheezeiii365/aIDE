@@ -52,6 +52,7 @@ interface AgentManagerOpts {
 }
 
 interface PendingApproval {
+  sessionId: string
   resolve: (approved: boolean) => void
 }
 
@@ -267,8 +268,10 @@ export class AgentManager {
 
     // Reject all pending approvals for this session
     for (const [toolCallId, pending] of this.pendingApprovals) {
-      pending.resolve(false)
-      this.pendingApprovals.delete(toolCallId)
+      if (pending.sessionId === sessionId) {
+        pending.resolve(false)
+        this.pendingApprovals.delete(toolCallId)
+      }
     }
 
     // Reset session status
@@ -552,7 +555,7 @@ export class AgentManager {
           toolCall: tc,
         } satisfies ChatToolCallPayload)
 
-        const approved = await this.waitForApproval(tc)
+        const approved = await this.waitForApproval(session.id, tc)
 
         if (signal.aborted || !approved) {
           tc.status = 'rejected'
@@ -586,9 +589,9 @@ export class AgentManager {
     return results
   }
 
-  private waitForApproval(toolCall: ToolCall): Promise<boolean> {
+  private waitForApproval(sessionId: string, toolCall: ToolCall): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      this.pendingApprovals.set(toolCall.id, { resolve })
+      this.pendingApprovals.set(toolCall.id, { sessionId, resolve })
     })
   }
 
