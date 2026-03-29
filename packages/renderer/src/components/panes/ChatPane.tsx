@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
 import { useChat } from '../../hooks/useChat'
 import { ModeSelector } from '../chat/ModeSelector'
@@ -9,11 +10,19 @@ import { ChatInput } from '../chat/ChatInput'
 interface ChatPanelParams {
   workspaceId?: string
   workspaceRoot?: string
+  conversationId?: string
   zoomFactor?: number
 }
 
-export function ChatPane({ params }: IDockviewPanelProps<ChatPanelParams>) {
-  const chat = useChat(params?.workspaceId)
+export function ChatPane({ params, api }: IDockviewPanelProps<ChatPanelParams>) {
+  const chat = useChat(params?.workspaceId, params?.conversationId)
+
+  // Auto-title the tab based on conversation title
+  useEffect(() => {
+    if (chat.conversationTitle && chat.conversationTitle !== 'New Chat') {
+      api.setTitle(chat.conversationTitle)
+    }
+  }, [api, chat.conversationTitle])
 
   return (
     <div className="chat-pane" style={{ ['--panel-zoom' as string]: String(params?.zoomFactor ?? 1) }}>

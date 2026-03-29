@@ -22,7 +22,8 @@ import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './gitDiff'
 import { AgentManager } from './agentManager'
 import { CliAgentManager } from './cliAgentManager'
-import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend } from '@aide/shared'
+import { ConversationStore } from './conversationStore'
+import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend, ConversationCreateOpts } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -30,6 +31,7 @@ const workspaceRegistry = new WorkspaceRegistry()
 let taskRunner: TaskRunner | null = null
 let agentManager: AgentManager | null = null
 let cliAgentManager: CliAgentManager | null = null
+let conversationStore: ConversationStore | null = null
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -303,10 +305,14 @@ async function activateWorkspace(id: string): Promise<void> {
     }
   }
 
-  // Initialize agent manager for this workspace
-  agentManager?.destroy()
+  // Initialize conversation store + agent managers for this workspace
+  await agentManager?.destroy()
+  await cliAgentManager?.destroy()
   agentManager = null
+  cliAgentManager = null
+  conversationStore = null
   if (entry.rootPath) {
+    conversationStore = new ConversationStore(entry.rootPath)
     const permConfig = loadPermissionConfig()
     agentManager = new AgentManager({
       config: loadLlmConfig(),
@@ -315,19 +321,15 @@ async function activateWorkspace(id: string): Promise<void> {
       browserPaneManager,
       permissionTier: permConfig.permissionTier,
       autoApprove: permConfig.autoApprove,
+      conversationStore,
     })
-  }
-
-  // Initialize CLI agent manager for this workspace
-  cliAgentManager?.destroy()
-  cliAgentManager = null
-  if (entry.rootPath) {
     const resolved = resolveAppDefaults(store)
     cliAgentManager = new CliAgentManager({
       workspaceRoot: entry.rootPath,
       getWebContents: () => contentView?.webContents ?? null,
       claudeCodePath: resolved['agent.claudeCodePath'],
       codexPath: resolved['agent.codexPath'],
+      conversationStore,
     })
   }
 
@@ -499,9 +501,9 @@ ipcMain.handle(IpcChannels.CHAT_SEND_MESSAGE, async (_event, sessionId: string, 
   return agentManager.sendMessage(sessionId, content)
 })
 
-ipcMain.handle(IpcChannels.CHAT_GET_HISTORY, async (_event, workspaceId: string) => {
+ipcMain.handle(IpcChannels.CHAT_GET_HISTORY, async (_event, workspaceId: string, conversationId?: string) => {
   if (!agentManager) return null
-  return agentManager.getHistory(workspaceId)
+  return agentManager.getHistory(workspaceId, conversationId)
 })
 
 ipcMain.handle(IpcChannels.CHAT_SET_MODE, async (_event, sessionId: string, mode: ChatMode) => {
@@ -526,9 +528,9 @@ ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
 
 // ─── CLI Agent IPC handlers ─────────────────────────────────────
 
-ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend) => {
+ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend, conversationId?: string) => {
   if (!cliAgentManager) return { error: 'No workspace open' }
-  return cliAgentManager.start(workspaceId, backend)
+  return cliAgentManager.start(workspaceId, backend, conversationId)
 })
 
 ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, content: string) => {
@@ -542,6 +544,58 @@ ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: st
 
 ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
   cliAgentManager?.stop(sessionId)
+})
+
+// ─── Conversation History IPC handlers ──────────────────────────
+
+ipcMain.handle(IpcChannels.CONVERSATION_LIST, async (_event, workspaceId: string) => {
+  return conversationStore?.loadIndex() ?? []
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_CREATE, async (_event, opts: ConversationCreateOpts) => {
+  if (!conversationStore) return { error: 'No workspace open' }
+  const meta = await conversationStore.create(opts)
+  // Notify renderer
+  const index = await conversationStore.loadIndex()
+  contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+    workspaceId: opts.workspaceId,
+    conversations: index,
+  })
+  return meta
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_DELETE, async (_event, conversationId: string) => {
+  if (!conversationStore) return
+  const meta = await conversationStore.get(conversationId)
+  await conversationStore.delete(conversationId)
+  // Stop any active session
+  agentManager?.stop(conversationId)
+  cliAgentManager?.stop(conversationId)
+  // Notify renderer
+  if (meta) {
+    const index = await conversationStore.loadIndex()
+    contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+      workspaceId: meta.workspaceId,
+      conversations: index,
+    })
+  }
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_RENAME, async (_event, conversationId: string, title: string) => {
+  if (!conversationStore) return
+  await conversationStore.updateMeta(conversationId, { title, autoTitled: false, updatedAt: Date.now() })
+  const meta = await conversationStore.get(conversationId)
+  if (meta) {
+    const index = await conversationStore.loadIndex()
+    contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+      workspaceId: meta.workspaceId,
+      conversations: index,
+    })
+  }
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_GET, async (_event, conversationId: string) => {
+  return conversationStore?.get(conversationId) ?? null
 })
 
 // State persistence IPC handlers
@@ -1142,11 +1196,12 @@ function finishQuit(): void {
   // Mark clean shutdown
   store.set('cleanShutdown', true)
 
-  // Clean up resources
-  agentManager?.destroy()
+  // Clean up resources (async destroy for persistence, but don't block quit)
+  agentManager?.destroy().catch(() => {})
   agentManager = null
-  cliAgentManager?.destroy()
+  cliAgentManager?.destroy().catch(() => {})
   cliAgentManager = null
+  conversationStore = null
   taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()

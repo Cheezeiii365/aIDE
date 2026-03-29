@@ -6,6 +6,7 @@ import type {
   CliAgentSession,
   CliAgentStreamDelta,
   CliAgentStatusPayload,
+  ConversationListChangedPayload,
 } from '@aide/shared'
 
 export interface UseCliAgentReturn {
@@ -15,18 +16,20 @@ export interface UseCliAgentReturn {
   streamingMessageId: string | null
   model: string | null
   lastError: string | null
+  conversationTitle: string
   start: (backend: AgentBackend) => Promise<void>
   send: (content: string) => Promise<void>
   stop: () => void
 }
 
-export function useCliAgent(workspaceId: string | undefined): UseCliAgentReturn {
+export function useCliAgent(workspaceId: string | undefined, conversationId?: string): UseCliAgentReturn {
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<CliAgentMessage[]>([])
   const [renderTick, setRenderTick] = useState(0)
   const [processStatus, setProcessStatus] = useState<CliAgentProcessStatus>('stopped')
   const [model, setModel] = useState<string | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
+  const [conversationTitle, setConversationTitle] = useState('New Chat')
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const streamingContentRef = useRef('')
   const [streamingContent, setStreamingContent] = useState('')
@@ -34,7 +37,7 @@ export function useCliAgent(workspaceId: string | undefined): UseCliAgentReturn 
 
   const tick = useCallback(() => setRenderTick((n) => n + 1), [])
 
-  // Load existing session on mount / workspace change
+  // Load existing session on mount / workspace change / conversationId change
   useEffect(() => {
     if (!workspaceId) return
     let cancelled = false
@@ -49,8 +52,26 @@ export function useCliAgent(workspaceId: string | undefined): UseCliAgentReturn 
       tick()
     })
 
+    // Load conversation title
+    if (conversationId) {
+      window.api.conversationGet(conversationId).then(meta => {
+        if (!cancelled && meta) setConversationTitle(meta.title)
+      }).catch(() => {})
+    }
+
     return () => { cancelled = true }
-  }, [workspaceId, tick])
+  }, [workspaceId, conversationId, tick])
+
+  // Subscribe to conversation list changes (for title updates)
+  useEffect(() => {
+    const unsub = window.api.onConversationListChanged((payload: ConversationListChangedPayload) => {
+      const sid = sessionIdRef.current ?? conversationId
+      if (!sid) return
+      const meta = payload.conversations.find(c => c.id === sid)
+      if (meta) setConversationTitle(meta.title)
+    })
+    return unsub
+  }, [conversationId])
 
   // Subscribe to stream deltas
   useEffect(() => {
@@ -120,14 +141,14 @@ export function useCliAgent(workspaceId: string | undefined): UseCliAgentReturn 
     setLastError(null)
     tick()
 
-    const result = await window.api.cliAgentStart(workspaceId, backend)
+    const result = await window.api.cliAgentStart(workspaceId, backend, conversationId)
     if ('error' in result) {
       setLastError(result.error)
       setProcessStatus('error')
     } else {
       sessionIdRef.current = result.sessionId
     }
-  }, [workspaceId, tick])
+  }, [workspaceId, conversationId, tick])
 
   const send = useCallback(async (content: string) => {
     const sid = sessionIdRef.current
@@ -161,6 +182,7 @@ export function useCliAgent(workspaceId: string | undefined): UseCliAgentReturn 
     streamingMessageId,
     model,
     lastError,
+    conversationTitle,
     start,
     send,
     stop,

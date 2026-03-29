@@ -19,6 +19,10 @@ export type {
   CliAgentStatusPayload, CliAgentResultPayload,
 } from './cliAgentTypes'
 export type {
+  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+} from './conversationTypes'
+export { deriveTitle } from './conversationTypes'
+export type {
   LlmMessage, LlmContentBlock, LlmToolDefinition, LlmUsage,
   LlmStreamEvent, StreamParams, LlmProvider, SseEvent,
   AnthropicRequest, AnthropicMessage, AnthropicContentBlock, AnthropicTool, AnthropicStreamEvent,
@@ -33,6 +37,9 @@ import type {
   AgentBackend, CliAgentStreamDelta, CliAgentMessage,
   CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload,
 } from './cliAgentTypes'
+import type {
+  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+} from './conversationTypes'
 export {
   adjustZoomFactor,
   clampZoomFactor,
@@ -227,6 +234,14 @@ export const IpcChannels = {
   CLI_AGENT_MESSAGE: 'cli-agent:message',
   CLI_AGENT_STATUS: 'cli-agent:status',
   CLI_AGENT_RESULT: 'cli-agent:result',
+
+  // ─── Conversation History ────────────────────
+  CONVERSATION_LIST: 'conversation:list',
+  CONVERSATION_CREATE: 'conversation:create',
+  CONVERSATION_DELETE: 'conversation:delete',
+  CONVERSATION_RENAME: 'conversation:rename',
+  CONVERSATION_GET: 'conversation:get',
+  CONVERSATION_LIST_CHANGED: 'conversation:list-changed',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -764,7 +779,7 @@ export interface WindowApi {
 
   // ─── Agent Chat ───────────────────────────────
   chatSendMessage: (sessionId: string, content: string) => Promise<{ messageId: string } | { error: string }>
-  chatGetHistory: (workspaceId: string) => Promise<ChatSession | null>
+  chatGetHistory: (workspaceId: string, conversationId?: string) => Promise<ChatSession | null>
   chatSetMode: (sessionId: string, mode: ChatMode) => Promise<void>
   chatSetWorkingSet: (sessionId: string, paths: string[]) => Promise<void>
   chatToolApprove: (sessionId: string, toolCallId: string) => Promise<void>
@@ -781,7 +796,7 @@ export interface WindowApi {
   onMcpServerStatus: (callback: (status: McpServerStatus) => void) => () => void
 
   // ─── CLI Agent ───────────────────────────────
-  cliAgentStart: (workspaceId: string, backend: AgentBackend) => Promise<{ sessionId: string } | { error: string }>
+  cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string) => Promise<{ sessionId: string } | { error: string }>
   cliAgentStop: (sessionId: string) => void
   cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
   cliAgentGetSession: (workspaceId: string) => Promise<CliAgentSession | null>
@@ -789,6 +804,14 @@ export interface WindowApi {
   onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void
   onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => () => void
+
+  // ─── Conversation History ────────────────────
+  conversationList: (workspaceId: string) => Promise<ConversationMeta[]>
+  conversationCreate: (opts: ConversationCreateOpts) => Promise<ConversationMeta>
+  conversationDelete: (conversationId: string) => Promise<void>
+  conversationRename: (conversationId: string, title: string) => Promise<void>
+  conversationGet: (conversationId: string) => Promise<ConversationMeta | null>
+  onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
 
   // Platform info
   platform: NodeJS.Platform

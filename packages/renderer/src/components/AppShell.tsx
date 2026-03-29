@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, use } from 'react'
 import type { DockviewApi } from 'dockview-react'
 import { WorkspaceRibbon } from './WorkspaceRibbon'
 import { Sidebar } from './Sidebar'
@@ -718,7 +718,7 @@ export function AppShell() {
     setQuickOpenOpen(false)
     setNewBrowserPaneOpen(true)
   })
-
+// Agents Commands
   useCommand('agent.open', {
     label: 'Open Agent Panel',
     category: 'Agent',
@@ -780,6 +780,32 @@ export function AppShell() {
       persistWorkspaceRuntime()
     })
   })
+
+  // Open Chat History Pane
+  // TODO: Register a key command
+  useCommand('agent.history.open', {
+    label: 'Open Chat History',
+    category: 'Agent',
+  }, () => {
+    const api = dockviewApiRef.current
+    if (!api || !activeWorkspaceId) return
+
+    // Focus existing chat history panel if present
+    const existing = api.panels.find((p) => p.id === 'agent-history')
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+
+    // Create new chat history panel
+    api.addPanel({
+      id: 'agent-history',
+      component: 'chatHistoryPane',
+      title: 'Chat History',
+      params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
+    })
+  })
+
 
   useCommand('browser.back', {
     label: 'Browser Back',

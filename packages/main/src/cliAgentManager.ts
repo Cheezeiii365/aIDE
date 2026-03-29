@@ -18,13 +18,15 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import type { WebContents } from 'electron'
-import { IpcChannels } from '@aide/shared'
+import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
   AgentBackend, CliAgentProcessStatus, CliAgentMessage,
   CliAgentSession, CliAgentStreamDelta,
   CliAgentStatusPayload, CliAgentResultPayload,
+  ConversationListChangedPayload,
 } from '@aide/shared'
 import { StructuredOutputParser, type ParsedEvent } from './structuredOutputParser'
+import type { ConversationStore } from './conversationStore'
 
 // ---------------------------------------------------------------------------
 // Internal session state
@@ -56,6 +58,7 @@ export interface CliAgentManagerOpts {
   getWebContents: () => WebContents | null
   claudeCodePath?: string
   codexPath?: string
+  conversationStore?: ConversationStore
 }
 
 // ---------------------------------------------------------------------------
@@ -64,17 +67,18 @@ export interface CliAgentManagerOpts {
 
 export class CliAgentManager {
   private sessions = new Map<string, CliAgentSessionInternal>()
-  private workspaceSessions = new Map<string, string>() // workspaceId → sessionId
   private workspaceRoot: string
   private getWebContents: () => WebContents | null
   private claudeCodePath: string
   private codexPath: string
+  private conversationStore: ConversationStore | null
 
   constructor(opts: CliAgentManagerOpts) {
     this.workspaceRoot = opts.workspaceRoot
     this.getWebContents = opts.getWebContents
     this.claudeCodePath = opts.claudeCodePath ?? ''
     this.codexPath = opts.codexPath ?? ''
+    this.conversationStore = opts.conversationStore ?? null
   }
 
   // ─── Public API ──────────────────────────────
@@ -83,14 +87,18 @@ export class CliAgentManager {
    * Initialize a CLI agent session for a workspace. Does not spawn a process
    * yet — that happens on the first `send()`. Returns immediately.
    */
+  /**
+   * Initialize a CLI agent session. Does not spawn a process yet — that
+   * happens on the first `send()`.
+   *
+   * If `conversationId` is provided, resumes an existing conversation
+   * (loads claudeSessionId from the store for --resume).
+   */
   async start(
     workspaceId: string,
     backend: AgentBackend,
+    conversationId?: string,
   ): Promise<{ sessionId: string } | { error: string }> {
-    // Kill any existing process for this workspace
-    const existingId = this.workspaceSessions.get(workspaceId)
-    if (existingId) this.stop(existingId)
-
     if (backend === 'codex') {
       return { error: 'Codex integration coming soon.' }
     }
@@ -107,7 +115,30 @@ export class CliAgentManager {
       }
     }
 
-    const sessionId = randomUUID()
+    // If resuming an existing conversation, load from store
+    let existingMessages: CliAgentMessage[] = []
+    let existingClaudeSessionId: string | undefined
+
+    if (conversationId && this.conversationStore) {
+      const meta = await this.conversationStore.get(conversationId)
+      if (meta?.claudeSessionId) {
+        existingClaudeSessionId = meta.claudeSessionId
+      }
+      const saved = await this.conversationStore.loadMessages(conversationId) as { messages?: CliAgentMessage[], claudeSessionId?: string } | null
+      if (saved?.messages) {
+        existingMessages = saved.messages
+      }
+      if (saved?.claudeSessionId) {
+        existingClaudeSessionId = saved.claudeSessionId
+      }
+    }
+
+    const sessionId = conversationId ?? randomUUID()
+
+    // If session already in memory, return it
+    if (this.sessions.has(sessionId)) {
+      return { sessionId }
+    }
 
     const session: CliAgentSessionInternal = {
       id: sessionId,
@@ -115,13 +146,13 @@ export class CliAgentManager {
       backend,
       process: null,
       processStatus: 'stopped',
-      messages: [],
+      messages: existingMessages,
       stderrBuffer: '',
       totalCostUsd: 0,
+      claudeSessionId: existingClaudeSessionId,
     }
 
     this.sessions.set(sessionId, session)
-    this.workspaceSessions.set(workspaceId, sessionId)
     this.emitStatus(session)
 
     return { sessionId }
@@ -157,6 +188,9 @@ export class CliAgentManager {
     }
     session.messages.push(userMsg)
     this.emitMessage(session, userMsg)
+
+    // Auto-title on first user message
+    await this.maybeAutoTitle(session, content)
 
     // Build args
     const args = [
@@ -252,11 +286,22 @@ export class CliAgentManager {
   }
 
   getSession(workspaceId: string): CliAgentSession | null {
-    const sessionId = this.workspaceSessions.get(workspaceId)
-    if (!sessionId) return null
+    // Find the most recent session for this workspace
+    for (const session of this.sessions.values()) {
+      if (session.workspaceId === workspaceId) {
+        return this.toPublicSession(session)
+      }
+    }
+    return null
+  }
+
+  getSessionById(sessionId: string): CliAgentSession | null {
     const session = this.sessions.get(sessionId)
     if (!session) return null
+    return this.toPublicSession(session)
+  }
 
+  private toPublicSession(session: CliAgentSessionInternal): CliAgentSession {
     return {
       id: session.id,
       workspaceId: session.workspaceId,
@@ -275,15 +320,16 @@ export class CliAgentManager {
     this.codexPath = codexPath
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     for (const session of this.sessions.values()) {
       if (session.process) {
         session.process.kill('SIGKILL')
         if (session.killTimer) clearTimeout(session.killTimer)
       }
+      // Persist messages and claudeSessionId
+      await this.persistSession(session).catch(() => {})
     }
     this.sessions.clear()
-    this.workspaceSessions.clear()
   }
 
   // ─── Binary Resolution ───────────────────────
@@ -351,6 +397,8 @@ export class CliAgentManager {
       const sdkSessionId = event.session_id as string | undefined
       if (sdkSessionId) {
         session.claudeSessionId = sdkSessionId
+        // Persist to store for future resume
+        this.conversationStore?.updateMeta(session.id, { claudeSessionId: sdkSessionId }).catch(() => {})
       }
 
       session.model = (event.model as string) ?? undefined
@@ -507,5 +555,40 @@ export class CliAgentManager {
     if (session.processStatus === 'rate_limited' && msg.type !== 'status') {
       this.setStatus(session, 'running')
     }
+  }
+
+  // ─── Persistence Helpers ─────────────────────
+
+  private async persistSession(session: CliAgentSessionInternal): Promise<void> {
+    if (!this.conversationStore) return
+    await this.conversationStore.saveMessages(session.id, {
+      messages: session.messages,
+      claudeSessionId: session.claudeSessionId,
+    })
+    await this.conversationStore.updateMeta(session.id, {
+      updatedAt: Date.now(),
+      messageCount: session.messages.length,
+      firstMessage: session.messages.find(m => m.type === 'user')?.content.slice(0, 100),
+      claudeSessionId: session.claudeSessionId,
+    })
+  }
+
+  private async maybeAutoTitle(session: CliAgentSessionInternal, content: string): Promise<void> {
+    if (!this.conversationStore) return
+
+    const userMessages = session.messages.filter(m => m.type === 'user')
+    if (userMessages.length !== 1) return
+
+    const meta = await this.conversationStore.get(session.id)
+    if (!meta || !meta.autoTitled) return
+
+    const title = deriveTitle(content)
+    await this.conversationStore.updateMeta(session.id, { title, updatedAt: Date.now() })
+
+    const index = await this.conversationStore.loadIndex()
+    this.getWebContents()?.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+      workspaceId: session.workspaceId,
+      conversations: index,
+    } satisfies ConversationListChangedPayload)
   }
 }

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -321,8 +321,8 @@ const api: WindowApi = {
   // ─── Agent Chat ───────────────────────────────
   chatSendMessage: (sessionId: string, content: string) =>
     ipcRenderer.invoke(IpcChannels.CHAT_SEND_MESSAGE, sessionId, content),
-  chatGetHistory: (workspaceId: string): Promise<ChatSession | null> =>
-    ipcRenderer.invoke(IpcChannels.CHAT_GET_HISTORY, workspaceId),
+  chatGetHistory: (workspaceId: string, conversationId?: string): Promise<ChatSession | null> =>
+    ipcRenderer.invoke(IpcChannels.CHAT_GET_HISTORY, workspaceId, conversationId),
   chatSetMode: (sessionId: string, mode: ChatMode): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.CHAT_SET_MODE, sessionId, mode),
   chatSetWorkingSet: (sessionId: string, paths: string[]): Promise<void> =>
@@ -363,8 +363,8 @@ const api: WindowApi = {
   },
 
   // ─── CLI Agent ───────────────────────────────
-  cliAgentStart: (workspaceId: string, backend: AgentBackend) =>
-    ipcRenderer.invoke(IpcChannels.CLI_AGENT_START, workspaceId, backend),
+  cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_START, workspaceId, backend, conversationId),
   cliAgentStop: (sessionId: string) =>
     ipcRenderer.send(IpcChannels.CLI_AGENT_STOP, sessionId),
   cliAgentSend: (sessionId: string, content: string) =>
@@ -390,6 +390,23 @@ const api: WindowApi = {
     const handler = (_event: Electron.IpcRendererEvent, result: CliAgentResultPayload) => callback(result)
     ipcRenderer.on(IpcChannels.CLI_AGENT_RESULT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_RESULT, handler)
+  },
+
+  // ─── Conversation History ─────────────────────
+  conversationList: (workspaceId: string): Promise<ConversationMeta[]> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_LIST, workspaceId),
+  conversationCreate: (opts: ConversationCreateOpts): Promise<ConversationMeta> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_CREATE, opts),
+  conversationDelete: (conversationId: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_DELETE, conversationId),
+  conversationRename: (conversationId: string, title: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_RENAME, conversationId, title),
+  conversationGet: (conversationId: string): Promise<ConversationMeta | null> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_GET, conversationId),
+  onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ConversationListChangedPayload) => callback(payload)
+    ipcRenderer.on(IpcChannels.CONVERSATION_LIST_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CONVERSATION_LIST_CHANGED, handler)
   },
 
   // Platform info (for conditional UI like traffic lights)

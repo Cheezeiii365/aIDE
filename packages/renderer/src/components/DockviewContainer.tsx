@@ -11,6 +11,7 @@ import { BrowserPane } from './panes/BrowserPane'
 import { SettingsPane } from './panes/SettingsPane'
 import { ChatPane } from './panes/ChatPane'
 import { CliAgentPane } from './panes/CliAgentPane'
+import { ChatHistoryPane } from './panes/ChatHistoryPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
@@ -25,6 +26,7 @@ const components = {
   settingsPane: SettingsPane,
   chatPane: ChatPane,
   cliAgentPane: CliAgentPane,
+  chatHistoryPane: ChatHistoryPane,
 }
 
 const tabComponents = {

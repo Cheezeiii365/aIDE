@@ -13,6 +13,7 @@ import { join, dirname } from 'path'
 import type { WebContents } from 'electron'
 import {
   IpcChannels,
+  deriveTitle,
   type ChatSession,
   type ChatMessage,
   type ChatMode,
@@ -25,11 +26,13 @@ import {
   type ChatToolCallPayload,
   type PermissionTier,
   type ToolPermissionConfig,
+  type ConversationListChangedPayload,
 } from '@aide/shared'
 import type { LlmMessage, LlmContentBlock, LlmStreamEvent } from '@aide/shared'
 import { LlmClient } from './llmClient'
 import { ToolRegistry } from './toolRegistry'
 import type { BrowserPaneManager } from './browserPaneManager'
+import type { ConversationStore } from './conversationStore'
 
 // ─── Constants ─────────────────────────────────────────────────────
 
@@ -45,6 +48,7 @@ interface AgentManagerOpts {
   browserPaneManager?: BrowserPaneManager
   permissionTier?: PermissionTier
   autoApprove?: Record<string, boolean | ToolPermissionConfig>
+  conversationStore?: ConversationStore
 }
 
 interface PendingApproval {
@@ -55,7 +59,6 @@ interface PendingApproval {
 
 export class AgentManager {
   private sessions = new Map<string, ChatSession>()
-  private workspaceSessions = new Map<string, string>()
   private llmClient: LlmClient
   private toolRegistry: ToolRegistry
   private workspaceRoot: string
@@ -63,6 +66,7 @@ export class AgentManager {
   private getWebContents: () => WebContents | null
   private permissionTier: PermissionTier
   private autoApprove: Record<string, boolean | ToolPermissionConfig>
+  private conversationStore: ConversationStore | null
 
   // Per-session loop state
   private activeLoops = new Map<string, AbortController>()
@@ -76,6 +80,7 @@ export class AgentManager {
     this.getWebContents = opts.getWebContents
     this.permissionTier = opts.permissionTier ?? 'confirm'
     this.autoApprove = opts.autoApprove ?? {}
+    this.conversationStore = opts.conversationStore ?? null
 
     this.llmClient = new LlmClient(opts.config)
     this.toolRegistry = new ToolRegistry({
@@ -115,6 +120,9 @@ export class AgentManager {
     }
     session.messages.push(userMsg)
 
+    // Auto-title on first user message
+    await this.maybeAutoTitle(session, content)
+
     // Prepare assistant message id
     const assistantMessageId = randomUUID()
 
@@ -134,25 +142,48 @@ export class AgentManager {
     return { messageId: assistantMessageId }
   }
 
-  /** Get or create the chat session for a workspace. Loads from disk if available. */
-  async getHistory(workspaceId: string): Promise<ChatSession> {
-    // Check if we already have a session for this workspace
-    const existingId = this.workspaceSessions.get(workspaceId)
-    if (existingId && this.sessions.has(existingId)) {
-      return this.sessions.get(existingId)!
+  /**
+   * Get or create a chat session.
+   * - With `conversationId`: loads that specific conversation
+   * - Without: loads the most recent built-in conversation for the workspace, or creates one
+   */
+  async getHistory(workspaceId: string, conversationId?: string): Promise<ChatSession> {
+    // If conversationId is given, check memory first
+    if (conversationId && this.sessions.has(conversationId)) {
+      return this.sessions.get(conversationId)!
     }
 
-    // Try to load from disk
-    const loaded = await this.loadSession()
-    if (loaded && loaded.workspaceId === workspaceId) {
-      this.sessions.set(loaded.id, loaded)
-      this.workspaceSessions.set(workspaceId, loaded.id)
-      return loaded
+    // Try to load from ConversationStore
+    if (this.conversationStore) {
+      const targetId = conversationId
+        ?? (await this.conversationStore.getMostRecent(workspaceId, 'built-in'))?.id
+
+      if (targetId) {
+        // Check memory
+        if (this.sessions.has(targetId)) {
+          return this.sessions.get(targetId)!
+        }
+        // Load from disk
+        const loaded = await this.conversationStore.loadMessages(targetId) as ChatSession | null
+        if (loaded) {
+          loaded.status = 'idle' // Reset status on load
+          this.sessions.set(loaded.id, loaded)
+          return loaded
+        }
+      }
+    } else {
+      // Legacy: try to load from the old single-file path
+      const loaded = await this.loadSession()
+      if (loaded && loaded.workspaceId === workspaceId) {
+        this.sessions.set(loaded.id, loaded)
+        return loaded
+      }
     }
 
-    // Create a new session
+    // Create a new session — also register in ConversationStore if available
+    const sessionId = conversationId ?? randomUUID()
     const session: ChatSession = {
-      id: randomUUID(),
+      id: sessionId,
       workspaceId,
       mode: 'agent',
       messages: [],
@@ -160,7 +191,20 @@ export class AgentManager {
       status: 'idle',
     }
     this.sessions.set(session.id, session)
-    this.workspaceSessions.set(workspaceId, session.id)
+
+    // Register in store if this is a genuinely new session (no conversationId given)
+    if (!conversationId && this.conversationStore) {
+      await this.conversationStore.create({
+        workspaceId,
+        backend: 'built-in',
+      }).then(meta => {
+        // Re-key the session with the store-generated ID
+        this.sessions.delete(session.id)
+        session.id = meta.id
+        this.sessions.set(meta.id, session)
+      })
+    }
+
     return session
   }
 
@@ -231,14 +275,18 @@ export class AgentManager {
     this.autoApprove = autoApprove
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     // Abort all active loops
     for (const [sessionId] of this.activeLoops) {
       this.stop(sessionId)
     }
     this.llmClient.abortAll()
+
+    // Persist all sessions before clearing
+    for (const session of this.sessions.values()) {
+      await this.persistSession(session).catch(() => {})
+    }
     this.sessions.clear()
-    this.workspaceSessions.clear()
   }
 
   // ─── Core Agent Loop ──────────────────────────────────────────
@@ -685,14 +733,28 @@ export class AgentManager {
 
   private async persistSession(session: ChatSession): Promise<void> {
     if (!this.workspaceRoot) return
-    const filePath = join(this.workspaceRoot, CHAT_STATE_FILE)
-    const dir = dirname(filePath)
-    if (!existsSync(dir)) {
-      await mkdir(dir, { recursive: true })
+
+    if (this.conversationStore) {
+      // Save messages to the conversation store
+      await this.conversationStore.saveMessages(session.id, session)
+      // Update metadata
+      const userMsgCount = session.messages.filter(m => m.role === 'user').length
+      await this.conversationStore.updateMeta(session.id, {
+        updatedAt: Date.now(),
+        messageCount: session.messages.length,
+        firstMessage: session.messages.find(m => m.role === 'user')?.content.slice(0, 100),
+      })
+    } else {
+      // Legacy: write to single file
+      const filePath = join(this.workspaceRoot, CHAT_STATE_FILE)
+      const dir = dirname(filePath)
+      if (!existsSync(dir)) {
+        await mkdir(dir, { recursive: true })
+      }
+      const tmpPath = join(dir, `.tmp-${randomUUID()}.json`)
+      await writeFile(tmpPath, JSON.stringify(session, null, 2), 'utf-8')
+      await rename(tmpPath, filePath)
     }
-    const tmpPath = join(dir, `.tmp-${randomUUID()}.json`)
-    await writeFile(tmpPath, JSON.stringify(session, null, 2), 'utf-8')
-    await rename(tmpPath, filePath)
   }
 
   private async loadSession(): Promise<ChatSession | null> {
@@ -705,6 +767,27 @@ export class AgentManager {
     } catch {
       return null
     }
+  }
+
+  /** Auto-title the conversation from the first user message. */
+  private async maybeAutoTitle(session: ChatSession, content: string): Promise<void> {
+    if (!this.conversationStore) return
+
+    const userMessages = session.messages.filter(m => m.role === 'user')
+    if (userMessages.length !== 1) return // Only auto-title on the very first user message
+
+    const meta = await this.conversationStore.get(session.id)
+    if (!meta || !meta.autoTitled) return
+
+    const title = deriveTitle(content)
+    await this.conversationStore.updateMeta(session.id, { title, updatedAt: Date.now() })
+
+    // Notify renderer that conversation list changed
+    const index = await this.conversationStore.loadIndex()
+    this.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+      workspaceId: session.workspaceId,
+      conversations: index,
+    } satisfies ConversationListChangedPayload)
   }
 
   // ─── Helpers ─────────────────────────────────────────────────

@@ -11,15 +11,23 @@ interface CliAgentPanelParams {
   workspaceId?: string
   workspaceRoot?: string
   backend?: AgentBackend
+  conversationId?: string
   zoomFactor?: number
 }
 
-export function CliAgentPane({ params }: IDockviewPanelProps<CliAgentPanelParams>) {
+export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelParams>) {
   const backend = params?.backend ?? 'claude-code'
-  const agent = useCliAgent(params?.workspaceId)
+  const agent = useCliAgent(params?.workspaceId, params?.conversationId)
   const listRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
   const hasAutoStartedRef = useRef(false)
+
+  // Auto-title the tab based on conversation title
+  useEffect(() => {
+    if (agent.conversationTitle && agent.conversationTitle !== 'New Chat') {
+      api.setTitle(agent.conversationTitle)
+    }
+  }, [api, agent.conversationTitle])
 
   // Auto-create session on mount (no process yet — first send() spawns it)
   useEffect(() => {

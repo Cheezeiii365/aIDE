@@ -7,6 +7,7 @@ import type {
   ChatStreamChunk,
   ChatStreamEnd,
   ChatToolCallPayload,
+  ConversationListChangedPayload,
 } from '@aide/shared'
 
 export interface UseChatReturn {
@@ -16,6 +17,7 @@ export interface UseChatReturn {
   workingSet: string[]
   streamingMessageId: string | null
   streamingContent: string
+  conversationTitle: string
   sendMessage: (content: string) => Promise<void>
   setMode: (mode: ChatMode) => void
   setWorkingSet: (paths: string[]) => void
@@ -24,7 +26,7 @@ export interface UseChatReturn {
   stop: () => void
 }
 
-export function useChat(workspaceId: string | undefined): UseChatReturn {
+export function useChat(workspaceId: string | undefined, conversationId?: string): UseChatReturn {
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
   const [renderTick, setRenderTick] = useState(0)
@@ -35,15 +37,16 @@ export function useChat(workspaceId: string | undefined): UseChatReturn {
   const streamingContentRef = useRef('')
   const [streamingContent, setStreamingContent] = useState('')
   const rafRef = useRef<number | null>(null)
+  const [conversationTitle, setConversationTitle] = useState('New Chat')
 
   const tick = useCallback(() => setRenderTick((n) => n + 1), [])
 
-  // Load session on mount / workspace change
+  // Load session on mount / workspace change / conversationId change
   useEffect(() => {
     if (!workspaceId) return
     let cancelled = false
 
-    window.api.chatGetHistory(workspaceId).then((session: ChatSession | null) => {
+    window.api.chatGetHistory(workspaceId, conversationId).then((session: ChatSession | null) => {
       if (cancelled || !session) return
       sessionIdRef.current = session.id
       messagesRef.current = session.messages
@@ -51,10 +54,32 @@ export function useChat(workspaceId: string | undefined): UseChatReturn {
       setWorkingSetState(session.workingSet)
       setStatus(session.status)
       tick()
+
+      // Load conversation title from store
+      if (session.id) {
+        window.api.conversationGet(session.id).then(meta => {
+          if (!cancelled && meta) {
+            setConversationTitle(meta.title)
+          }
+        }).catch(() => {})
+      }
     })
 
     return () => { cancelled = true }
-  }, [workspaceId, tick])
+  }, [workspaceId, conversationId, tick])
+
+  // Subscribe to conversation list changes (for title updates)
+  useEffect(() => {
+    const unsub = window.api.onConversationListChanged((payload: ConversationListChangedPayload) => {
+      const sid = sessionIdRef.current
+      if (!sid) return
+      const meta = payload.conversations.find(c => c.id === sid)
+      if (meta) {
+        setConversationTitle(meta.title)
+      }
+    })
+    return unsub
+  }, [])
 
   // Subscribe to stream chunks
   useEffect(() => {
@@ -216,6 +241,7 @@ export function useChat(workspaceId: string | undefined): UseChatReturn {
     workingSet,
     streamingMessageId,
     streamingContent,
+    conversationTitle,
     sendMessage,
     setMode,
     setWorkingSet,
