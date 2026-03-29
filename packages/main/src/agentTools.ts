@@ -53,16 +53,14 @@ function execFilePromise(
       args,
       { cwd: options.cwd, timeout: options.timeout, maxBuffer: options.maxBuffer ?? 5 * 1024 * 1024 },
       (error, stdout, stderr) => {
-        if (error && !('code' in error)) {
+        if (error && proc.exitCode === null) {
           reject(error)
           return
         }
         resolve({
           stdout: typeof stdout === 'string' ? stdout : '',
           stderr: typeof stderr === 'string' ? stderr : '',
-          exitCode: (error as NodeJS.ErrnoException | null)?.code !== undefined
-            ? proc.exitCode ?? 1
-            : 0,
+          exitCode: proc.exitCode ?? (error ? 1 : 0),
         })
       },
     )
