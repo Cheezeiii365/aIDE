@@ -11,7 +11,7 @@ import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type Store from 'electron-store'
-import type { AppSettings, AideProjectSettings, ResolvedSettings } from '@aide/shared'
+import type { AppSettings, AideProjectSettings, ResolvedSettings, PermissionTier, ToolPermissionConfig, AgentBackend } from '@aide/shared'
 
 export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   tabSize: 2,
@@ -23,6 +23,23 @@ export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   formatOnSave: false,
   filesExclude: {},
   searchExclude: {},
+
+  // Agent / LLM defaults
+  'agent.provider': 'anthropic',
+  'agent.model': 'claude-sonnet-4-20250514',
+  'agent.apiKey': '',
+  'agent.baseUrl': '',
+  'agent.maxTurns': 25,
+  'agent.maxTokens': 8192,
+
+  // Agent / Permission defaults
+  'agent.permissionTier': 'confirm' as PermissionTier,
+  'agent.autoApprove': {} as Record<string, boolean | ToolPermissionConfig>,
+
+  // Agent / Backend defaults
+  'agent.backend': 'built-in' as AgentBackend,
+  'agent.claudeCodePath': '',
+  'agent.codexPath': '',
 }
 
 /**
@@ -52,6 +69,26 @@ export function resolveAppDefaults(
       ...BUILT_IN_DEFAULTS.searchExclude,
       ...userDefaults.searchExclude,
     },
+
+    // Agent / LLM
+    'agent.provider': userDefaults['agent.provider'] ?? BUILT_IN_DEFAULTS['agent.provider'],
+    'agent.model': userDefaults['agent.model'] ?? BUILT_IN_DEFAULTS['agent.model'],
+    'agent.apiKey': userDefaults['agent.apiKey'] ?? BUILT_IN_DEFAULTS['agent.apiKey'],
+    'agent.baseUrl': userDefaults['agent.baseUrl'] ?? BUILT_IN_DEFAULTS['agent.baseUrl'],
+    'agent.maxTurns': userDefaults['agent.maxTurns'] ?? BUILT_IN_DEFAULTS['agent.maxTurns'],
+    'agent.maxTokens': userDefaults['agent.maxTokens'] ?? BUILT_IN_DEFAULTS['agent.maxTokens'],
+
+    // Agent / Permissions
+    'agent.permissionTier': userDefaults['agent.permissionTier'] ?? BUILT_IN_DEFAULTS['agent.permissionTier'],
+    'agent.autoApprove': {
+      ...BUILT_IN_DEFAULTS['agent.autoApprove'],
+      ...(userDefaults['agent.autoApprove'] ?? {}),
+    },
+
+    // Agent / Backend
+    'agent.backend': userDefaults['agent.backend'] ?? BUILT_IN_DEFAULTS['agent.backend'],
+    'agent.claudeCodePath': userDefaults['agent.claudeCodePath'] ?? BUILT_IN_DEFAULTS['agent.claudeCodePath'],
+    'agent.codexPath': userDefaults['agent.codexPath'] ?? BUILT_IN_DEFAULTS['agent.codexPath'],
   }
 }
 
@@ -105,5 +142,22 @@ export async function resolveSettings(
       ...appDefaults.searchExclude,
       ...projectSettings.searchExclude,
     },
+
+    // Agent / LLM (provider & model may be project-scoped; credentials are user-only)
+    'agent.provider': projectSettings['agent.provider'] ?? appDefaults['agent.provider'],
+    'agent.model': projectSettings['agent.model'] ?? appDefaults['agent.model'],
+    'agent.apiKey': appDefaults['agent.apiKey'],
+    'agent.baseUrl': appDefaults['agent.baseUrl'],
+    'agent.maxTurns': projectSettings['agent.maxTurns'] ?? appDefaults['agent.maxTurns'],
+    'agent.maxTokens': projectSettings['agent.maxTokens'] ?? appDefaults['agent.maxTokens'],
+
+    // Agent / Permissions (user-only — project settings must not weaken the trust boundary)
+    'agent.permissionTier': appDefaults['agent.permissionTier'],
+    'agent.autoApprove': appDefaults['agent.autoApprove'],
+
+    // Agent / Backend (user-only — executable paths must not come from untrusted repos)
+    'agent.backend': appDefaults['agent.backend'],
+    'agent.claudeCodePath': appDefaults['agent.claudeCodePath'],
+    'agent.codexPath': appDefaults['agent.codexPath'],
   }
 }

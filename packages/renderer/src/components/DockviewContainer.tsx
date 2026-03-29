@@ -4,11 +4,15 @@ import { PlaceholderPane } from './panes/PlaceholderPane'
 import { WelcomePane } from './panes/WelcomePane'
 import { EditorPane } from './panes/EditorPane'
 import { EditorTab } from './panes/EditorTab'
+import { AgentTab } from './panes/AgentTab'
 import { TerminalPane } from './panes/TerminalPane'
 import { MarkdownPreviewPane } from './panes/MarkdownPreviewPane'
 import { FindInFilesPane } from './panes/FindInFilesPane'
 import { BrowserPane } from './panes/BrowserPane'
 import { SettingsPane } from './panes/SettingsPane'
+import { ChatPane } from './panes/ChatPane'
+import { CliAgentPane } from './panes/CliAgentPane'
+import { ChatHistoryPane } from './panes/ChatHistoryPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
@@ -21,10 +25,14 @@ const components = {
   findInFiles: FindInFilesPane,
   browserPane: BrowserPane,
   settingsPane: SettingsPane,
+  chatPane: ChatPane,
+  cliAgentPane: CliAgentPane,
+  chatHistoryPane: ChatHistoryPane,
 }
 
 const tabComponents = {
   editorTab: EditorTab,
+  agentTab: AgentTab,
 }
 
 interface Props {

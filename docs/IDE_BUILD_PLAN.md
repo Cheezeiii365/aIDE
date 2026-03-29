@@ -1,6 +1,6 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 28, 2026
+> **Last updated:** March 29, 2026
 > **Status:** Active development (Phase 2 in progress)
 
 ---
@@ -90,6 +90,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Global command palette (`Cmd+Shift+P`) — cross-workspace search and global commands
 
 ### Nice-to-have (v2+)
+- [x] Agent chat panel UI — Dockview `chatPane` with Ask/Edit/Agent modes, streaming message display, tool call approval cards, working set picker, markdown rendering with syntax highlighting
 - [ ] Cursor-style agent panel UI (structured diffs, progress, pause/resume)
 - [ ] Claude Agent SDK integration (replacing raw Claude Code CLI)
 - [ ] Tailwind CSS IntelliSense (via tailwindcss-language-server)
@@ -100,11 +101,11 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Broad language support — the goal is to support all languages via individually installable language packs. Use off-the-shelf LSP servers and linters where available; only build custom integrations when necessary. No language tooling installed by default — user installs what they need
 - [ ] Chrome extension support (limited — see Known Hard Problems)
 - [x] AI-powered inline diff review in editor (CodeMirror `@codemirror/merge` unified view with accept/reject, Cmd+Shift+D toggle, git HEAD comparison)
-- [ ] Agent permission system — configurable guardrails per workspace via `.agentconfig` (file access scope, shell command scope, network scope, package installation). Default: "ask before running destructive commands." Requires approval UI in agent panel that surfaces to workspace tab even when in another workspace
+- [x] Agent permission system — three-tier (confirm/auto-approve/autopilot) with per-tool overrides and pattern matching for terminal commands. Settings UI in Agent > Permissions. Auto-approved tools show "auto" badge in chat.
 - [ ] Workspace onboarding wizard — auto-detect project type, Python interpreter, `package.json` scripts, `CLAUDE.md`/`.agentconfig`, git remote, dev server command/port. Surface as a checklist of suggestions on first open
 - [ ] Agent project memory — track which files agent has seen, maintain auto-generated `project-summary.md`, surface "unseen files" in agent panel for context priming
 - [ ] Linked workspace groups — related workspaces (e.g. frontend + backend), cross-workspace terminal, shared env references
-- [ ] Worktree color coding — assign a distinct accent color to each worktree and apply it to terminal tabs, editor tabs, and pane borders so it's immediately clear which worktree a tab belongs to
+- [ ] Worktree color coding — assign a distinct accent color to each worktree and apply it to terminal tabs, editor tabs, and pane borders so it's immediately clear which worktree a tab belongs to (branch badge pills already implemented in 5.1e)
 - [ ] Custom user themes beyond light/dark defaults
 - [ ] Editor minimap (community CodeMirror extension or custom build)
 - [ ] Auto-update via `electron-updater` — notify + prompt (never silent restart). Compile-from-source only for MVP
@@ -1220,6 +1221,8 @@ These need a decision before or during the relevant phase.
 
 Track milestone completion here. Update as you go.
 
+**2026-03-29:** Built-in chat — `useChat` refreshes after `CHAT_STREAM_END` and tool-call IPC now call `chatGetHistory(workspaceId, sessionId)` so history stays scoped to the active tab; avoids main falling back to `getMostRecent` (multi-tab isolation + pre-persist race).
+
 ### Phase 1: Skeleton (Weeks 1–3)
 | Milestone | Status | Notes |
 |---|---|---|
@@ -1264,7 +1267,15 @@ Track milestone completion here. Update as you go.
 ### Phase 5: Agent Integration (Weeks 14–17)
 | Milestone | Status | Notes |
 |---|---|---|
-| 5.1 Agent panel pane type | ⬜ Not started | |
+| 5.0a Types + IPC plumbing | ✅ Complete | `agentTypes.ts` (16 types), 14 IPC channels (10 chat + 4 MCP), WindowApi methods, preload bridge. 17 tests. |
+| 5.0b LLM client | ✅ Complete | Provider-agnostic `LlmClient` with adapter pattern. `AnthropicProvider` + `OpenAiCompatibleProvider` (covers OpenAI/Ollama/Together/Groq). Shared SSE parser, `${env:VAR}` key interpolation, AbortController cancellation. 78 tests total. |
+| 5.0c Built-in tools + registry | ✅ Complete | 8 built-in tools (`file_read`, `file_write`, `file_list`, `terminal_exec`, `search_files`, `git_status`, `git_diff`, `browser_read`) with JSON Schema inputs and direct main-process executors. `ToolRegistry` class with mode filtering, LLM-ready conversion, dynamic MCP tool registration/unregistration. `BrowserPaneManager.getPageContent()` added. 53 new tests (agentTools + toolRegistry). |
+| 5.0d Agent loop | ✅ Complete | `AgentManager` class — core agent loop: session management, prompt assembly (system + conversation history + mode context), LLM streaming via `LlmClient`, tool execution with Promise-based approval gates, retry tracking (5 per tool), configurable turn limits (default 25), chat persistence to `.aide/local/chat.json` via atomic writes. IPC handlers for all 7 `CHAT_*` channels wired in `index.ts`. Lifecycle integrated with `activateWorkspace`/`finishQuit`. "Confirm everything" permission tier. 20 new tests. |
+| 5.1 Agent panel pane type | ✅ Complete | `ChatPane` + `CliAgentPane` dockview panel types. Both accept optional `conversationId` param for loading specific conversations. Tabs auto-title from conversation metadata. |
+| 5.1b Conversation history system | ✅ Complete | `ConversationStore` persists conversation metadata and messages under `.aide/local/conversations/`. `conversationTypes.ts` defines `ConversationMeta`, `ConversationCreateOpts`, `ConversationListChangedPayload`. 6 new IPC channels (`conversation:list/create/delete/rename/get/list-changed`). Both `AgentManager` and `CliAgentManager` integrated: multi-conversation support (removed single `workspaceSessions` map), `conversationId`-aware `getHistory`/`start`, auto-titling from first user message via `deriveTitle`, async `destroy()` with session persistence. `ChatHistoryPane` + `useConversationHistory` hook for browsing history. `useChat`/`useCliAgent` expose `conversationTitle` with live updates via `onConversationListChanged`. Command `agent.history.open` injects `onOpenConversation` so clicking a conversation opens `chatPane` or `cliAgentPane` with `conversationId` (and native/CLI backends routed to `cliAgentPane`). |
+| 5.1c CLI native session hydration | ✅ Complete | `ClaudeNativeSessionWatcher.loadMessages(sessionId)` reads `~/.claude/projects/<slug>/<sessionId>.jsonl`, skips sidechains / thinking / file-history blocks, and maps rows to `CliAgentMessage[]`. IPC `cli-agent:load-messages` takes `(workspaceId, conversationId)`, returns `[]` when that workspace is not active (avoids native-prefix reads against the wrong project dir), and `useCliAgent` uses a hydrate generation guard, avoids clobbering a non-empty transcript with a stale empty IPC result, clears transcript only when the workspace+conversation key changes, and re-fetches native history once when `CONVERSATION_LIST_CHANGED` reports a `claude-native` row with messages but the pane is still empty. `CliAgentPane` waits on `historyHydrated`. Aide-managed sessions use `ConversationStore.loadMessages`. `CliAgentManager.start` sets `claudeSessionId` from `claude-native:<uuid>` for `--resume`. |
+| 5.1d CLI multi-tab isolation | ✅ Complete | New `cliAgentPane` instances receive a provisional `conversationId` (`crypto.randomUUID()` from `agent.open` and default workspace layout in `workspaceSwitcher`). `useCliAgent` stops calling `cliAgentGetSession(workspaceId)` without a session id so tabs are not hydrated from `CliAgentManager.getSession`'s first in-memory match for the workspace. Command `agent.open` (e.g. Cmd+K Cmd+A) always adds a new agent panel for parallel work instead of focusing an existing tab. |
+| 5.1e Multi-worktree agent orchestration | ✅ Complete | Per-panel worktree isolation: `worktreePath` threaded through `CliAgentManager.start()` → spawn `cwd`, `CliAgentSession`, IPC, `useCliAgent` hook, `CliAgentPane` params. `AgentTab` custom tab component with branch badge pill (registered in `DockviewContainer.tabComponents`). "Start Agent in Worktree" button + context menu entry in `WorktreePanel`/`WorktreeItem`. Built-in agent isolation via `ToolContext.effectiveRoot` in `agentTools.ts` (terminal_exec, search_files, git_status, git_diff). `ChatSession.worktreePath` loaded from `ConversationMeta`. Worktree removal confirmation guard. Terminal panels from worktrees also get branch badges. |
 | 5.2 Claude Agent SDK integration | ⬜ Not started | |
 | 5.3 Diff preview before apply | ⬜ Not started | |
 | 5.4 Agent edit highlighting in editor | ⬜ Not started | |

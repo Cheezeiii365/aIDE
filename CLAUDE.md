@@ -31,6 +31,9 @@ At this point, the project is being written in this editor. Any bug reports come
 ## Building
 - Do not build into a dmg unless told to explicitly. 
 
+## Testing
+- /tests is the home for all tests. make sure all new tests get placed in this folder.
+
 ## Repository
 
 - GitHub: https://github.com/Cheezeiii365/aIDE

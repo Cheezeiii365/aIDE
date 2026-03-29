@@ -9,7 +9,8 @@ import {
 } from '../../lib/settingsSchema'
 import { SettingRow } from './SettingRow'
 import { KeyboardShortcutsTable } from './KeyboardShortcutsTable'
-import type { ThemeName } from '@aide/shared'
+import { ToolPermissionsEditor } from './ToolPermissionsEditor'
+import type { ThemeName, ToolPermissionConfig } from '@aide/shared'
 
 interface Props {
   settings: UseSettingsReturn
@@ -60,6 +61,14 @@ export function SettingsContent({ settings, activeCategory, searchQuery, theme, 
             <KeyboardShortcutsTable />
           )}
 
+          {/* Special: Per-tool permission overrides */}
+          {section.categoryId === 'agent.permissions' && (
+            <ToolPermissionsEditor
+              value={(settings.getScopeValue('agent.autoApprove') as Record<string, boolean | ToolPermissionConfig>) ?? {}}
+              onChange={(val) => settings.setValue('agent.autoApprove', val)}
+            />
+          )}
+
           {section.descriptors.length > 0 ? (
             section.descriptors.map((desc) => (
               <SettingRow
@@ -73,7 +82,8 @@ export function SettingsContent({ settings, activeCategory, searchQuery, theme, 
             ))
           ) : (
             section.categoryId !== 'workbench.appearance' &&
-            section.categoryId !== 'keyboardShortcuts' && (
+            section.categoryId !== 'keyboardShortcuts' &&
+            section.categoryId !== 'agent.permissions' && (
               <div className="settings-placeholder">
                 <p>No settings available yet.</p>
               </div>

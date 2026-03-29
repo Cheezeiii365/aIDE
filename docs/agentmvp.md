@@ -151,8 +151,12 @@ These tools reuse the existing IPC infrastructure. The agent loop calls them via
 **Key files:**
 - `packages/main/src/agentManager.ts` — the loop, prompt assembly, tool dispatch
 - `packages/main/src/agentTools.ts` — built-in tool definitions + executors
-- `packages/main/src/llmClient.ts` — HTTP client for LLM API (Anthropic Messages API, OpenAI-compatible)
+- `packages/main/src/llmClient.ts` — provider-agnostic LLM client orchestrator
+- `packages/main/src/providers/anthropicProvider.ts` — Anthropic Messages API adapter
+- `packages/main/src/providers/openAiCompatibleProvider.ts` — OpenAI/Ollama/Together/Groq adapter
+- `packages/main/src/providers/sseParser.ts` — shared SSE stream parser
 - `packages/shared/src/agentTypes.ts` — shared types for tools, messages, sessions
+- `packages/shared/src/llmTypes.ts` — provider-agnostic LLM types + wire format types
 
 **LLM provider config** (stored in `.aide/settings.json` or user settings):
 
@@ -291,7 +295,11 @@ packages/
 ├── main/src/
 │   ├── agentManager.ts       # Agent loop: prompt → LLM → tools → loop
 │   ├── agentTools.ts         # Built-in tool definitions + executors
-│   ├── llmClient.ts          # LLM API client (Anthropic + OpenAI-compatible)
+│   ├── llmClient.ts          # Provider-agnostic LLM client orchestrator
+│   ├── providers/
+│   │   ├── sseParser.ts      # Shared SSE stream parser
+│   │   ├── anthropicProvider.ts     # Anthropic Messages API adapter
+│   │   └── openAiCompatibleProvider.ts  # OpenAI/Ollama/Together/Groq adapter
 │   ├── mcpManager.ts         # MCP server lifecycle (spawn, communicate, restart)
 │   └── toolRegistry.ts       # Unified tool registry (built-in + MCP)
 ├── renderer/src/
@@ -308,7 +316,8 @@ packages/
 │   └── hooks/
 │       └── useChat.ts        # IPC hook for chat operations
 └── shared/src/
-    └── agentTypes.ts         # Shared types: ChatMessage, ToolCall, etc.
+    ├── agentTypes.ts         # Shared types: ChatMessage, ToolCall, etc.
+    └── llmTypes.ts           # Provider-agnostic LLM types + wire formats
 ```
 
 **Files to modify:**
@@ -322,26 +331,101 @@ packages/
 
 ## Implementation Order
 
-### Step 1: Types + IPC plumbing
+### Step 1: Types + IPC plumbing ✅
 Add all shared types (`agentTypes.ts`), IPC channels, and WindowApi surface. No UI, no logic — just the contract.
 
-### Step 2: LLM client
-`llmClient.ts` — streaming HTTP client for Anthropic Messages API. Support `tool_use` content blocks in responses. This is the foundation everything else depends on.
+### Step 2: LLM client ✅
+Provider-agnostic streaming LLM client using adapter pattern. `LlmClient` orchestrator delegates to provider adapters (`AnthropicProvider`, `OpenAiCompatibleProvider`). Shared SSE parser, `${env:VAR}` API key interpolation, AbortController-based cancellation. New providers added by implementing `LlmProvider` interface. Uses Node.js v22 native `fetch()`, no external deps.
 
-### Step 3: Built-in tools + registry
-`agentTools.ts` + `toolRegistry.ts` — define the 8 built-in tools with JSON Schema inputs. Wire executors to existing IPC handlers (readFile, writeFile, ptyCreate, searchStart, etc.).
+### Step 3: Built-in tools + registry ✅
+`agentTools.ts` — 8 built-in tools (`file_read`, `file_write`, `file_list`, `terminal_exec`, `search_files`, `git_status`, `git_diff`, `browser_read`) with JSON Schema input definitions and direct main-process executors (no IPC round-trips). `terminal_exec` uses `child_process.execFile` with timeout/ANSI stripping. `search_files` spawns ripgrep independently to avoid singleton conflicts. `toolRegistry.ts` — `ToolRegistry` class provides mode-filtered tool listing (`getTools(mode)`), LLM-ready conversion (`toLlmTools()`), unified `execute()` dispatch with error wrapping, and dynamic `registerTool()`/`unregisterSource()` for MCP tools (Step 7). Exported `fetchGitStatus` from `gitStatus.ts`, added `getPageContent()` to `BrowserPaneManager`.
 
-### Step 4: Agent loop
-`agentManager.ts` — the core loop. Takes a message, builds prompt, calls LLM, dispatches tools, feeds results back, loops. Start with "confirm everything" permission tier.
+### Step 4: Agent loop ✅
+`agentManager.ts` — `AgentManager` class orchestrates the full agent loop: session management, prompt building, LLM streaming via `LlmClient`, tool execution with Promise-based approval gates, retry tracking (5 per tool), turn limits, and chat persistence to `.aide/local/chat.json`. IPC handlers registered in `index.ts` for all `CHAT_*` channels. "Confirm everything" permission tier (Step 6 adds tiers). Fire-and-forget loop design — `sendMessage` returns immediately, streams events to renderer asynchronously.
 
-### Step 5: Chat UI
-`ChatPane.tsx` + child components. Render messages, stream chunks, show tool call cards with approve/reject. Wire to IPC. Register as Dockview pane.
+### Step 5: Chat UI ✅
+`ChatPane.tsx` Dockview pane with 6 child components: `ModeSelector` (Ask/Edit/Agent segmented control), `MessageList` (sticky auto-scroll, status line), `MessageBubble` (markdown rendering via shared `markdownRenderer.ts`, streaming cursor), `ToolCallCard` (inline approval with Allow/Deny), `ChatInput` (auto-resize textarea, Enter to send, stop button), `WorkingSetPicker` (file chips with type-to-filter dropdown). `useChat` hook manages all IPC subscriptions with rAF-throttled streaming. Refactored `MarkdownPreviewPane` to share renderer. Default layout updated from placeholder to `chatPane`.
 
-### Step 6: Permission system
-Add tier logic to agentManager. Add per-tool auto-approve config. Add the settings UI entries.
+### Step 6: Permission system ✅
+Three-tier permission system (`confirm`, `auto-approve`, `autopilot`) with per-tool overrides. `shouldAutoApprove()` in `AgentManager` checks per-tool overrides first, then falls back to tier logic (autopilot→all, auto-approve→read-only tools, confirm→none). Pattern matching for `terminal_exec` with allow/deny glob patterns. Settings UI: enum dropdown for tier + `ToolPermissionsEditor` table for per-tool overrides. Auto-approved tool calls show "auto" badge in `ToolCallCard`. Live settings updates via `updatePermissions()`.
 
-### Step 7: MCP support
-`mcpManager.ts` — spawn stdio servers, parse tool lists, proxy tool calls. Merge MCP tools into the registry so the agent sees them alongside built-ins.
+### Step 7: CLI Agent Wrappers (Claude Code, Codex)
+Wrap external CLI agents (Claude Code, Codex) as monitored sessions inside the IDE. This is a **separate track** from the built-in agent (Steps 1–5) — the two coexist, and the user picks "built-in", "Claude Code", or "Codex" as their agent backend per workspace.
 
-### Step 8: Polish + persistence
+**Why before MCP/polish:** Claude Code and Codex are mature, battle-tested agents. Wrapping them gives powerful agent sessions immediately without needing more built-in agent infrastructure. The built-in agent is good for lightweight Ask/Edit workflows; CLI wrappers handle heavy autonomous coding.
+
+**Architecture:**
+
+```
+AgentTerminalPane (or mode on existing TerminalPane)
+    ↓
+Spawn CLI: `claude --output-format stream-json` or `codex --full-auto`
+    ↓
+StructuredOutputParser (reads newline-delimited JSON from stdout)
+    ↓
+Extract: status, tool calls, file edits, thinking, errors
+    ↓
+Surface to: AgentStatusDot on workspace tab, chat-like overlay, approval interception
+```
+
+**Components:**
+- `packages/main/src/cliAgentManager.ts` — spawn CLI agents, manage lifecycle, parse structured JSON output stream
+- `packages/renderer/src/components/panes/AgentTerminalPane.tsx` — terminal pane with agent status overlay (shows current action, file edits, progress)
+- `packages/shared/src/cliAgentTypes.ts` — types for CLI agent sessions, structured output events
+- Settings: `agent.backend` enum ('builtin' | 'claude-code' | 'codex'), `agent.claudeCodePath`, `agent.codexPath`
+
+**Key behaviors:**
+- Raw terminal visible underneath (user can scroll back, see full output)
+- Status overlay extracts and surfaces: current phase (thinking/editing/running), files being modified, tool calls in progress
+- `AgentStatusDot` on workspace tab reflects CLI agent state (not just built-in agent)
+- Permission interception via `--permission-prompt-tool` (see below)
+- Session persistence: CLI agent can be stopped/restarted, scrollback preserved
+
+**Permission interception for CLI agents:**
+
+Claude Code CLI supports `--permission-prompt-tool <mcp-tool-name>`. When set, the CLI calls that MCP tool instead of handling permissions internally. aIDE runs a local MCP server per CLI session and injects this flag at spawn time. Flow:
+
+```
+Claude Code CLI needs permission
+    ↓
+Calls aide_permission_prompt MCP tool (stdio to cliPermissionServer.ts)
+    ↓
+cliPermissionServer emits IpcChannels.CLI_AGENT_PERMISSION_REQUEST to renderer
+    ↓
+Renderer pushes a 'permission_request' CliAgentMessage into message list
+    ↓
+CliPermissionCard shown (same shape as ToolCallCard — tool name, inputs, Allow/Deny)
+    ↓
+User clicks Allow/Deny → renderer invokes CLI_AGENT_PERMISSION_RESPONSE
+    ↓
+cliPermissionServer resolves its pending Promise → returns { approved } to Claude Code
+    ↓
+CLI resumes or aborts the tool call
+```
+
+New files for this:
+- `packages/main/src/cliPermissionServer.ts` — lightweight MCP stdio server per session; blocks on a Promise until renderer resolves via IPC; manages one pending approval at a time
+- `packages/renderer/src/components/chat/CliPermissionCard.tsx` — approval card for CLI sessions, mirrors ToolCallCard UI
+
+Changes for this:
+- `cliAgentManager.ts` — instantiate `cliPermissionServer` per session; inject `--permission-prompt-tool aide_permission_prompt` into spawn args
+- `cliAgentTypes.ts` — add `type: 'permission_request'` to `CliAgentMessage`, add `permissionInput?: Record<string,unknown>`
+- `shared/src/index.ts` — add `CLI_AGENT_PERMISSION_REQUEST` and `CLI_AGENT_PERMISSION_RESPONSE` IPC channels
+- `main/src/index.ts` — handle `CLI_AGENT_PERMISSION_RESPONSE` → resolve pending Promise in `cliPermissionServer`
+- `MessageList.tsx` — render `CliPermissionCard` for `permission_request` message type
+
+**IPC channels:**
+```typescript
+CLI_AGENT_START:               'cli-agent:start'               // renderer → main (spawn agent)
+CLI_AGENT_STOP:                'cli-agent:stop'                // renderer → main (kill/interrupt)
+CLI_AGENT_STATUS:              'cli-agent:status'              // main → renderer (parsed status updates)
+CLI_AGENT_EVENT:               'cli-agent:event'               // main → renderer (structured output events)
+CLI_AGENT_PERMISSION_REQUEST:  'cli-agent:permission-request'  // main → renderer (show approval UI)
+CLI_AGENT_PERMISSION_RESPONSE: 'cli-agent:permission-response' // renderer → main (user decision)
+```
+
+### Step 8: MCP support (all servers in one step)
+Build all MCP infrastructure together: `mcpManager.ts` (spawn stdio servers, JSON-RPC lifecycle, tool list caching, crash restart), `toolRegistry.ts` dynamic registration, and the `cliPermissionServer.ts` MCP server for CLI permission interception (designed in Step 7). All three share the same MCP stdio transport layer — implement it once, use it for external servers and the internal permission server. Merge MCP tools into the registry so the agent sees them alongside built-ins.
+
+### Step 9: Polish + persistence
 Chat history save/restore. Mode switching. Working set UI for edit mode. Stop button. Error states.

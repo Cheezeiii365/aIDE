@@ -4,6 +4,42 @@
  */
 
 export type { CommandDefinition, KeybindingRule } from './commands'
+export type {
+  ChatMode, ChatSessionStatus, ToolCallStatus,
+  ToolCall, ToolResult, ChatMessage, ChatSession,
+  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  ToolDefinition,
+  McpServerConfig, McpServerConnectionStatus, McpServerStatus,
+  PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
+  LlmProviderConfig,
+} from './agentTypes'
+export type {
+  AgentBackend, CliAgentProcessStatus,
+  CliAgentMessage, CliAgentStreamDelta, CliAgentSession,
+  CliAgentStatusPayload, CliAgentResultPayload,
+} from './cliAgentTypes'
+export type {
+  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+} from './conversationTypes'
+export { deriveTitle } from './conversationTypes'
+export type {
+  LlmMessage, LlmContentBlock, LlmToolDefinition, LlmUsage,
+  LlmStreamEvent, StreamParams, LlmProvider, SseEvent,
+  AnthropicRequest, AnthropicMessage, AnthropicContentBlock, AnthropicTool, AnthropicStreamEvent,
+  OpenAiRequest, OpenAiMessage, OpenAiToolCall, OpenAiTool, OpenAiStreamChunk, OpenAiStreamToolCall,
+} from './llmTypes'
+import type {
+  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  McpServerStatus, ToolDefinition,
+  PermissionTier, ToolPermissionConfig,
+} from './agentTypes'
+import type {
+  AgentBackend, CliAgentStreamDelta, CliAgentMessage,
+  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload,
+} from './cliAgentTypes'
+import type {
+  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+} from './conversationTypes'
 export {
   adjustZoomFactor,
   clampZoomFactor,
@@ -170,6 +206,43 @@ export const IpcChannels = {
   LIFECYCLE_REQUEST_SAVE: 'lifecycle:request-save',
   LIFECYCLE_SAVE_COMPLETE: 'lifecycle:save-complete',
   LIFECYCLE_CRASH_DETECTED: 'lifecycle:crash-detected',
+
+  // ─── Agent Chat ───────────────────────────────
+  CHAT_SEND_MESSAGE: 'chat:send-message',
+  CHAT_STREAM_CHUNK: 'chat:stream-chunk',
+  CHAT_STREAM_END: 'chat:stream-end',
+  CHAT_TOOL_CALL: 'chat:tool-call',
+  CHAT_TOOL_APPROVE: 'chat:tool-approve',
+  CHAT_TOOL_REJECT: 'chat:tool-reject',
+  CHAT_STOP: 'chat:stop',
+  CHAT_SET_MODE: 'chat:set-mode',
+  CHAT_SET_WORKING_SET: 'chat:set-working-set',
+  CHAT_GET_HISTORY: 'chat:get-history',
+
+  // ─── MCP ──────────────────────────────────────
+  MCP_LIST_SERVERS: 'mcp:list-servers',
+  MCP_SERVER_STATUS: 'mcp:server-status',
+  MCP_RESTART_SERVER: 'mcp:restart-server',
+  MCP_LIST_TOOLS: 'mcp:list-tools',
+
+  // ─── CLI Agent ───────────────────────────────
+  CLI_AGENT_START: 'cli-agent:start',
+  CLI_AGENT_STOP: 'cli-agent:stop',
+  CLI_AGENT_SEND: 'cli-agent:send',
+  CLI_AGENT_GET_SESSION: 'cli-agent:get-session',
+  CLI_AGENT_LOAD_MESSAGES: 'cli-agent:load-messages',
+  CLI_AGENT_STREAM_DELTA: 'cli-agent:stream-delta',
+  CLI_AGENT_MESSAGE: 'cli-agent:message',
+  CLI_AGENT_STATUS: 'cli-agent:status',
+  CLI_AGENT_RESULT: 'cli-agent:result',
+
+  // ─── Conversation History ────────────────────
+  CONVERSATION_LIST: 'conversation:list',
+  CONVERSATION_CREATE: 'conversation:create',
+  CONVERSATION_DELETE: 'conversation:delete',
+  CONVERSATION_RENAME: 'conversation:rename',
+  CONVERSATION_GET: 'conversation:get',
+  CONVERSATION_LIST_CHANGED: 'conversation:list-changed',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -269,6 +342,23 @@ export interface AideProjectSettings {
   filesExclude?: Record<string, boolean>
   searchExclude?: Record<string, boolean>
   languageOverrides?: Record<string, Partial<AideProjectSettings>>
+
+  // Agent / LLM settings
+  'agent.provider'?: string
+  'agent.model'?: string
+  'agent.apiKey'?: string
+  'agent.baseUrl'?: string
+  'agent.maxTurns'?: number
+  'agent.maxTokens'?: number
+
+  // Agent / Permission settings
+  'agent.permissionTier'?: PermissionTier
+  'agent.autoApprove'?: Record<string, boolean | ToolPermissionConfig>
+
+  // Agent / Backend settings
+  'agent.backend'?: AgentBackend
+  'agent.claudeCodePath'?: string
+  'agent.codexPath'?: string
 }
 
 // Fully resolved settings (no optional fields)
@@ -282,7 +372,40 @@ export interface ResolvedSettings {
   formatOnSave: boolean
   filesExclude: Record<string, boolean>
   searchExclude: Record<string, boolean>
+
+  // Agent / LLM settings
+  'agent.provider': string
+  'agent.model': string
+  'agent.apiKey': string
+  'agent.baseUrl': string
+  'agent.maxTurns': number
+  'agent.maxTokens': number
+
+  // Agent / Permission settings
+  'agent.permissionTier': PermissionTier
+  'agent.autoApprove': Record<string, boolean | ToolPermissionConfig>
+
+  // Agent / Backend settings
+  'agent.backend': AgentBackend
+  'agent.claudeCodePath': string
+  'agent.codexPath': string
 }
+
+/**
+ * Agent settings that must never be overridden by project-level
+ * `.aide/settings.json`.  These control trust-boundary decisions
+ * (credentials, executable paths, permission policy) and must only
+ * come from user-scoped (app-level) settings.
+ */
+export const SENSITIVE_AGENT_KEYS: ReadonlySet<string> = new Set([
+  'agent.apiKey',
+  'agent.baseUrl',
+  'agent.backend',
+  'agent.claudeCodePath',
+  'agent.codexPath',
+  'agent.permissionTier',
+  'agent.autoApprove',
+])
 
 // .aide/local/workspace.json
 export interface AideLocalWorkspace {
@@ -670,6 +793,43 @@ export interface WindowApi {
   onLifecycleRequestSave: (callback: () => void) => () => void
   lifecycleSaveComplete: () => void
   onCrashDetected: (callback: () => void) => () => void
+
+  // ─── Agent Chat ───────────────────────────────
+  chatSendMessage: (sessionId: string, content: string) => Promise<{ messageId: string } | { error: string }>
+  chatGetHistory: (workspaceId: string, conversationId?: string) => Promise<ChatSession | null>
+  chatSetMode: (sessionId: string, mode: ChatMode) => Promise<void>
+  chatSetWorkingSet: (sessionId: string, paths: string[]) => Promise<void>
+  chatToolApprove: (sessionId: string, toolCallId: string) => Promise<void>
+  chatToolReject: (sessionId: string, toolCallId: string) => Promise<void>
+  chatStop: (sessionId: string) => void
+  onChatStreamChunk: (callback: (chunk: ChatStreamChunk) => void) => () => void
+  onChatStreamEnd: (callback: (end: ChatStreamEnd) => void) => () => void
+  onChatToolCall: (callback: (payload: ChatToolCallPayload) => void) => () => void
+
+  // ─── MCP ���───────────────────────────────���─────
+  mcpListServers: () => Promise<McpServerStatus[]>
+  mcpRestartServer: (serverName: string) => Promise<{ success: true } | { error: string }>
+  mcpListTools: () => Promise<ToolDefinition[]>
+  onMcpServerStatus: (callback: (status: McpServerStatus) => void) => () => void
+
+  // ─── CLI Agent ───────────────────────────────
+  cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) => Promise<{ sessionId: string } | { error: string }>
+  cliAgentStop: (sessionId: string) => void
+  cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
+  cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
+  cliAgentLoadMessages: (workspaceId: string, conversationId: string) => Promise<CliAgentMessage[]>
+  onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
+  onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
+  onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void
+  onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => () => void
+
+  // ─── Conversation History ────────────────────
+  conversationList: (workspaceId: string) => Promise<ConversationMeta[]>
+  conversationCreate: (opts: ConversationCreateOpts) => Promise<ConversationMeta>
+  conversationDelete: (conversationId: string) => Promise<void>
+  conversationRename: (conversationId: string, title: string) => Promise<void>
+  conversationGet: (conversationId: string) => Promise<ConversationMeta | null>
+  onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
 
   // Platform info
   platform: NodeJS.Platform

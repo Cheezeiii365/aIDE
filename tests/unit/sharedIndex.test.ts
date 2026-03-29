@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { IpcChannels, adjustZoomFactor, clampZoomFactor, stepZoomFactor, zoomFactorToPercent } from './index'
+import { IpcChannels, adjustZoomFactor, clampZoomFactor, stepZoomFactor, zoomFactorToPercent } from '@shared/index'
 
 describe('IpcChannels', () => {
   it('defines window control channels', () => {

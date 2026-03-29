@@ -17,7 +17,7 @@ type GetWebContents = () => Electron.WebContents | null
  * @param rootPath - Absolute path to the Git working tree root to inspect
  * @returns A result containing a map of absolute file paths to single-letter Git status codes (`'D'`, `'?'`, `'A'`, `'M'`), the current branch name (or `'HEAD'` if unavailable), and an array of absolute ignored paths; `null` if the path is not a Git repository or if an error occurs.
  */
-async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null> {
+export async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null> {
   try {
     const git = simpleGit(rootPath)
     const isRepo = await git.checkIsRepo()

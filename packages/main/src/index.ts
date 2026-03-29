@@ -4,7 +4,7 @@ import { existsSync, readdirSync } from 'fs'
 import { execFile } from 'child_process'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
-import { IpcChannels, DEFAULT_SETTINGS } from '@aide/shared'
+import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
 import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './ptyManager'
 import { registerFileWatcherHandlers, startWatchers, stopWatcher } from './fileWatcher'
@@ -20,11 +20,21 @@ import { WorkspaceRegistry } from './workspaceRegistry'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './gitDiff'
+import { AgentManager } from './agentManager'
+import { CliAgentManager } from './cliAgentManager'
+import { ConversationStore } from './conversationStore'
+import { ClaudeNativeSessionWatcher } from './agents/claudeNativeSessionWatcher'
+import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend, ConversationCreateOpts, ConversationMeta, CliAgentMessage } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
 
 let taskRunner: TaskRunner | null = null
+let agentManager: AgentManager | null = null
+let cliAgentManager: CliAgentManager | null = null
+let conversationStore: ConversationStore | null = null
+let nativeSessionWatcher: ClaudeNativeSessionWatcher | null = null
+let nativeSessionCache: ConversationMeta[] = []
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -298,7 +308,87 @@ async function activateWorkspace(id: string): Promise<void> {
     }
   }
 
+  // Initialize conversation store + agent managers for this workspace
+  await agentManager?.destroy()
+  await cliAgentManager?.destroy()
+  nativeSessionWatcher?.stop()
+  agentManager = null
+  cliAgentManager = null
+  conversationStore = null
+  nativeSessionWatcher = null
+  nativeSessionCache = []
+  if (entry.rootPath) {
+    conversationStore = new ConversationStore(entry.rootPath)
+    const wsId = entry.id
+    nativeSessionWatcher = new ClaudeNativeSessionWatcher({
+      workspaceRoot: entry.rootPath,
+      workspaceId: wsId,
+      emit: (sessions) => {
+        nativeSessionCache = sessions
+        contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+          workspaceId: wsId,
+          conversations: sessions,
+          source: 'claude-native',
+        })
+      },
+    })
+    void nativeSessionWatcher.start()
+    const permConfig = loadPermissionConfig()
+    agentManager = new AgentManager({
+      config: loadLlmConfig(),
+      workspaceRoot: entry.rootPath,
+      getWebContents: () => contentView?.webContents ?? null,
+      browserPaneManager,
+      permissionTier: permConfig.permissionTier,
+      autoApprove: permConfig.autoApprove,
+      conversationStore,
+    })
+    const resolved = resolveAppDefaults(store)
+    cliAgentManager = new CliAgentManager({
+      workspaceRoot: entry.rootPath,
+      getWebContents: () => contentView?.webContents ?? null,
+      claudeCodePath: resolved['agent.claudeCodePath'],
+      codexPath: resolved['agent.codexPath'],
+      conversationStore,
+    })
+  }
+
   broadcastWorkspaceRegistry()
+}
+
+/**
+ * Load LLM configuration from the settings cascade.
+ * API keys support ${env:VAR} interpolation (resolved by LlmClient).
+ */
+function loadLlmConfig(): LlmProviderConfig {
+  const userDefaults = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
+  const config = {
+    provider: (userDefaults['agent.provider'] as string) || 'anthropic',
+    model: (userDefaults['agent.model'] as string) || 'claude-sonnet-4-20250514',
+    apiKey: (userDefaults['agent.apiKey'] as string) || '',
+    baseUrl: (userDefaults['agent.baseUrl'] as string) || undefined,
+    maxTurns: (userDefaults['agent.maxTurns'] as number) || 25,
+    maxTokens: (userDefaults['agent.maxTokens'] as number) || 8192,
+  }
+  console.log('[loadLlmConfig]', {
+    provider: config.provider,
+    model: config.model,
+    hasApiKey: !!config.apiKey,
+    apiKeyLength: config.apiKey.length,
+    apiKeyIsEnvRef: config.apiKey.includes('${env:'),
+    baseUrl: config.baseUrl || '(default)',
+    storeHasEditorDefaults: !!userDefaults,
+    storeKeys: Object.keys(userDefaults).filter(k => k.startsWith('agent.')),
+  })
+  return config
+}
+
+function loadPermissionConfig(): { permissionTier: PermissionTier; autoApprove: Record<string, boolean | ToolPermissionConfig> } {
+  const userDefaults = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
+  return {
+    permissionTier: (userDefaults['agent.permissionTier'] as PermissionTier) || 'confirm',
+    autoApprove: (userDefaults['agent.autoApprove'] as Record<string, boolean | ToolPermissionConfig>) || {},
+  }
 }
 
 ipcMain.handle(IpcChannels.WORKSPACE_LIST, () => {
@@ -424,6 +514,148 @@ ipcMain.handle(IpcChannels.WORKSPACE_GET_ACTIVE, () => {
   return workspaceRegistry.getActiveId()
 })
 
+// ─── Chat / Agent IPC handlers ─────────────────────────────────────
+
+ipcMain.handle(IpcChannels.CHAT_SEND_MESSAGE, async (_event, sessionId: string, content: string) => {
+  if (!agentManager) return { error: 'No workspace open' }
+  return agentManager.sendMessage(sessionId, content)
+})
+
+ipcMain.handle(IpcChannels.CHAT_GET_HISTORY, async (_event, workspaceId: string, conversationId?: string) => {
+  if (!agentManager) return null
+  return agentManager.getHistory(workspaceId, conversationId)
+})
+
+ipcMain.handle(IpcChannels.CHAT_SET_MODE, async (_event, sessionId: string, mode: ChatMode) => {
+  agentManager?.setMode(sessionId, mode)
+})
+
+ipcMain.handle(IpcChannels.CHAT_SET_WORKING_SET, async (_event, sessionId: string, paths: string[]) => {
+  agentManager?.setWorkingSet(sessionId, paths)
+})
+
+ipcMain.handle(IpcChannels.CHAT_TOOL_APPROVE, async (_event, sessionId: string, toolCallId: string) => {
+  agentManager?.approveToolCall(sessionId, toolCallId)
+})
+
+ipcMain.handle(IpcChannels.CHAT_TOOL_REJECT, async (_event, sessionId: string, toolCallId: string) => {
+  agentManager?.rejectToolCall(sessionId, toolCallId)
+})
+
+ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
+  agentManager?.stop(sessionId)
+})
+
+// ─── CLI Agent IPC handlers ─────────────────────────────────────
+
+ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) => {
+  if (!cliAgentManager) return { error: 'No workspace open' }
+  return cliAgentManager.start(workspaceId, backend, conversationId, worktreePath)
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, content: string) => {
+  if (!cliAgentManager) return { error: 'No workspace open' }
+  return cliAgentManager.send(sessionId, content)
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: string, sessionId?: string) => {
+  if (!cliAgentManager) return null
+  if (sessionId) {
+    const s = cliAgentManager.getSessionById(sessionId)
+    if (!s || s.workspaceId !== workspaceId) return null
+    return s
+  }
+  return cliAgentManager.getSession(workspaceId) ?? null
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_LOAD_MESSAGES,
+  async (_event, workspaceId: string, conversationId: string): Promise<CliAgentMessage[]> => {
+    if (workspaceRegistry.getActiveId() !== workspaceId) {
+      return []
+    }
+    const nativeMeta =
+      nativeSessionCache.find((c) => c.id === conversationId) ??
+      nativeSessionCache.find((c) => c.claudeSessionId === conversationId)
+    if (nativeMeta?.source === 'claude-native' && nativeMeta.claudeSessionId && nativeSessionWatcher) {
+      return nativeSessionWatcher.loadMessages(nativeMeta.claudeSessionId)
+    }
+    const nativePrefix = 'claude-native:'
+    if (conversationId.startsWith(nativePrefix) && nativeSessionWatcher) {
+      const rawId = conversationId.slice(nativePrefix.length)
+      if (
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId)
+      ) {
+        return nativeSessionWatcher.loadMessages(rawId)
+      }
+    }
+    const stored = await conversationStore?.loadMessages(conversationId)
+    if (!stored || typeof stored !== 'object') {
+      return []
+    }
+    const msgs = (stored as { messages?: unknown }).messages
+    const out = Array.isArray(msgs) ? (msgs as CliAgentMessage[]) : []
+    return out
+  },
+)
+
+ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
+  cliAgentManager?.stop(sessionId)
+})
+
+// ─── Conversation History IPC handlers ──────────────────────────
+
+ipcMain.handle(IpcChannels.CONVERSATION_LIST, async (_event, workspaceId: string) => {
+  const aideConvos = await conversationStore?.loadIndex() ?? []
+  return [...aideConvos, ...nativeSessionCache]
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_CREATE, async (_event, opts: ConversationCreateOpts) => {
+  if (!conversationStore) return { error: 'No workspace open' }
+  const meta = await conversationStore.create(opts)
+  // Notify renderer
+  const index = await conversationStore.loadIndex()
+  contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+    workspaceId: opts.workspaceId,
+    conversations: index,
+  })
+  return meta
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_DELETE, async (_event, conversationId: string) => {
+  if (!conversationStore) return
+  const meta = await conversationStore.get(conversationId)
+  await conversationStore.delete(conversationId)
+  // Stop any active session
+  agentManager?.stop(conversationId)
+  cliAgentManager?.stop(conversationId)
+  // Notify renderer
+  if (meta) {
+    const index = await conversationStore.loadIndex()
+    contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+      workspaceId: meta.workspaceId,
+      conversations: index,
+    })
+  }
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_RENAME, async (_event, conversationId: string, title: string) => {
+  if (!conversationStore) return
+  await conversationStore.updateMeta(conversationId, { title, autoTitled: false, updatedAt: Date.now() })
+  const meta = await conversationStore.get(conversationId)
+  if (meta) {
+    const index = await conversationStore.loadIndex()
+    contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+      workspaceId: meta.workspaceId,
+      conversations: index,
+    })
+  }
+})
+
+ipcMain.handle(IpcChannels.CONVERSATION_GET, async (_event, conversationId: string) => {
+  return conversationStore?.get(conversationId) ?? null
+})
+
 // State persistence IPC handlers
 ipcMain.handle(IpcChannels.STATE_SAVE, async (_event, rootPath: string, state: import('@aide/shared').AideLocalState) => {
   await saveWorkspaceState(rootPath, state)
@@ -534,6 +766,19 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
   }
   store.set('editorDefaults', current)
 
+  // Push agent config updates to AgentManager if an agent.* key changed
+  if (key.startsWith('agent.') && agentManager) {
+    agentManager.updateConfig(loadLlmConfig())
+    const permConfig = loadPermissionConfig()
+    agentManager.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+  }
+
+  // Push CLI agent path updates
+  if ((key === 'agent.claudeCodePath' || key === 'agent.codexPath') && cliAgentManager) {
+    const appDefs = resolveAppDefaults(store)
+    cliAgentManager.updatePaths(appDefs['agent.claudeCodePath'], appDefs['agent.codexPath'])
+  }
+
   // Broadcast resolved settings
   const rootPath = store.get('workspaceRoot')
   const resolved = rootPath
@@ -556,6 +801,9 @@ ipcMain.handle(IpcChannels.SETTINGS_GET_WORKSPACE, async () => {
 })
 
 ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, value: unknown) => {
+  // Block sensitive agent keys from being written to project-level settings
+  if (SENSITIVE_AGENT_KEYS.has(key)) return
+
   const rootPath = store.get('workspaceRoot')
   if (!rootPath) return
 
@@ -1009,7 +1257,14 @@ function finishQuit(): void {
   // Mark clean shutdown
   store.set('cleanShutdown', true)
 
-  // Clean up resources
+  // Clean up resources (async destroy for persistence, but don't block quit)
+  agentManager?.destroy().catch(() => {})
+  agentManager = null
+  cliAgentManager?.destroy().catch(() => {})
+  cliAgentManager = null
+  nativeSessionWatcher?.stop()
+  nativeSessionWatcher = null
+  conversationStore = null
   taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()

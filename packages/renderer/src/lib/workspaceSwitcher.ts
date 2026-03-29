@@ -6,7 +6,7 @@
  */
 
 import type { DockviewApi } from 'dockview-react'
-import type { AideLocalState, AideLocalTerminals } from '@aide/shared'
+import type { AgentBackend, AideLocalState, AideLocalTerminals } from '@aide/shared'
 import { clearCache } from './editorStateCache'
 import { clearAllDirty } from './editorDirtyState'
 import { createRestoredTerminalPanelParams, createTerminalPanelParams } from './terminalState'
@@ -101,11 +101,12 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
       ctx.dockviewApi.fromJSON(savedState.layout as Parameters<DockviewApi['fromJSON']>[0])
     } catch {
       // Layout restore failed — use default
-      createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
+      await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals, () => gen === switchGeneration)
     }
   } else {
-    createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
+    await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals, () => gen === switchGeneration)
   }
+  if (gen !== switchGeneration) return false
   ctx.onAfterRestorePanels?.()
 
   // 5. RESTORE sidebar
@@ -151,12 +152,13 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
  * @param workspaceRoot - Workspace filesystem root used as the default working directory for restored terminals when a terminal's cwd is not present.
  * @param savedTerminals - Persisted terminal metadata; terminals whose `workspaceId` matches `workspaceId` are restored as individual terminal panels.
  */
-function createDefaultLayout(
+async function createDefaultLayout(
   api: DockviewApi,
   workspaceId: string,
   workspaceRoot: string | null,
   savedTerminals: AideLocalTerminals | null,
-): void {
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
   const editorPanel = api.addPanel({
     id: 'editor',
     component: 'placeholder',
@@ -193,13 +195,44 @@ function createDefaultLayout(
     })
   }
 
-  api.addPanel({
-    id: 'agent',
-    component: 'placeholder',
-    params: { title: 'Agent' },
-    position: { referencePanel: editorPanel, direction: 'right' },
-    initialWidth: 350,
-  })
+  // Choose agent pane based on backend setting
+  const resolvedSettings = await window.api.getResolvedSettings().catch(() => null)
+  if (!isCurrent()) return
+
+  const backend: AgentBackend = resolvedSettings?.['agent.backend'] ?? 'built-in'
+
+  if (backend === 'claude-code' || backend === 'codex') {
+    api.addPanel({
+      id: 'agent',
+      component: 'cliAgentPane',
+      tabComponent: 'agentTab',
+      title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+      params: {
+        workspaceId,
+        workspaceRoot: workspaceRoot ?? undefined,
+        backend,
+        conversationId: crypto.randomUUID(),
+      },
+      position: { referencePanel: editorPanel, direction: 'right' },
+      initialWidth: 400,
+    })
+  } else {
+    const conversationId = await window.api.conversationCreate({
+      workspaceId,
+      backend: 'built-in',
+    }).then((meta) => meta.id).catch(() => undefined)
+    if (!isCurrent()) return
+
+    api.addPanel({
+      id: 'agent',
+      component: 'chatPane',
+      tabComponent: 'agentTab',
+      title: 'Agent',
+      params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined, conversationId },
+      position: { referencePanel: editorPanel, direction: 'right' },
+      initialWidth: 350,
+    })
+  }
 }
 
 /**

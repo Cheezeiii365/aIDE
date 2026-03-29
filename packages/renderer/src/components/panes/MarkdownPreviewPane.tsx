@@ -1,39 +1,9 @@
-import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
-import { Marked } from 'marked'
-import DOMPurify from 'dompurify'
-import hljs from 'highlight.js/lib/core'
-import javascript from 'highlight.js/lib/languages/javascript'
-import typescript from 'highlight.js/lib/languages/typescript'
-import python from 'highlight.js/lib/languages/python'
-import css from 'highlight.js/lib/languages/css'
-import xml from 'highlight.js/lib/languages/xml'
-import json from 'highlight.js/lib/languages/json'
-import bash from 'highlight.js/lib/languages/bash'
-import markdown from 'highlight.js/lib/languages/markdown'
+import { renderMarkdown } from '../../lib/markdownRenderer'
 import { getContent, subscribeContent } from '../../lib/editorContentBus'
 import { getAppActions } from '../../lib/appActions'
 import '../../styles/markdown-preview.css'
-
-// Register highlight.js languages
-hljs.registerLanguage('javascript', javascript)
-hljs.registerLanguage('js', javascript)
-hljs.registerLanguage('jsx', javascript)
-hljs.registerLanguage('typescript', typescript)
-hljs.registerLanguage('ts', typescript)
-hljs.registerLanguage('tsx', typescript)
-hljs.registerLanguage('python', python)
-hljs.registerLanguage('py', python)
-hljs.registerLanguage('css', css)
-hljs.registerLanguage('html', xml)
-hljs.registerLanguage('xml', xml)
-hljs.registerLanguage('json', json)
-hljs.registerLanguage('bash', bash)
-hljs.registerLanguage('shell', bash)
-hljs.registerLanguage('sh', bash)
-hljs.registerLanguage('zsh', bash)
-hljs.registerLanguage('markdown', markdown)
-hljs.registerLanguage('md', markdown)
 
 interface MarkdownPreviewParams {
   filePath: string
@@ -73,36 +43,14 @@ export function MarkdownPreviewPane({ params }: IDockviewPanelProps<MarkdownPrev
     return () => { cancelled = true }
   }, [filePath])
 
-  // Configure marked instance with highlight.js for code blocks
-  const marked = useMemo(() => {
-    const instance = new Marked()
-    instance.use({
-      renderer: {
-        code({ text, lang }: { text: string; lang?: string }) {
-          let highlighted: string
-          if (lang && hljs.getLanguage(lang)) {
-            highlighted = hljs.highlight(text, { language: lang }).value
-          } else {
-            highlighted = hljs.highlightAuto(text).value
-          }
-          const langClass = lang ? ` class="language-${lang}"` : ''
-          return `<pre><code${langClass}>${highlighted}</code></pre>`
-        },
-      },
-    })
-    return instance
-  }, [])
-
   // Render markdown to sanitized HTML with debounce
-  // Content is sanitized via DOMPurify before rendering to prevent XSS
   const [html, setHtml] = useState('')
   useEffect(() => {
     const timer = setTimeout(() => {
-      const raw = marked.parse(content, { async: false }) as string
-      setHtml(DOMPurify.sanitize(raw))
+      setHtml(renderMarkdown(content))
     }, 50)
     return () => clearTimeout(timer)
-  }, [content, marked])
+  }, [content])
 
   const handleLinkClick = useCallback((e: React.MouseEvent) => {
     const anchor = (e.target as HTMLElement).closest('a')

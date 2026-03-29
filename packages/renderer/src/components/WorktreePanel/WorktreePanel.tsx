@@ -8,6 +8,7 @@ interface Props {
   worktrees: WorktreeInfo[]
   onSwitch: (worktreePath: string | null) => void
   onOpenTerminal: (worktreePath: string) => void
+  onStartAgent: (worktreePath: string) => void
 }
 
 interface ContextMenuState {
@@ -23,9 +24,10 @@ interface ContextMenuState {
  * @param worktrees - Array of worktree metadata to display
  * @param onSwitch - Callback invoked with the selected worktree path (or `null` for the main worktree) to switch active worktree
  * @param onOpenTerminal - Callback invoked with a worktree path to open a terminal for that worktree
+ * @param onStartAgent - Callback invoked with a worktree path to start an agent chat in that worktree
  * @returns The rendered worktree panel element
  */
-export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal }: Props) {
+export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal, onStartAgent }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [enteringPaths, setEnteringPaths] = useState<Set<string>>(new Set())
@@ -89,6 +91,13 @@ export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal }: Props) {
 
   const handleRemove = useCallback(async () => {
     if (!contextMenu) return
+    const confirmed = window.confirm(
+      `Remove worktree "${contextMenu.worktree.branch}"?\n\nAny agent sessions or terminals running in this worktree will lose their working directory.`,
+    )
+    if (!confirmed) {
+      closeContextMenu()
+      return
+    }
     const result = await window.api.removeWorktree(contextMenu.worktree.path)
     if ('error' in result) {
       console.error('Failed to remove worktree:', result.error)
@@ -111,6 +120,7 @@ export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal }: Props) {
               onClick={() => onSwitch(wt.isMain ? null : wt.path)}
               onContextMenu={(e) => handleContextMenu(e, wt)}
               onOpenTerminal={onOpenTerminal}
+              onStartAgent={onStartAgent}
               onMoreActions={(e, worktree) => openContextMenuAt(e, worktree)}
             />
           </div>
@@ -148,6 +158,18 @@ export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal }: Props) {
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            <button
+              className="context-menu__item"
+              onClick={() => {
+                onStartAgent(contextMenu.worktree.path)
+                closeContextMenu()
+              }}
+            >
+              <svg className="context-menu__icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2 1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h9.586a2 2 0 0 1 1.414.586l2 2V2a1 1 0 0 0-1-1H2zm12-1a2 2 0 0 1 2 2v12.793a.5.5 0 0 1-.854.353l-2.853-2.853A1 1 0 0 0 11.586 12H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h12z" />
+              </svg>
+              Start Agent in Worktree
+            </button>
             <button
               className="context-menu__item"
               onClick={() => {

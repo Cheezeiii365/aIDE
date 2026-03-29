@@ -1,0 +1,250 @@
+/* --- Chat History Pane ------------------------------------------- */
+
+.chat-history-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* --- Header ----------------------------------------------------- */
+
+.chat-history-pane__header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-elevated);
+}
+
+.chat-history-pane__title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.chat-history-pane__new-btn {
+  border: none;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 100ms;
+}
+
+.chat-history-pane__new-btn:hover {
+  filter: brightness(1.15);
+}
+
+/* --- Filter ----------------------------------------------------- */
+
+.chat-history-pane__filter-row {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.chat-history-pane__filter {
+  width: 100%;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-base);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  outline: none;
+  transition: border-color 100ms;
+}
+
+.chat-history-pane__filter::placeholder {
+  color: var(--text-muted);
+}
+
+.chat-history-pane__filter:focus {
+  border-color: var(--accent);
+}
+
+/* --- List ------------------------------------------------------- */
+
+.chat-history-pane__list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.chat-history-pane__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* --- Item ------------------------------------------------------- */
+
+.chat-history-pane__item {
+  padding: 6px 8px 6px 10px;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: background 100ms, border-color 100ms;
+}
+
+.chat-history-pane__item:hover {
+  background: var(--bg-hover);
+}
+
+.chat-history-pane__item--active {
+  border-left-color: var(--accent);
+  background: var(--bg-active-tab);
+}
+
+.chat-history-pane__item-row1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.chat-history-pane__item-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-history-pane__item-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.chat-history-pane__item-row2 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.chat-history-pane__item-branch {
+  font-size: 10px;
+  font-family: 'SF Mono', Menlo, monospace;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* --- Backend Badges --------------------------------------------- */
+
+.chat-history-pane__item-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.chat-history-pane__item-badge--built-in {
+  color: var(--text-info);
+  background: var(--bg-info);
+}
+
+.chat-history-pane__item-badge--cli {
+  color: var(--text-secondary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+}
+
+.chat-history-pane__item-badge--claude-code {
+  color: var(--text-success);
+  background: color-mix(in srgb, var(--text-success) 12%, transparent);
+}
+
+.chat-history-pane__item-badge--codex {
+  color: var(--text-warning);
+  background: color-mix(in srgb, var(--text-warning) 12%, transparent);
+}
+
+/* --- Rename Input ----------------------------------------------- */
+
+.chat-history-pane__rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-sunken);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 3px;
+  outline: none;
+}
+
+/* --- Context Menu ----------------------------------------------- */
+
+.chat-history-pane__context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  min-width: 140px;
+  padding: 4px 0;
+}
+
+.chat-history-pane__context-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 60ms;
+}
+
+.chat-history-pane__context-item:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.chat-history-pane__context-item--danger:hover {
+  background: var(--text-error);
+  color: var(--text-on-accent);
+}
+
+.chat-history-pane__context-separator {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 8px;
+}

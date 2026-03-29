@@ -342,6 +342,26 @@ export class BrowserPaneManager {
     }
   }
 
+  async getPageContent(paneId?: string, selector?: string, workspaceId?: string): Promise<string | null> {
+    let managed: ManagedBrowserPane | undefined
+    if (paneId) {
+      managed = this.panes.get(paneId)
+    } else if (workspaceId) {
+      for (const p of this.panes.values()) {
+        if (p.workspaceId === workspaceId) { managed = p; break }
+      }
+    }
+    if (!managed) return null
+    const js = selector
+      ? `(() => { try { return document.querySelector(${JSON.stringify(selector)})?.innerText ?? '' } catch { return '' } })()`
+      : `document.body?.innerText ?? ''`
+    try {
+      return await managed.view.webContents.executeJavaScript(js)
+    } catch {
+      return ''
+    }
+  }
+
   private getSession(workspaceId: string, sessionMode: BrowserSessionMode): Electron.Session {
     switch (sessionMode) {
       case 'shared-auth':
