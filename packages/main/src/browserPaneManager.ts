@@ -353,9 +353,13 @@ export class BrowserPaneManager {
     }
     if (!managed) return null
     const js = selector
-      ? `document.querySelector(${JSON.stringify(selector)})?.innerText ?? ''`
-      : `document.body.innerText`
-    return managed.view.webContents.executeJavaScript(js)
+      ? `(() => { try { return document.querySelector(${JSON.stringify(selector)})?.innerText ?? '' } catch { return '' } })()`
+      : `document.body?.innerText ?? ''`
+    try {
+      return await managed.view.webContents.executeJavaScript(js)
+    } catch {
+      return ''
+    }
   }
 
   private getSession(workspaceId: string, sessionMode: BrowserSessionMode): Electron.Session {
