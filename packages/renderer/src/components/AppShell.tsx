@@ -1128,9 +1128,72 @@ export function AppShell() {
                             initialWidth: 350,
                           })
                           persistWorkspaceRuntime()
-                        }).catch(() => {})
+                        }).catch(() => {
+                          api.addPanel({
+                            id: `agent-${Date.now()}`,
+                            component: 'chatPane',
+                            tabComponent: 'agentTab',
+                            title: branch ? `Agent (${branch})` : 'Agent',
+                            params: {
+                              workspaceId: activeWorkspaceId,
+                              workspaceRoot: workspaceRoot ?? undefined,
+                              worktreePath,
+                              worktreeBranch: branch,
+                            },
+                            position: editorPanel
+                              ? { referencePanel: editorPanel, direction: 'right' }
+                              : undefined,
+                            initialWidth: 350,
+                          })
+                          persistWorkspaceRuntime()
+                        })
                       }
-                    }).catch(() => {})
+                    }).catch(() => {
+                      // Fallback to built-in
+                      void window.api.conversationCreate({
+                        workspaceId: activeWorkspaceId,
+                        backend: 'built-in',
+                        worktreePath,
+                        worktreeBranch: branch,
+                      }).then((meta) => {
+                        api.addPanel({
+                          id: `agent-${Date.now()}`,
+                          component: 'chatPane',
+                          tabComponent: 'agentTab',
+                          title: branch ? `Agent (${branch})` : 'Agent',
+                          params: {
+                            workspaceId: activeWorkspaceId,
+                            workspaceRoot: workspaceRoot ?? undefined,
+                            conversationId: meta.id,
+                            worktreePath,
+                            worktreeBranch: branch,
+                          },
+                          position: editorPanel
+                            ? { referencePanel: editorPanel, direction: 'right' }
+                            : undefined,
+                          initialWidth: 350,
+                        })
+                        persistWorkspaceRuntime()
+                      }).catch(() => {
+                        api.addPanel({
+                          id: `agent-${Date.now()}`,
+                          component: 'chatPane',
+                          tabComponent: 'agentTab',
+                          title: branch ? `Agent (${branch})` : 'Agent',
+                          params: {
+                            workspaceId: activeWorkspaceId,
+                            workspaceRoot: workspaceRoot ?? undefined,
+                            worktreePath,
+                            worktreeBranch: branch,
+                          },
+                          position: editorPanel
+                            ? { referencePanel: editorPanel, direction: 'right' }
+                            : undefined,
+                          initialWidth: 350,
+                        })
+                        persistWorkspaceRuntime()
+                      })
+                    })
                   }}
                 />
               </SidebarSection>
