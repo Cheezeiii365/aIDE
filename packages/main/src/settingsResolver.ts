@@ -11,7 +11,7 @@ import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type Store from 'electron-store'
-import type { AppSettings, AideProjectSettings, ResolvedSettings, PermissionTier, ToolPermissionConfig } from '@aide/shared'
+import type { AppSettings, AideProjectSettings, ResolvedSettings, PermissionTier, ToolPermissionConfig, AgentBackend } from '@aide/shared'
 
 export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   tabSize: 2,
@@ -35,6 +35,11 @@ export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   // Agent / Permission defaults
   'agent.permissionTier': 'confirm' as PermissionTier,
   'agent.autoApprove': {} as Record<string, boolean | ToolPermissionConfig>,
+
+  // Agent / Backend defaults
+  'agent.backend': 'built-in' as AgentBackend,
+  'agent.claudeCodePath': '',
+  'agent.codexPath': '',
 }
 
 /**
@@ -79,6 +84,11 @@ export function resolveAppDefaults(
       ...BUILT_IN_DEFAULTS['agent.autoApprove'],
       ...(userDefaults['agent.autoApprove'] ?? {}),
     },
+
+    // Agent / Backend
+    'agent.backend': userDefaults['agent.backend'] ?? BUILT_IN_DEFAULTS['agent.backend'],
+    'agent.claudeCodePath': userDefaults['agent.claudeCodePath'] ?? BUILT_IN_DEFAULTS['agent.claudeCodePath'],
+    'agent.codexPath': userDefaults['agent.codexPath'] ?? BUILT_IN_DEFAULTS['agent.codexPath'],
   }
 }
 
@@ -147,5 +157,10 @@ export async function resolveSettings(
       ...appDefaults['agent.autoApprove'],
       ...(projectSettings['agent.autoApprove'] ?? {}),
     },
+
+    // Agent / Backend
+    'agent.backend': projectSettings['agent.backend'] ?? appDefaults['agent.backend'],
+    'agent.claudeCodePath': projectSettings['agent.claudeCodePath'] ?? appDefaults['agent.claudeCodePath'],
+    'agent.codexPath': projectSettings['agent.codexPath'] ?? appDefaults['agent.codexPath'],
   }
 }

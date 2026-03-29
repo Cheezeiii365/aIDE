@@ -54,6 +54,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     id: 'agent',
     label: 'Agent',
     children: [
+      { id: 'agent.backend', label: 'Backend' },
       { id: 'agent.llm', label: 'LLM Configuration' },
       { id: 'agent.permissions', label: 'Permissions' },
     ],
@@ -121,6 +122,37 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     description: 'Format a file on save.',
     type: 'boolean',
     category: 'textEditor.formatting',
+    scope: 'both',
+  },
+
+  // Agent > Backend
+  {
+    key: 'agent.backend',
+    label: 'Agent Backend',
+    description: 'Which agent backend to use. Built-in uses the integrated LLM agent. Claude Code and Codex wrap external CLI tools.',
+    type: 'enum',
+    enumValues: [
+      { value: 'built-in', label: 'Built-in' },
+      { value: 'claude-code', label: 'Claude Code' },
+      { value: 'codex', label: 'Codex' },
+    ],
+    category: 'agent.backend',
+    scope: 'both',
+  },
+  {
+    key: 'agent.claudeCodePath',
+    label: 'Claude Code Path',
+    description: 'Path to the Claude Code CLI binary. Leave empty to auto-detect from node_modules or PATH.',
+    type: 'string',
+    category: 'agent.backend',
+    scope: 'both',
+  },
+  {
+    key: 'agent.codexPath',
+    label: 'Codex Path',
+    description: 'Path to the Codex CLI binary. Leave empty to auto-detect from PATH.',
+    type: 'string',
+    category: 'agent.backend',
     scope: 'both',
   },
 

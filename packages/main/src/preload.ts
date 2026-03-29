@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -360,6 +360,36 @@ const api: WindowApi = {
     const handler = (_event: Electron.IpcRendererEvent, status: McpServerStatus) => callback(status)
     ipcRenderer.on(IpcChannels.MCP_SERVER_STATUS, handler)
     return () => ipcRenderer.removeListener(IpcChannels.MCP_SERVER_STATUS, handler)
+  },
+
+  // ─── CLI Agent ───────────────────────────────
+  cliAgentStart: (workspaceId: string, backend: AgentBackend) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_START, workspaceId, backend),
+  cliAgentStop: (sessionId: string) =>
+    ipcRenderer.send(IpcChannels.CLI_AGENT_STOP, sessionId),
+  cliAgentSend: (sessionId: string, content: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SEND, sessionId, content),
+  cliAgentGetSession: (workspaceId: string): Promise<CliAgentSession | null> =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_GET_SESSION, workspaceId),
+  onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, delta: CliAgentStreamDelta) => callback(delta)
+    ipcRenderer.on(IpcChannels.CLI_AGENT_STREAM_DELTA, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_STREAM_DELTA, handler)
+  },
+  onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, msg: CliAgentMessage & { sessionId: string }) => callback(msg)
+    ipcRenderer.on(IpcChannels.CLI_AGENT_MESSAGE, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_MESSAGE, handler)
+  },
+  onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: CliAgentStatusPayload) => callback(status)
+    ipcRenderer.on(IpcChannels.CLI_AGENT_STATUS, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_STATUS, handler)
+  },
+  onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, result: CliAgentResultPayload) => callback(result)
+    ipcRenderer.on(IpcChannels.CLI_AGENT_RESULT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_RESULT, handler)
   },
 
   // Platform info (for conditional UI like traffic lights)

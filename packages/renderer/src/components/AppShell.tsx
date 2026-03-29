@@ -738,17 +738,47 @@ export function AppShell() {
       (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
     )
 
-    api.addPanel({
-      id: `agent-${Date.now()}`,
-      component: 'chatPane',
-      title: 'Agent',
-      params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
-      position: editorPanel
-        ? { referencePanel: editorPanel, direction: 'right' }
-        : undefined,
-      initialWidth: 350,
+    // Check backend setting to decide which pane to open
+    window.api.getResolvedSettings().then((resolved) => {
+      const backend = resolved['agent.backend'] ?? 'built-in'
+      if (backend === 'claude-code' || backend === 'codex') {
+        api.addPanel({
+          id: `agent-${Date.now()}`,
+          component: 'cliAgentPane',
+          title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+          params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined, backend },
+          position: editorPanel
+            ? { referencePanel: editorPanel, direction: 'right' }
+            : undefined,
+          initialWidth: 400,
+        })
+      } else {
+        api.addPanel({
+          id: `agent-${Date.now()}`,
+          component: 'chatPane',
+          title: 'Agent',
+          params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
+          position: editorPanel
+            ? { referencePanel: editorPanel, direction: 'right' }
+            : undefined,
+          initialWidth: 350,
+        })
+      }
+      persistWorkspaceRuntime()
+    }).catch(() => {
+      // Fallback to built-in
+      api.addPanel({
+        id: `agent-${Date.now()}`,
+        component: 'chatPane',
+        title: 'Agent',
+        params: { workspaceId: activeWorkspaceId, workspaceRoot: workspaceRoot ?? undefined },
+        position: editorPanel
+          ? { referencePanel: editorPanel, direction: 'right' }
+          : undefined,
+        initialWidth: 350,
+      })
+      persistWorkspaceRuntime()
     })
-    persistWorkspaceRuntime()
   })
 
   useCommand('browser.back', {

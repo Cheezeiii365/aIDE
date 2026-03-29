@@ -1,0 +1,35 @@
+.agent-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-status-dot--stopped {
+  background: var(--text-muted, #6b7280);
+}
+
+.agent-status-dot--starting,
+.agent-status-dot--stopping {
+  background: var(--accent-blue, #3b82f6);
+  animation: agent-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-status-dot--running {
+  background: var(--accent-green, #22c55e);
+  animation: agent-dot-pulse 2s ease-in-out infinite;
+}
+
+.agent-status-dot--rate_limited {
+  background: var(--accent-yellow, #eab308);
+}
+
+.agent-status-dot--error {
+  background: var(--accent-red, #ef4444);
+}
+
+@keyframes agent-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

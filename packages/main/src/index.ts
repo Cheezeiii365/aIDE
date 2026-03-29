@@ -21,13 +21,15 @@ import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminal
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './gitDiff'
 import { AgentManager } from './agentManager'
-import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig } from '@aide/shared'
+import { CliAgentManager } from './cliAgentManager'
+import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
 
 let taskRunner: TaskRunner | null = null
 let agentManager: AgentManager | null = null
+let cliAgentManager: CliAgentManager | null = null
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -316,6 +318,19 @@ async function activateWorkspace(id: string): Promise<void> {
     })
   }
 
+  // Initialize CLI agent manager for this workspace
+  cliAgentManager?.destroy()
+  cliAgentManager = null
+  if (entry.rootPath) {
+    const resolved = resolveAppDefaults(store)
+    cliAgentManager = new CliAgentManager({
+      workspaceRoot: entry.rootPath,
+      getWebContents: () => contentView?.webContents ?? null,
+      claudeCodePath: resolved['agent.claudeCodePath'],
+      codexPath: resolved['agent.codexPath'],
+    })
+  }
+
   broadcastWorkspaceRegistry()
 }
 
@@ -509,6 +524,26 @@ ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
   agentManager?.stop(sessionId)
 })
 
+// ─── CLI Agent IPC handlers ─────────────────────────────────────
+
+ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend) => {
+  if (!cliAgentManager) return { error: 'No workspace open' }
+  return cliAgentManager.start(workspaceId, backend)
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, content: string) => {
+  if (!cliAgentManager) return { error: 'No workspace open' }
+  return cliAgentManager.send(sessionId, content)
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: string) => {
+  return cliAgentManager?.getSession(workspaceId) ?? null
+})
+
+ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
+  cliAgentManager?.stop(sessionId)
+})
+
 // State persistence IPC handlers
 ipcMain.handle(IpcChannels.STATE_SAVE, async (_event, rootPath: string, state: import('@aide/shared').AideLocalState) => {
   await saveWorkspaceState(rootPath, state)
@@ -624,6 +659,12 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
     agentManager.updateConfig(loadLlmConfig())
     const permConfig = loadPermissionConfig()
     agentManager.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+  }
+
+  // Push CLI agent path updates
+  if ((key === 'agent.claudeCodePath' || key === 'agent.codexPath') && cliAgentManager) {
+    const appDefs = resolveAppDefaults(store)
+    cliAgentManager.updatePaths(appDefs['agent.claudeCodePath'], appDefs['agent.codexPath'])
   }
 
   // Broadcast resolved settings
@@ -1104,6 +1145,8 @@ function finishQuit(): void {
   // Clean up resources
   agentManager?.destroy()
   agentManager = null
+  cliAgentManager?.destroy()
+  cliAgentManager = null
   taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()

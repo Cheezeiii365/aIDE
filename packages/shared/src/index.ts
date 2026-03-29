@@ -14,6 +14,11 @@ export type {
   LlmProviderConfig,
 } from './agentTypes'
 export type {
+  AgentBackend, CliAgentProcessStatus,
+  CliAgentMessage, CliAgentStreamDelta, CliAgentSession,
+  CliAgentStatusPayload, CliAgentResultPayload,
+} from './cliAgentTypes'
+export type {
   LlmMessage, LlmContentBlock, LlmToolDefinition, LlmUsage,
   LlmStreamEvent, StreamParams, LlmProvider, SseEvent,
   AnthropicRequest, AnthropicMessage, AnthropicContentBlock, AnthropicTool, AnthropicStreamEvent,
@@ -24,6 +29,10 @@ import type {
   McpServerStatus, ToolDefinition,
   PermissionTier, ToolPermissionConfig,
 } from './agentTypes'
+import type {
+  AgentBackend, CliAgentStreamDelta, CliAgentMessage,
+  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload,
+} from './cliAgentTypes'
 export {
   adjustZoomFactor,
   clampZoomFactor,
@@ -208,6 +217,16 @@ export const IpcChannels = {
   MCP_SERVER_STATUS: 'mcp:server-status',
   MCP_RESTART_SERVER: 'mcp:restart-server',
   MCP_LIST_TOOLS: 'mcp:list-tools',
+
+  // ─── CLI Agent ───────────────────────────────
+  CLI_AGENT_START: 'cli-agent:start',
+  CLI_AGENT_STOP: 'cli-agent:stop',
+  CLI_AGENT_SEND: 'cli-agent:send',
+  CLI_AGENT_GET_SESSION: 'cli-agent:get-session',
+  CLI_AGENT_STREAM_DELTA: 'cli-agent:stream-delta',
+  CLI_AGENT_MESSAGE: 'cli-agent:message',
+  CLI_AGENT_STATUS: 'cli-agent:status',
+  CLI_AGENT_RESULT: 'cli-agent:result',
 } as const
 
 export type ThemeName = 'one-dark' | 'one-light'
@@ -319,6 +338,11 @@ export interface AideProjectSettings {
   // Agent / Permission settings
   'agent.permissionTier'?: PermissionTier
   'agent.autoApprove'?: Record<string, boolean | ToolPermissionConfig>
+
+  // Agent / Backend settings
+  'agent.backend'?: AgentBackend
+  'agent.claudeCodePath'?: string
+  'agent.codexPath'?: string
 }
 
 // Fully resolved settings (no optional fields)
@@ -344,6 +368,11 @@ export interface ResolvedSettings {
   // Agent / Permission settings
   'agent.permissionTier': PermissionTier
   'agent.autoApprove': Record<string, boolean | ToolPermissionConfig>
+
+  // Agent / Backend settings
+  'agent.backend': AgentBackend
+  'agent.claudeCodePath': string
+  'agent.codexPath': string
 }
 
 // .aide/local/workspace.json
@@ -745,11 +774,21 @@ export interface WindowApi {
   onChatStreamEnd: (callback: (end: ChatStreamEnd) => void) => () => void
   onChatToolCall: (callback: (payload: ChatToolCallPayload) => void) => () => void
 
-  // ─── MCP ──────────────────────────────────────
+  // ─── MCP ���───────────────────────────────���─────
   mcpListServers: () => Promise<McpServerStatus[]>
   mcpRestartServer: (serverName: string) => Promise<{ success: true } | { error: string }>
   mcpListTools: () => Promise<ToolDefinition[]>
   onMcpServerStatus: (callback: (status: McpServerStatus) => void) => () => void
+
+  // ─── CLI Agent ───────────────────────────────
+  cliAgentStart: (workspaceId: string, backend: AgentBackend) => Promise<{ sessionId: string } | { error: string }>
+  cliAgentStop: (sessionId: string) => void
+  cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
+  cliAgentGetSession: (workspaceId: string) => Promise<CliAgentSession | null>
+  onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
+  onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
+  onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void
+  onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => () => void
 
   // Platform info
   platform: NodeJS.Platform

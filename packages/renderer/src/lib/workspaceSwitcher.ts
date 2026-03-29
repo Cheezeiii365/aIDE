@@ -6,7 +6,7 @@
  */
 
 import type { DockviewApi } from 'dockview-react'
-import type { AideLocalState, AideLocalTerminals } from '@aide/shared'
+import type { AgentBackend, AideLocalState, AideLocalTerminals } from '@aide/shared'
 import { clearCache } from './editorStateCache'
 import { clearAllDirty } from './editorDirtyState'
 import { createRestoredTerminalPanelParams, createTerminalPanelParams } from './terminalState'
@@ -101,10 +101,10 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
       ctx.dockviewApi.fromJSON(savedState.layout as Parameters<DockviewApi['fromJSON']>[0])
     } catch {
       // Layout restore failed — use default
-      createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
+      await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
     }
   } else {
-    createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
+    await createDefaultLayout(ctx.dockviewApi, ctx.targetWorkspaceId, ctx.targetRootPath, savedTerminals)
   }
   ctx.onAfterRestorePanels?.()
 
@@ -151,12 +151,12 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
  * @param workspaceRoot - Workspace filesystem root used as the default working directory for restored terminals when a terminal's cwd is not present.
  * @param savedTerminals - Persisted terminal metadata; terminals whose `workspaceId` matches `workspaceId` are restored as individual terminal panels.
  */
-function createDefaultLayout(
+async function createDefaultLayout(
   api: DockviewApi,
   workspaceId: string,
   workspaceRoot: string | null,
   savedTerminals: AideLocalTerminals | null,
-): void {
+): Promise<void> {
   const editorPanel = api.addPanel({
     id: 'editor',
     component: 'placeholder',
@@ -193,14 +193,29 @@ function createDefaultLayout(
     })
   }
 
-  api.addPanel({
-    id: 'agent',
-    component: 'chatPane',
-    title: 'Agent',
-    params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined },
-    position: { referencePanel: editorPanel, direction: 'right' },
-    initialWidth: 350,
-  })
+  // Choose agent pane based on backend setting
+  const resolvedSettings = await window.api.getResolvedSettings().catch(() => null)
+  const backend: AgentBackend = resolvedSettings?.['agent.backend'] ?? 'built-in'
+
+  if (backend === 'claude-code' || backend === 'codex') {
+    api.addPanel({
+      id: 'agent',
+      component: 'cliAgentPane',
+      title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+      params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined, backend },
+      position: { referencePanel: editorPanel, direction: 'right' },
+      initialWidth: 400,
+    })
+  } else {
+    api.addPanel({
+      id: 'agent',
+      component: 'chatPane',
+      title: 'Agent',
+      params: { workspaceId, workspaceRoot: workspaceRoot ?? undefined },
+      position: { referencePanel: editorPanel, direction: 'right' },
+      initialWidth: 350,
+    })
+  }
 }
 
 /**

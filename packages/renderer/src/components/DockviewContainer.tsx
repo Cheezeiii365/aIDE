@@ -10,6 +10,7 @@ import { FindInFilesPane } from './panes/FindInFilesPane'
 import { BrowserPane } from './panes/BrowserPane'
 import { SettingsPane } from './panes/SettingsPane'
 import { ChatPane } from './panes/ChatPane'
+import { CliAgentPane } from './panes/CliAgentPane'
 import 'dockview/dist/styles/dockview.css'
 import '../styles/dockview-theme.css'
 
@@ -23,6 +24,7 @@ const components = {
   browserPane: BrowserPane,
   settingsPane: SettingsPane,
   chatPane: ChatPane,
+  cliAgentPane: CliAgentPane,
 }
 
 const tabComponents = {
