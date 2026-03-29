@@ -36,6 +36,15 @@ export class LlmClient {
     this.config = config
     this.resolvedApiKey = resolveEnvVars(config.apiKey)
 
+    console.log('[LlmClient] Initialized', {
+      provider: config.provider,
+      model: config.model,
+      hasApiKey: !!this.resolvedApiKey,
+      apiKeyLength: this.resolvedApiKey.length,
+      rawKeyIsEnvRef: config.apiKey.includes('${env:'),
+      rawKeyLength: config.apiKey.length,
+    })
+
     // Register built-in providers
     this.providers.set('anthropic', new AnthropicProvider())
     this.providers.set('openai-compatible', new OpenAiCompatibleProvider())
@@ -50,6 +59,14 @@ export class LlmClient {
   updateConfig(config: LlmProviderConfig): void {
     this.config = config
     this.resolvedApiKey = resolveEnvVars(config.apiKey)
+    console.log('[LlmClient] Config updated', {
+      provider: config.provider,
+      model: config.model,
+      hasApiKey: !!this.resolvedApiKey,
+      apiKeyLength: this.resolvedApiKey.length,
+      rawKeyIsEnvRef: config.apiKey.includes('${env:'),
+      baseUrl: config.baseUrl || '(default)',
+    })
   }
 
   /**
@@ -59,9 +76,21 @@ export class LlmClient {
   async *stream(params: StreamParams): AsyncGenerator<LlmStreamEvent> {
     const provider = this.providers.get(this.config.provider)
     if (!provider) {
+      console.error('[LlmClient] Unknown provider:', this.config.provider)
       yield { type: 'error', error: `Unknown provider: ${this.config.provider}` }
       return
     }
+
+    console.log('[LlmClient] Streaming request', {
+      requestId: params.requestId,
+      provider: this.config.provider,
+      model: this.config.model,
+      hasApiKey: !!this.resolvedApiKey,
+      apiKeyLength: this.resolvedApiKey.length,
+      messageCount: params.messages.length,
+      toolCount: params.tools?.length ?? 0,
+      hasSystem: !!params.system,
+    })
 
     const controller = new AbortController()
     this.activeAbortControllers.set(params.requestId, controller)
@@ -74,6 +103,7 @@ export class LlmClient {
         maxTokens: this.config.maxTokens,
       }, controller.signal)
     } finally {
+      console.log('[LlmClient] Stream completed', { requestId: params.requestId })
       this.activeAbortControllers.delete(params.requestId)
     }
   }

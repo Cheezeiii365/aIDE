@@ -325,7 +325,7 @@ async function activateWorkspace(id: string): Promise<void> {
  */
 function loadLlmConfig(): LlmProviderConfig {
   const userDefaults = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
-  return {
+  const config = {
     provider: (userDefaults['agent.provider'] as string) || 'anthropic',
     model: (userDefaults['agent.model'] as string) || 'claude-sonnet-4-20250514',
     apiKey: (userDefaults['agent.apiKey'] as string) || '',
@@ -333,6 +333,17 @@ function loadLlmConfig(): LlmProviderConfig {
     maxTurns: (userDefaults['agent.maxTurns'] as number) || 25,
     maxTokens: (userDefaults['agent.maxTokens'] as number) || 8192,
   }
+  console.log('[loadLlmConfig]', {
+    provider: config.provider,
+    model: config.model,
+    hasApiKey: !!config.apiKey,
+    apiKeyLength: config.apiKey.length,
+    apiKeyIsEnvRef: config.apiKey.includes('${env:'),
+    baseUrl: config.baseUrl || '(default)',
+    storeHasEditorDefaults: !!userDefaults,
+    storeKeys: Object.keys(userDefaults).filter(k => k.startsWith('agent.')),
+  })
+  return config
 }
 
 function loadPermissionConfig(): { permissionTier: PermissionTier; autoApprove: Record<string, boolean | ToolPermissionConfig> } {

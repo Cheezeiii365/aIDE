@@ -67,9 +67,21 @@ export class AnthropicProvider implements LlmProvider {
       ...(params.tools?.length ? { tools: toAnthropicTools(params.tools) } : {}),
     }
 
+    const url = `${baseUrl}/v1/messages`
+    console.log('[AnthropicProvider] Sending request', {
+      url,
+      model: body.model,
+      maxTokens: body.max_tokens,
+      messageCount: body.messages.length,
+      toolCount: body.tools?.length ?? 0,
+      hasSystem: !!body.system,
+      hasApiKey: !!config.apiKey,
+      apiKeyPrefix: config.apiKey ? config.apiKey.slice(0, 12) + '...' : '(empty)',
+    })
+
     let response: Response
     try {
-      response = await fetch(`${baseUrl}/v1/messages`, {
+      response = await fetch(url, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -81,13 +93,17 @@ export class AnthropicProvider implements LlmProvider {
       })
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') return
+      console.error('[AnthropicProvider] Network error:', err)
       yield { type: 'error', error: `Network error: ${err instanceof Error ? err.message : String(err)}` }
       return
     }
 
+    console.log('[AnthropicProvider] Response', { status: response.status, ok: response.ok })
+
     if (!response.ok) {
       let errorBody = ''
       try { errorBody = await response.text() } catch { /* ignore */ }
+      console.error('[AnthropicProvider] API error', { status: response.status, body: errorBody })
       yield { type: 'error', error: `Anthropic API error (${response.status}): ${errorBody}` }
       return
     }

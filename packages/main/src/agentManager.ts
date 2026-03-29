@@ -126,8 +126,8 @@ export class AgentManager {
 
     // Fire-and-forget: the loop streams events to renderer
     this.runAgentLoop(session, assistantMessageId, controller.signal).catch(
-      () => {
-        /* errors handled inside runAgentLoop */
+      (err) => {
+        console.error('[AgentManager] Unhandled error in agent loop:', err)
       },
     )
 
@@ -251,10 +251,21 @@ export class AgentManager {
     let turnCount = 0
     let currentMessageId = assistantMessageId
 
+    console.log('[AgentManager] Starting agent loop', {
+      sessionId: session.id,
+      mode: session.mode,
+      maxTurns: this.config.maxTurns,
+      provider: this.config.provider,
+      model: this.config.model,
+      hasApiKey: !!this.config.apiKey,
+      apiKeyPrefix: this.config.apiKey ? this.config.apiKey.slice(0, 8) + '...' : '(empty)',
+    })
+
     try {
       while (turnCount < this.config.maxTurns && !signal.aborted) {
         turnCount++
         session.status = 'thinking'
+        console.log(`[AgentManager] Turn ${turnCount}/${this.config.maxTurns}`)
 
         const { stopReason, toolCalls } = await this.processStream(
           session,
@@ -302,6 +313,7 @@ export class AgentManager {
         } satisfies ChatStreamEnd)
       }
     } catch (err) {
+      console.error('[AgentManager] Agent loop error:', err)
       if (!signal.aborted) {
         const error = err instanceof Error ? err.message : 'Unknown error'
         this.send(IpcChannels.CHAT_STREAM_END, {
@@ -312,6 +324,7 @@ export class AgentManager {
         } satisfies ChatStreamEnd)
       }
     } finally {
+      console.log('[AgentManager] Agent loop finished', { sessionId: session.id, turns: turnCount })
       session.status = 'idle'
       this.activeLoops.delete(session.id)
       this.activeRequestIds.delete(session.id)
