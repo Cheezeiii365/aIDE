@@ -18,6 +18,7 @@ export interface ToolCall {
   name: string
   input: Record<string, unknown>
   status: ToolCallStatus
+  autoApproved?: boolean
 }
 
 export interface ToolResult {

@@ -11,7 +11,7 @@ import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type Store from 'electron-store'
-import type { AppSettings, AideProjectSettings, ResolvedSettings } from '@aide/shared'
+import type { AppSettings, AideProjectSettings, ResolvedSettings, PermissionTier, ToolPermissionConfig } from '@aide/shared'
 
 export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   tabSize: 2,
@@ -31,6 +31,10 @@ export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   'agent.baseUrl': '',
   'agent.maxTurns': 25,
   'agent.maxTokens': 8192,
+
+  // Agent / Permission defaults
+  'agent.permissionTier': 'confirm' as PermissionTier,
+  'agent.autoApprove': {} as Record<string, boolean | ToolPermissionConfig>,
 }
 
 /**
@@ -68,6 +72,13 @@ export function resolveAppDefaults(
     'agent.baseUrl': userDefaults['agent.baseUrl'] ?? BUILT_IN_DEFAULTS['agent.baseUrl'],
     'agent.maxTurns': userDefaults['agent.maxTurns'] ?? BUILT_IN_DEFAULTS['agent.maxTurns'],
     'agent.maxTokens': userDefaults['agent.maxTokens'] ?? BUILT_IN_DEFAULTS['agent.maxTokens'],
+
+    // Agent / Permissions
+    'agent.permissionTier': userDefaults['agent.permissionTier'] ?? BUILT_IN_DEFAULTS['agent.permissionTier'],
+    'agent.autoApprove': {
+      ...BUILT_IN_DEFAULTS['agent.autoApprove'],
+      ...(userDefaults['agent.autoApprove'] ?? {}),
+    },
   }
 }
 
@@ -129,5 +140,12 @@ export async function resolveSettings(
     'agent.baseUrl': projectSettings['agent.baseUrl'] ?? appDefaults['agent.baseUrl'],
     'agent.maxTurns': projectSettings['agent.maxTurns'] ?? appDefaults['agent.maxTurns'],
     'agent.maxTokens': projectSettings['agent.maxTokens'] ?? appDefaults['agent.maxTokens'],
+
+    // Agent / Permissions
+    'agent.permissionTier': projectSettings['agent.permissionTier'] ?? appDefaults['agent.permissionTier'],
+    'agent.autoApprove': {
+      ...appDefaults['agent.autoApprove'],
+      ...(projectSettings['agent.autoApprove'] ?? {}),
+    },
   }
 }

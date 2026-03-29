@@ -346,11 +346,51 @@ Provider-agnostic streaming LLM client using adapter pattern. `LlmClient` orches
 ### Step 5: Chat UI ✅
 `ChatPane.tsx` Dockview pane with 6 child components: `ModeSelector` (Ask/Edit/Agent segmented control), `MessageList` (sticky auto-scroll, status line), `MessageBubble` (markdown rendering via shared `markdownRenderer.ts`, streaming cursor), `ToolCallCard` (inline approval with Allow/Deny), `ChatInput` (auto-resize textarea, Enter to send, stop button), `WorkingSetPicker` (file chips with type-to-filter dropdown). `useChat` hook manages all IPC subscriptions with rAF-throttled streaming. Refactored `MarkdownPreviewPane` to share renderer. Default layout updated from placeholder to `chatPane`.
 
-### Step 6: Permission system
-Add tier logic to agentManager. Add per-tool auto-approve config. Add the settings UI entries.
+### Step 6: Permission system ✅
+Three-tier permission system (`confirm`, `auto-approve`, `autopilot`) with per-tool overrides. `shouldAutoApprove()` in `AgentManager` checks per-tool overrides first, then falls back to tier logic (autopilot→all, auto-approve→read-only tools, confirm→none). Pattern matching for `terminal_exec` with allow/deny glob patterns. Settings UI: enum dropdown for tier + `ToolPermissionsEditor` table for per-tool overrides. Auto-approved tool calls show "auto" badge in `ToolCallCard`. Live settings updates via `updatePermissions()`.
 
-### Step 7: MCP support
+### Step 7: CLI Agent Wrappers (Claude Code, Codex)
+Wrap external CLI agents (Claude Code, Codex) as monitored sessions inside the IDE. This is a **separate track** from the built-in agent (Steps 1–5) — the two coexist, and the user picks "built-in", "Claude Code", or "Codex" as their agent backend per workspace.
+
+**Why before MCP/polish:** Claude Code and Codex are mature, battle-tested agents. Wrapping them gives powerful agent sessions immediately without needing more built-in agent infrastructure. The built-in agent is good for lightweight Ask/Edit workflows; CLI wrappers handle heavy autonomous coding.
+
+**Architecture:**
+
+```
+AgentTerminalPane (or mode on existing TerminalPane)
+    ↓
+Spawn CLI: `claude --output-format stream-json` or `codex --full-auto`
+    ↓
+StructuredOutputParser (reads newline-delimited JSON from stdout)
+    ↓
+Extract: status, tool calls, file edits, thinking, errors
+    ↓
+Surface to: AgentStatusDot on workspace tab, chat-like overlay, approval interception
+```
+
+**Components:**
+- `packages/main/src/cliAgentManager.ts` — spawn CLI agents, manage lifecycle, parse structured JSON output stream
+- `packages/renderer/src/components/panes/AgentTerminalPane.tsx` — terminal pane with agent status overlay (shows current action, file edits, progress)
+- `packages/shared/src/cliAgentTypes.ts` — types for CLI agent sessions, structured output events
+- Settings: `agent.backend` enum ('builtin' | 'claude-code' | 'codex'), `agent.claudeCodePath`, `agent.codexPath`
+
+**Key behaviors:**
+- Raw terminal visible underneath (user can scroll back, see full output)
+- Status overlay extracts and surfaces: current phase (thinking/editing/running), files being modified, tool calls in progress
+- `AgentStatusDot` on workspace tab reflects CLI agent state (not just built-in agent)
+- Optional approval interception: pause CLI agent, show approval in IDE UI, resume on accept
+- Session persistence: CLI agent can be stopped/restarted, scrollback preserved
+
+**IPC channels:**
+```typescript
+CLI_AGENT_START:     'cli-agent:start'      // renderer → main (spawn agent)
+CLI_AGENT_STOP:      'cli-agent:stop'       // renderer → main (kill/interrupt)
+CLI_AGENT_STATUS:    'cli-agent:status'     // main → renderer (parsed status updates)
+CLI_AGENT_EVENT:     'cli-agent:event'      // main → renderer (structured output events)
+```
+
+### Step 8: MCP support
 `mcpManager.ts` — spawn stdio servers, parse tool lists, proxy tool calls. Merge MCP tools into the registry so the agent sees them alongside built-ins.
 
-### Step 8: Polish + persistence
+### Step 9: Polish + persistence
 Chat history save/restore. Mode switching. Working set UI for edit mode. Stop button. Error states.

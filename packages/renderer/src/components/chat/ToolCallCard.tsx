@@ -24,6 +24,7 @@ export function ToolCallCard({ toolCall, onApprove, onReject }: ToolCallCardProp
         <span className="chat-tool-card__badge">
           <span className={`chat-tool-card__dot chat-tool-card__dot--${toolCall.status}`} />
           {STATUS_LABELS[toolCall.status] ?? toolCall.status}
+          {toolCall.autoApproved && <span className="chat-tool-card__auto-badge">auto</span>}
         </span>
       </div>
 

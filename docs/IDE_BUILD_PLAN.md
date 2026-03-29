@@ -101,7 +101,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Broad language support — the goal is to support all languages via individually installable language packs. Use off-the-shelf LSP servers and linters where available; only build custom integrations when necessary. No language tooling installed by default — user installs what they need
 - [ ] Chrome extension support (limited — see Known Hard Problems)
 - [x] AI-powered inline diff review in editor (CodeMirror `@codemirror/merge` unified view with accept/reject, Cmd+Shift+D toggle, git HEAD comparison)
-- [ ] Agent permission system — configurable guardrails per workspace via `.agentconfig` (file access scope, shell command scope, network scope, package installation). Default: "ask before running destructive commands." Requires approval UI in agent panel that surfaces to workspace tab even when in another workspace
+- [x] Agent permission system — three-tier (confirm/auto-approve/autopilot) with per-tool overrides and pattern matching for terminal commands. Settings UI in Agent > Permissions. Auto-approved tools show "auto" badge in chat.
 - [ ] Workspace onboarding wizard — auto-detect project type, Python interpreter, `package.json` scripts, `CLAUDE.md`/`.agentconfig`, git remote, dev server command/port. Surface as a checklist of suggestions on first open
 - [ ] Agent project memory — track which files agent has seen, maintain auto-generated `project-summary.md`, surface "unseen files" in agent panel for context priming
 - [ ] Linked workspace groups — related workspaces (e.g. frontend + backend), cross-workspace terminal, shared env references

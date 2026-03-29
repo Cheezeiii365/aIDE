@@ -55,6 +55,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     label: 'Agent',
     children: [
       { id: 'agent.llm', label: 'LLM Configuration' },
+      { id: 'agent.permissions', label: 'Permissions' },
     ],
   },
   { id: 'extensions', label: 'Extensions' },
@@ -178,6 +179,21 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     min: 256,
     max: 65536,
     category: 'agent.llm',
+    scope: 'both',
+  },
+
+  // Agent > Permissions
+  {
+    key: 'agent.permissionTier',
+    label: 'Permission Tier',
+    description: 'Controls when the agent needs approval to use tools. Confirm: always ask. Auto-approve: reads run automatically, writes need approval. Autopilot: everything runs automatically.',
+    type: 'enum',
+    enumValues: [
+      { value: 'confirm', label: 'Confirm (safest)' },
+      { value: 'auto-approve', label: 'Auto-approve reads' },
+      { value: 'autopilot', label: 'Autopilot (no prompts)' },
+    ],
+    category: 'agent.permissions',
     scope: 'both',
   },
 ]

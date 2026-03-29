@@ -22,6 +22,7 @@ export type {
 import type {
   ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
   McpServerStatus, ToolDefinition,
+  PermissionTier, ToolPermissionConfig,
 } from './agentTypes'
 export {
   adjustZoomFactor,
@@ -314,6 +315,10 @@ export interface AideProjectSettings {
   'agent.baseUrl'?: string
   'agent.maxTurns'?: number
   'agent.maxTokens'?: number
+
+  // Agent / Permission settings
+  'agent.permissionTier'?: PermissionTier
+  'agent.autoApprove'?: Record<string, boolean | ToolPermissionConfig>
 }
 
 // Fully resolved settings (no optional fields)
@@ -335,6 +340,10 @@ export interface ResolvedSettings {
   'agent.baseUrl': string
   'agent.maxTurns': number
   'agent.maxTokens': number
+
+  // Agent / Permission settings
+  'agent.permissionTier': PermissionTier
+  'agent.autoApprove': Record<string, boolean | ToolPermissionConfig>
 }
 
 // .aide/local/workspace.json

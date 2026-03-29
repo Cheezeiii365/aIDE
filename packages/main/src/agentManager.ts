@@ -23,6 +23,8 @@ import {
   type ChatStreamChunk,
   type ChatStreamEnd,
   type ChatToolCallPayload,
+  type PermissionTier,
+  type ToolPermissionConfig,
 } from '@aide/shared'
 import type { LlmMessage, LlmContentBlock, LlmStreamEvent } from '@aide/shared'
 import { LlmClient } from './llmClient'
@@ -41,6 +43,8 @@ interface AgentManagerOpts {
   workspaceRoot: string
   getWebContents: () => WebContents | null
   browserPaneManager?: BrowserPaneManager
+  permissionTier?: PermissionTier
+  autoApprove?: Record<string, boolean | ToolPermissionConfig>
 }
 
 interface PendingApproval {
@@ -57,6 +61,8 @@ export class AgentManager {
   private workspaceRoot: string
   private config: LlmProviderConfig
   private getWebContents: () => WebContents | null
+  private permissionTier: PermissionTier
+  private autoApprove: Record<string, boolean | ToolPermissionConfig>
 
   // Per-session loop state
   private activeLoops = new Map<string, AbortController>()
@@ -68,6 +74,8 @@ export class AgentManager {
     this.config = opts.config
     this.workspaceRoot = opts.workspaceRoot
     this.getWebContents = opts.getWebContents
+    this.permissionTier = opts.permissionTier ?? 'confirm'
+    this.autoApprove = opts.autoApprove ?? {}
 
     this.llmClient = new LlmClient(opts.config)
     this.toolRegistry = new ToolRegistry({
@@ -216,6 +224,11 @@ export class AgentManager {
   updateConfig(config: LlmProviderConfig): void {
     this.config = config
     this.llmClient.updateConfig(config)
+  }
+
+  updatePermissions(tier: PermissionTier, autoApprove: Record<string, boolean | ToolPermissionConfig>): void {
+    this.permissionTier = tier
+    this.autoApprove = autoApprove
   }
 
   destroy(): void {
@@ -438,29 +451,41 @@ export class AgentManager {
         continue
       }
 
-      // Send tool call to renderer for approval
-      session.status = 'awaiting_approval'
-      this.send(IpcChannels.CHAT_TOOL_CALL, {
-        sessionId: session.id,
-        toolCall: tc,
-      } satisfies ChatToolCallPayload)
+      // Check if this tool call can be auto-approved
+      const canAutoApprove = this.shouldAutoApprove(tc.name, tc.input)
 
-      // Wait for user approval
-      const approved = await this.waitForApproval(tc)
+      if (canAutoApprove) {
+        // Auto-approved: mark and notify renderer (no user interaction needed)
+        tc.status = 'approved'
+        tc.autoApproved = true
+        session.status = 'tool_running'
+        this.send(IpcChannels.CHAT_TOOL_CALL, {
+          sessionId: session.id,
+          toolCall: tc,
+        } satisfies ChatToolCallPayload)
+      } else {
+        // Needs manual approval
+        session.status = 'awaiting_approval'
+        this.send(IpcChannels.CHAT_TOOL_CALL, {
+          sessionId: session.id,
+          toolCall: tc,
+        } satisfies ChatToolCallPayload)
 
-      if (signal.aborted || !approved) {
-        tc.status = 'rejected'
-        results.push({
-          toolCallId: tc.id,
-          output: 'Tool call rejected by user',
-          isError: true,
-        })
-        continue
+        const approved = await this.waitForApproval(tc)
+
+        if (signal.aborted || !approved) {
+          tc.status = 'rejected'
+          results.push({
+            toolCallId: tc.id,
+            output: 'Tool call rejected by user',
+            isError: true,
+          })
+          continue
+        }
+
+        tc.status = 'approved'
+        session.status = 'tool_running'
       }
-
-      // Execute the tool
-      tc.status = 'approved'
-      session.status = 'tool_running'
 
       const result = await this.toolRegistry.execute(tc.id, tc.name, tc.input)
       tc.status = 'completed'
@@ -486,7 +511,62 @@ export class AgentManager {
     })
   }
 
-  // ─── Message Conversion ──────────────────────────────────────
+  // ─── Permission Checks ─────────���────────────────────────────
+
+  private static readonly READ_ONLY_TOOLS = new Set([
+    'file_read', 'file_list', 'search_files', 'git_status', 'git_diff', 'browser_read',
+  ])
+
+  private shouldAutoApprove(toolName: string, input: Record<string, unknown>): boolean {
+    // Per-tool overrides take precedence over tier
+    const override = this.autoApprove[toolName]
+    if (override === true) return true
+    if (override === false) return false
+    if (typeof override === 'object') {
+      return this.matchesPatternConfig(override, toolName, input)
+    }
+
+    // Fall back to tier logic
+    switch (this.permissionTier) {
+      case 'autopilot':
+        return true
+      case 'auto-approve':
+        return AgentManager.READ_ONLY_TOOLS.has(toolName)
+      case 'confirm':
+      default:
+        return false
+    }
+  }
+
+  private matchesPatternConfig(
+    config: ToolPermissionConfig,
+    toolName: string,
+    input: Record<string, unknown>,
+  ): boolean {
+    // For terminal_exec, match against the command string; otherwise match stringified input
+    const matchTarget = toolName === 'terminal_exec'
+      ? String(input.command ?? '')
+      : JSON.stringify(input)
+
+    // Deny patterns take precedence
+    if (config.denyPatterns?.some((p) => this.globMatch(matchTarget, p))) {
+      return false
+    }
+    // Must match at least one allow pattern
+    if (config.allowPatterns && config.allowPatterns.length > 0) {
+      return config.allowPatterns.some((p) => this.globMatch(matchTarget, p))
+    }
+    return false
+  }
+
+  private globMatch(text: string, pattern: string): boolean {
+    // Simple glob: * matches any sequence of characters
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$')
+    return regex.test(text)
+  }
+
+  // ���── Message Conversion ─────────���────────────────────────────
 
   /** Convert ChatMessage[] to the canonical LlmMessage[] format. */
   buildLlmMessages(session: ChatSession): LlmMessage[] {

@@ -353,6 +353,19 @@
   background: var(--text-error);
 }
 
+.chat-tool-card__auto-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-info, var(--accent-primary));
+  background: rgba(66, 165, 245, 0.12);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  line-height: 1;
+}
+
 .chat-tool-card__toggle {
   border: none;
   background: none;

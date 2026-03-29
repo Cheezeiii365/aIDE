@@ -21,7 +21,7 @@ import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminal
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './gitDiff'
 import { AgentManager } from './agentManager'
-import type { ChatMode, LlmProviderConfig } from '@aide/shared'
+import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -305,11 +305,14 @@ async function activateWorkspace(id: string): Promise<void> {
   agentManager?.destroy()
   agentManager = null
   if (entry.rootPath) {
+    const permConfig = loadPermissionConfig()
     agentManager = new AgentManager({
       config: loadLlmConfig(),
       workspaceRoot: entry.rootPath,
       getWebContents: () => contentView?.webContents ?? null,
       browserPaneManager,
+      permissionTier: permConfig.permissionTier,
+      autoApprove: permConfig.autoApprove,
     })
   }
 
@@ -329,6 +332,14 @@ function loadLlmConfig(): LlmProviderConfig {
     baseUrl: (userDefaults['agent.baseUrl'] as string) || undefined,
     maxTurns: (userDefaults['agent.maxTurns'] as number) || 25,
     maxTokens: (userDefaults['agent.maxTokens'] as number) || 8192,
+  }
+}
+
+function loadPermissionConfig(): { permissionTier: PermissionTier; autoApprove: Record<string, boolean | ToolPermissionConfig> } {
+  const userDefaults = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
+  return {
+    permissionTier: (userDefaults['agent.permissionTier'] as PermissionTier) || 'confirm',
+    autoApprove: (userDefaults['agent.autoApprove'] as Record<string, boolean | ToolPermissionConfig>) || {},
   }
 }
 
@@ -600,6 +611,8 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
   // Push agent config updates to AgentManager if an agent.* key changed
   if (key.startsWith('agent.') && agentManager) {
     agentManager.updateConfig(loadLlmConfig())
+    const permConfig = loadPermissionConfig()
+    agentManager.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
   }
 
   // Broadcast resolved settings
