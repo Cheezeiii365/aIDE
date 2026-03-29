@@ -66,6 +66,9 @@ export async function* parseSseStream(
       }
     }
 
+    // Flush any trailing bytes the streaming decoder may have buffered
+    buffer += decoder.decode()
+
     // Flush any remaining buffered data
     if (buffer.length > 0) {
       const lines = buffer.split('\n')
