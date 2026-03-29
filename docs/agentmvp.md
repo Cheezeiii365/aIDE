@@ -340,8 +340,8 @@ Provider-agnostic streaming LLM client using adapter pattern. `LlmClient` orches
 ### Step 3: Built-in tools + registry ✅
 `agentTools.ts` — 8 built-in tools (`file_read`, `file_write`, `file_list`, `terminal_exec`, `search_files`, `git_status`, `git_diff`, `browser_read`) with JSON Schema input definitions and direct main-process executors (no IPC round-trips). `terminal_exec` uses `child_process.execFile` with timeout/ANSI stripping. `search_files` spawns ripgrep independently to avoid singleton conflicts. `toolRegistry.ts` — `ToolRegistry` class provides mode-filtered tool listing (`getTools(mode)`), LLM-ready conversion (`toLlmTools()`), unified `execute()` dispatch with error wrapping, and dynamic `registerTool()`/`unregisterSource()` for MCP tools (Step 7). Exported `fetchGitStatus` from `gitStatus.ts`, added `getPageContent()` to `BrowserPaneManager`.
 
-### Step 4: Agent loop
-`agentManager.ts` — the core loop. Takes a message, builds prompt, calls LLM, dispatches tools, feeds results back, loops. Start with "confirm everything" permission tier.
+### Step 4: Agent loop ✅
+`agentManager.ts` — `AgentManager` class orchestrates the full agent loop: session management, prompt building, LLM streaming via `LlmClient`, tool execution with Promise-based approval gates, retry tracking (5 per tool), turn limits, and chat persistence to `.aide/local/chat.json`. IPC handlers registered in `index.ts` for all `CHAT_*` channels. "Confirm everything" permission tier (Step 6 adds tiers). Fire-and-forget loop design — `sendMessage` returns immediately, streams events to renderer asynchronously.
 
 ### Step 5: Chat UI
 `ChatPane.tsx` + child components. Render messages, stream chunks, show tool call cards with approve/reject. Wire to IPC. Register as Dockview pane.

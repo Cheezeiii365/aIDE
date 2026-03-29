@@ -20,11 +20,14 @@ import { WorkspaceRegistry } from './workspaceRegistry'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './gitDiff'
+import { AgentManager } from './agentManager'
+import type { ChatMode, LlmProviderConfig } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
 
 let taskRunner: TaskRunner | null = null
+let agentManager: AgentManager | null = null
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -298,7 +301,34 @@ async function activateWorkspace(id: string): Promise<void> {
     }
   }
 
+  // Initialize agent manager for this workspace
+  agentManager?.destroy()
+  agentManager = null
+  if (entry.rootPath) {
+    agentManager = new AgentManager({
+      config: loadLlmConfig(),
+      workspaceRoot: entry.rootPath,
+      getWebContents: () => contentView?.webContents ?? null,
+      browserPaneManager,
+    })
+  }
+
   broadcastWorkspaceRegistry()
+}
+
+/**
+ * Load LLM configuration with sensible defaults.
+ * API keys support ${env:VAR} interpolation (resolved by LlmClient).
+ * TODO(step6): Read agent.* keys from ResolvedSettings once the settings UI is added.
+ */
+function loadLlmConfig(): LlmProviderConfig {
+  return {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-20250514',
+    apiKey: '${env:ANTHROPIC_API_KEY}',
+    maxTurns: 25,
+    maxTokens: 8192,
+  }
 }
 
 ipcMain.handle(IpcChannels.WORKSPACE_LIST, () => {
@@ -422,6 +452,38 @@ ipcMain.handle(IpcChannels.WORKSPACE_REORDER, (_event, ids: string[]) => {
 
 ipcMain.handle(IpcChannels.WORKSPACE_GET_ACTIVE, () => {
   return workspaceRegistry.getActiveId()
+})
+
+// ─── Chat / Agent IPC handlers ─────────────────────────────────────
+
+ipcMain.handle(IpcChannels.CHAT_SEND_MESSAGE, async (_event, sessionId: string, content: string) => {
+  if (!agentManager) return { error: 'No workspace open' }
+  return agentManager.sendMessage(sessionId, content)
+})
+
+ipcMain.handle(IpcChannels.CHAT_GET_HISTORY, async (_event, workspaceId: string) => {
+  if (!agentManager) return null
+  return agentManager.getHistory(workspaceId)
+})
+
+ipcMain.handle(IpcChannels.CHAT_SET_MODE, async (_event, sessionId: string, mode: ChatMode) => {
+  agentManager?.setMode(sessionId, mode)
+})
+
+ipcMain.handle(IpcChannels.CHAT_SET_WORKING_SET, async (_event, sessionId: string, paths: string[]) => {
+  agentManager?.setWorkingSet(sessionId, paths)
+})
+
+ipcMain.handle(IpcChannels.CHAT_TOOL_APPROVE, async (_event, sessionId: string, toolCallId: string) => {
+  agentManager?.approveToolCall(sessionId, toolCallId)
+})
+
+ipcMain.handle(IpcChannels.CHAT_TOOL_REJECT, async (_event, sessionId: string, toolCallId: string) => {
+  agentManager?.rejectToolCall(sessionId, toolCallId)
+})
+
+ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
+  agentManager?.stop(sessionId)
 })
 
 // State persistence IPC handlers
@@ -1010,6 +1072,8 @@ function finishQuit(): void {
   store.set('cleanShutdown', true)
 
   // Clean up resources
+  agentManager?.destroy()
+  agentManager = null
   taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()
