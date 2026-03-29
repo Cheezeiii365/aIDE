@@ -23,7 +23,8 @@ import { registerGitDiffHandlers } from './gitDiff'
 import { AgentManager } from './agentManager'
 import { CliAgentManager } from './cliAgentManager'
 import { ConversationStore } from './conversationStore'
-import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend, ConversationCreateOpts } from '@aide/shared'
+import { ClaudeNativeSessionWatcher } from './agents/claudeNativeSessionWatcher'
+import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend, ConversationCreateOpts, ConversationMeta } from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -32,6 +33,8 @@ let taskRunner: TaskRunner | null = null
 let agentManager: AgentManager | null = null
 let cliAgentManager: CliAgentManager | null = null
 let conversationStore: ConversationStore | null = null
+let nativeSessionWatcher: ClaudeNativeSessionWatcher | null = null
+let nativeSessionCache: ConversationMeta[] = []
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -308,11 +311,28 @@ async function activateWorkspace(id: string): Promise<void> {
   // Initialize conversation store + agent managers for this workspace
   await agentManager?.destroy()
   await cliAgentManager?.destroy()
+  nativeSessionWatcher?.stop()
   agentManager = null
   cliAgentManager = null
   conversationStore = null
+  nativeSessionWatcher = null
+  nativeSessionCache = []
   if (entry.rootPath) {
     conversationStore = new ConversationStore(entry.rootPath)
+    const wsId = entry.id
+    nativeSessionWatcher = new ClaudeNativeSessionWatcher({
+      workspaceRoot: entry.rootPath,
+      workspaceId: wsId,
+      emit: (sessions) => {
+        nativeSessionCache = sessions
+        contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+          workspaceId: wsId,
+          conversations: sessions,
+          source: 'claude-native',
+        })
+      },
+    })
+    void nativeSessionWatcher.start()
     const permConfig = loadPermissionConfig()
     agentManager = new AgentManager({
       config: loadLlmConfig(),
@@ -549,7 +569,8 @@ ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
 // ─── Conversation History IPC handlers ──────────────────────────
 
 ipcMain.handle(IpcChannels.CONVERSATION_LIST, async (_event, workspaceId: string) => {
-  return conversationStore?.loadIndex() ?? []
+  const aideConvos = await conversationStore?.loadIndex() ?? []
+  return [...aideConvos, ...nativeSessionCache]
 })
 
 ipcMain.handle(IpcChannels.CONVERSATION_CREATE, async (_event, opts: ConversationCreateOpts) => {
@@ -1201,6 +1222,8 @@ function finishQuit(): void {
   agentManager = null
   cliAgentManager?.destroy().catch(() => {})
   cliAgentManager = null
+  nativeSessionWatcher?.stop()
+  nativeSessionWatcher = null
   conversationStore = null
   taskRunner?.killAll()
   killAllPtys()
