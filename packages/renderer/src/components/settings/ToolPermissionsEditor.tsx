@@ -45,7 +45,10 @@ export function ToolPermissionsEditor({ value, onChange }: Props) {
     } else if (state === 'always-confirm') {
       next[toolName] = false
     } else if (state === 'patterns') {
-      next[toolName] = { allowPatterns: [], denyPatterns: [] }
+      const existing = next[toolName]
+      next[toolName] = existing && typeof existing === 'object'
+        ? existing as ToolPermissionConfig
+        : { allowPatterns: [], denyPatterns: [] }
       setExpandedTool(toolName)
     }
     onChange(next)
@@ -198,10 +201,7 @@ function ToolCard({
             {allowPatterns && (
               <button
                 className={`tp-card__seg tp-card__seg--patterns${state === 'patterns' ? ' tp-card__seg--active' : ''}`}
-                onClick={() => {
-                  onStateChange(tool.name, 'patterns')
-                  onToggleExpand(tool.name)
-                }}
+                onClick={() => onStateChange(tool.name, 'patterns')}
                 title="Custom patterns"
               >
                 ✱
