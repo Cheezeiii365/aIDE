@@ -835,7 +835,10 @@ export interface WindowApi {
   onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
 
   // VS Code Integration
-  openInVSCode: (filePath: string, line?: number, column?: number) => Promise<{ ok: true } | { error: string }>
+  openInVSCode: (
+    rootPath: string,
+    files?: Array<{ path: string; line: number; col: number }>,
+  ) => Promise<{ ok: true } | { error: string }>
 
   // Platform info
   platform: NodeJS.Platform

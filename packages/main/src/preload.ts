@@ -412,7 +412,10 @@ const api: WindowApi = {
   },
 
   // Open in VS Code
-  openInVSCode: (rootPath: string, files) =>
+  openInVSCode: (
+    rootPath: string,
+    files?: Array<{ path: string; line: number; col: number }>,
+  ) =>
     ipcRenderer.invoke(IpcChannels.OPEN_IN_VSCODE, rootPath, files),
 
   // Platform info (for conditional UI like traffic lights)
