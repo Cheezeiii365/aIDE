@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import '../styles/toast.css'
+import '../../styles/toast.css'
 
 interface ToastData {
   id: number

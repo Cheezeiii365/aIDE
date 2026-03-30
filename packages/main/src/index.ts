@@ -1,7 +1,7 @@
 import { app, BaseWindow, WebContentsView, ipcMain, Menu, dialog, shell } from 'electron'
 import { join, dirname, relative } from 'path'
 import { existsSync, readdirSync } from 'fs'
-import { execFile } from 'child_process'
+import { execFile, execSync } from 'child_process'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
@@ -1059,6 +1059,35 @@ ipcMain.handle(IpcChannels.FS_RENAME, async (_event, oldPath: string, newPath: s
 ipcMain.on(IpcChannels.FS_REVEAL_IN_FINDER, (_event, filePath: string) => {
   shell.showItemInFolder(filePath)
 })
+
+ipcMain.handle(
+  IpcChannels.OPEN_IN_VSCODE,
+  async (
+    _event,
+    rootPath: string,
+    files?: Array<{ path: string; line: number; col: number }>,
+  ) => {
+    const runCode = (args: string[]) =>
+      new Promise<void>((resolve, reject) => {
+        execFile('code', args, (err) => {
+          if (err) return reject(err)
+          resolve()
+        })
+      })
+
+    try {
+      execSync('command -v code', { stdio: 'ignore' })
+      await runCode([rootPath])
+      for (const file of files ?? []) {
+        await runCode(['--goto', `${file.path}:${file.line}:${file.col}`])
+      }
+      return { ok: true as const }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      return { error: `Failed to open in VS Code: ${message}` }
+    }
+  },
+)
 
 // List all files (quick open) — uses `git ls-files` for speed, falls back to recursive readdir
 ipcMain.handle(IpcChannels.FS_LIST_ALL_FILES, async (_event, rootPath: string): Promise<string[]> => {

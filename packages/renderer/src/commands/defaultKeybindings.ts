@@ -51,6 +51,7 @@ export const defaultKeybindings: KeybindingRule[] = [
 
   // ── Agent ──────────────────────────────────────
   { key: 'Cmd+K Cmd+A', command: 'agent.open' },
+  { key: 'Cmd+K Cmd+H', command: 'agent.history.open' },
 
   // ── View ────────────────────────────────────────
   { key: 'Cmd+B', command: 'view.toggleSidebar' },
@@ -63,6 +64,10 @@ export const defaultKeybindings: KeybindingRule[] = [
   { key: 'Ctrl+Shift+Tab', command: 'pane.tab.focusPrevious' },
   { key: 'Ctrl+Alt+Tab', command: 'pane.cycleRecent' },
   { key: 'Ctrl+Alt+Shift+Tab', command: 'pane.cycleRecentReverse' },
+
+  // ── VS Code Integration ─────────────────────────
+  { key: 'Cmd+K Cmd+V', command: 'workspace.openInVSCode' },
+  { key: 'Cmd+K V', command: 'editor.openFileInVSCode' },
 
   // ── Preferences ─────────────────────────────────
   { key: 'Cmd+,', command: 'settings.open' },

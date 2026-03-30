@@ -6,6 +6,7 @@
 
 import type { GetCommandContext } from '../context'
 import type { CommandSpec } from './types'
+import { showToast } from '../../components/shared/Toast'
 
 /**
  * @returns Command specs whose ids start with `workspace.`; handlers delegate to `CommandContext`.
@@ -36,6 +37,18 @@ export function collectWorkspaceCommands(getCtx: GetCommandContext): CommandSpec
     {
       def: { id: 'workspace.openFolder', label: 'Open Folder...', category: 'Workspace' },
       handler: () => void getCtx().openFolder(),
+    },
+    {
+      def: { id: 'workspace.openInVSCode', label: 'Open in VS Code', category: 'Workspace' },
+      handler: async () => {
+        const root = getCtx().getWorkspaceRoot()
+        if (!root) {
+          showToast('No workspace open')
+          return
+        }
+        const result = await window.api.openInVSCode(root)
+        if ('error' in result) showToast(result.error)
+      },
     },
     {
       def: { id: 'workspace.cycleTabNext', label: 'Next Workspace', category: 'Workspace' },
