@@ -282,7 +282,6 @@ Three tiers controlling what the agent can do without asking:
 | DAP debugging | v2+ |
 | Activity bar / icon sidebar | Layout polish |
 | Settings profiles | Post-MVP |
-| SSE/HTTP MCP transport | stdio covers 95% of MCP servers |
 | Multi-agent coordination | Build single-agent first, then orchestrate |
 | Workspace trust dialog | Add after agent is working |
 
@@ -349,83 +348,425 @@ Provider-agnostic streaming LLM client using adapter pattern. `LlmClient` orches
 ### Step 6: Permission system ✅
 Three-tier permission system (`confirm`, `auto-approve`, `autopilot`) with per-tool overrides. `shouldAutoApprove()` in `AgentManager` checks per-tool overrides first, then falls back to tier logic (autopilot→all, auto-approve→read-only tools, confirm→none). Pattern matching for `terminal_exec` with allow/deny glob patterns. Settings UI: enum dropdown for tier + `ToolPermissionsEditor` table for per-tool overrides. Auto-approved tool calls show "auto" badge in `ToolCallCard`. Live settings updates via `updatePermissions()`.
 
-### Step 7: CLI Agent Wrappers (Claude Code, Codex)
-Wrap external CLI agents (Claude Code, Codex) as monitored sessions inside the IDE. This is a **separate track** from the built-in agent (Steps 1–5) — the two coexist, and the user picks "built-in", "Claude Code", or "Codex" as their agent backend per workspace.
+### Step 7: CLI Agent Wrappers (Claude Code, Codex) ✅
+Wrap external CLI agents (Claude Code, Codex) as monitored sessions inside the IDE. This is a separate track from the built-in agent (Steps 1-6): both backends coexist, and the user picks `built-in`, `claude-code`, or `codex` per workspace.
 
-**Why before MCP/polish:** Claude Code and Codex are mature, battle-tested agents. Wrapping them gives powerful agent sessions immediately without needing more built-in agent infrastructure. The built-in agent is good for lightweight Ask/Edit workflows; CLI wrappers handle heavy autonomous coding.
+**Why before full MCP/polish:** Claude Code and Codex are mature agents already. Wrapping them gives aIDE a strong autonomous coding path immediately, while the built-in agent remains the simpler Ask/Edit flow.
 
-**Architecture:**
+**Architecture (current — being replaced in Step 8):**
 
 ```
-AgentTerminalPane (or mode on existing TerminalPane)
+CliAgentPane
     ↓
-Spawn CLI: `claude --output-format stream-json` or `codex --full-auto`
+CliAgentManager
     ↓
-StructuredOutputParser (reads newline-delimited JSON from stdout)
+Spawn CLI: `claude -p --output-format stream-json` or future `codex`
     ↓
-Extract: status, tool calls, file edits, thinking, errors
+StructuredOutputParser (newline-delimited JSON on stdout)
     ↓
-Surface to: AgentStatusDot on workspace tab, chat-like overlay, approval interception
+Normalize to CliAgentMessage / CliAgentStatusPayload
+    ↓
+Surface to renderer: transcript, streaming deltas, status, errors
 ```
 
-**Components:**
-- `packages/main/src/cliAgentManager.ts` — spawn CLI agents, manage lifecycle, parse structured JSON output stream
-- `packages/renderer/src/components/panes/AgentTerminalPane.tsx` — terminal pane with agent status overlay (shows current action, file edits, progress)
-- `packages/shared/src/cliAgentTypes.ts` — types for CLI agent sessions, structured output events
-- Settings: `agent.backend` enum ('builtin' | 'claude-code' | 'codex'), `agent.claudeCodePath`, `agent.codexPath`
+**Scope for this step:**
+- Keep the current one-shot-per-send Claude Code model (`-p` + `--resume`) for normal chat turns
+- Preserve session history, status, and streaming in the IDE
+- Do not assume permission gating is solved here; that is Step 8
+
+**Core files:**
+- `packages/main/src/chat/cliAgentManager.ts` — spawn CLI agents, manage lifecycle, parse structured JSON output
+- `packages/renderer/src/components/panes/CliAgentPane.tsx` — pane for CLI-backed chat sessions
+- `packages/renderer/src/hooks/useCliAgent.ts` — renderer hook for CLI session state
+- `packages/shared/src/cliAgentTypes.ts` — shared types for CLI agent sessions, messages, and status
 
 **Key behaviors:**
-- Raw terminal visible underneath (user can scroll back, see full output)
-- Status overlay extracts and surfaces: current phase (thinking/editing/running), files being modified, tool calls in progress
-- `AgentStatusDot` on workspace tab reflects CLI agent state (not just built-in agent)
-- Permission interception via `--permission-prompt-tool` (see below)
-- Session persistence: CLI agent can be stopped/restarted, scrollback preserved
+- Raw Claude/Codex output is normalized into IDE-friendly message types
+- Streaming text appears in-panel instead of only at process exit
+- Session history persists across tab reopen and workspace reload
+- Stop cancels the active CLI process cleanly
 
-**Permission interception for CLI agents:**
+### Step 8: Migrate to Claude Agent SDK + Permissions + MCP
 
-Claude Code CLI supports `--permission-prompt-tool <mcp-tool-name>`. When set, the CLI calls that MCP tool instead of handling permissions internally. aIDE runs a local MCP server per CLI session and injects this flag at spawn time. Flow:
+**Why this replaces the old Step 8 plan:**
+
+The original Step 8 was built around `--permission-prompt-tool` and a custom MCP stdio permission bridge. Research (2025-03-29) revealed:
+- `--permission-prompt-tool` does not exist on the current CLI (v2.1.86)
+- The CLI in `-p` mode with `stdin: 'ignore'` **hangs** on permission requests (no way to respond)
+- `--input-format stream-json` (bidirectional stdin) is intentionally undocumented (GitHub issue #24594, closed as "not planned")
+- The **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`, formerly `@anthropic-ai/claude-code`) is Anthropic's official programmatic embedding path
+
+The Agent SDK wraps the CLI internally but exposes a structured API with:
+- `canUseTool` callback for mid-run permission approval
+- `AskUserQuestion` flowing through the same callback
+- Async generator streaming (`for await...of`)
+- Built-in session resume, MCP server management, and cancellation
+- Uses Claude subscription billing (not API pricing)
+- Bundles the full runtime (~48MB) — no external `claude` binary resolution needed
+
+**Architecture (new):**
 
 ```
-Claude Code CLI needs permission
+CliAgentPane
     ↓
-Calls aide_permission_prompt MCP tool (stdio to cliPermissionServer.ts)
+CliAgentManager (refactored)
     ↓
-cliPermissionServer emits IpcChannels.CLI_AGENT_PERMISSION_REQUEST to renderer
+@anthropic-ai/claude-agent-sdk query()
     ↓
-Renderer pushes a 'permission_request' CliAgentMessage into message list
+canUseTool callback ←→ IPC ←→ Renderer approval/question cards
     ↓
-CliPermissionCard shown (same shape as ToolCallCard — tool name, inputs, Allow/Deny)
+Async generator yields SDKMessage stream
     ↓
-User clicks Allow/Deny → renderer invokes CLI_AGENT_PERMISSION_RESPONSE
+Normalize to CliAgentMessage / CliAgentStatusPayload
     ↓
-cliPermissionServer resolves its pending Promise → returns { approved } to Claude Code
-    ↓
-CLI resumes or aborts the tool call
+Surface to renderer: transcript, streaming deltas, status, permissions, questions
 ```
 
-New files for this:
-- `packages/main/src/cliPermissionServer.ts` — lightweight MCP stdio server per session; blocks on a Promise until renderer resolves via IPC; manages one pending approval at a time
-- `packages/renderer/src/components/chat/CliPermissionCard.tsx` — approval card for CLI sessions, mirrors ToolCallCard UI
+**SDK core API:**
 
-Changes for this:
-- `cliAgentManager.ts` — instantiate `cliPermissionServer` per session; inject `--permission-prompt-tool aide_permission_prompt` into spawn args
-- `cliAgentTypes.ts` — add `type: 'permission_request'` to `CliAgentMessage`, add `permissionInput?: Record<string,unknown>`
-- `shared/src/index.ts` — add `CLI_AGENT_PERMISSION_REQUEST` and `CLI_AGENT_PERMISSION_RESPONSE` IPC channels
-- `main/src/index.ts` — handle `CLI_AGENT_PERMISSION_RESPONSE` → resolve pending Promise in `cliPermissionServer`
-- `MessageList.tsx` — render `CliPermissionCard` for `permission_request` message type
-
-**IPC channels:**
 ```typescript
-CLI_AGENT_START:               'cli-agent:start'               // renderer → main (spawn agent)
-CLI_AGENT_STOP:                'cli-agent:stop'                // renderer → main (kill/interrupt)
-CLI_AGENT_STATUS:              'cli-agent:status'              // main → renderer (parsed status updates)
-CLI_AGENT_EVENT:               'cli-agent:event'               // main → renderer (structured output events)
-CLI_AGENT_PERMISSION_REQUEST:  'cli-agent:permission-request'  // main → renderer (show approval UI)
-CLI_AGENT_PERMISSION_RESPONSE: 'cli-agent:permission-response' // renderer → main (user decision)
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+const q = query({
+  prompt: userMessage,
+  options: {
+    cwd: workspacePath,
+    systemPrompt: { type: 'preset', preset: 'claude_code' },
+    settingSources: ['project'],            // loads CLAUDE.md
+    includePartialMessages: true,           // streaming deltas
+    allowedTools: ["Read", "Glob", "Grep"], // auto-approved (tier-dependent)
+    abortController: controller,
+    resume: previousSessionId,              // conversation continuity
+    persistSession: true,
+
+    canUseTool: async (toolName, input, { signal, toolUseID }) => {
+      if (toolName === "AskUserQuestion") {
+        const answer = await bridgeQuestionToRenderer(sessionId, input, toolUseID);
+        return { behavior: "allow", updatedInput: { ...input, answers: answer } };
+      }
+      const approved = await bridgePermissionToRenderer(sessionId, toolName, input, toolUseID);
+      if (approved) return { behavior: "allow" };
+      return { behavior: "deny", message: "User rejected this action" };
+    },
+
+    mcpServers: parsedMcpJson.servers       // workspace MCP servers (replaces old Step 9)
+  }
+});
+
+for await (const message of q) {
+  // message.type: "system" | "assistant" | "user" | "stream_event" | "result"
+  normalizeAndEmit(message);
+}
 ```
 
-### Step 8: MCP support (all servers in one step)
-Build all MCP infrastructure together: `mcpManager.ts` (spawn stdio servers, JSON-RPC lifecycle, tool list caching, crash restart), `toolRegistry.ts` dynamic registration, and the `cliPermissionServer.ts` MCP server for CLI permission interception (designed in Step 7). All three share the same MCP stdio transport layer — implement it once, use it for external servers and the internal permission server. Merge MCP tools into the registry so the agent sees them alongside built-ins.
+**Key SDK types for reference:**
 
-### Step 9: Polish + persistence
-Chat history save/restore. Mode switching. Working set UI for edit mode. Stop button. Error states.
+```typescript
+type CanUseTool = (
+  toolName: string,
+  input: Record<string, unknown>,
+  options: {
+    signal: AbortSignal;
+    suggestions?: PermissionUpdate[];
+    toolUseID: string;
+    agentID?: string;
+  }
+) => Promise<PermissionResult>;
+
+type PermissionResult =
+  | { behavior: "allow"; updatedInput?: Record<string, unknown> }
+  | { behavior: "deny"; message: string; interrupt?: boolean };
+
+// AskUserQuestion input shape (received when toolName === "AskUserQuestion")
+type AskUserQuestionInput = {
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string; preview?: string }>;
+    multiSelect: boolean;
+  }>;
+};
+// Respond by returning allow with updatedInput containing answers:
+// { behavior: "allow", updatedInput: { questions: orig, answers: { "question text": "selected label" } } }
+
+// Query object (returned by query())
+interface Query extends AsyncGenerator<SDKMessage, void> {
+  close(): void;                                      // kill the process
+  interrupt(): Promise<void>;                          // graceful interrupt
+  setPermissionMode(mode: PermissionMode): Promise<void>;
+  setModel(model?: string): Promise<void>;
+  setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult>;
+  mcpServerStatus(): Promise<McpServerStatus[]>;
+  supportedModels(): Promise<ModelInfo[]>;
+  rewindFiles(userMessageId: string): Promise<RewindFilesResult>;
+}
+
+type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk";
+```
+
+#### Step 8A: SDK Installation + Proof of Concept
+
+1. Install: `pnpm add @anthropic-ai/claude-agent-sdk` in `packages/main`
+2. Write a minimal test that calls `query()` with `canUseTool`, confirms:
+   - Streaming events arrive via async generator
+   - `canUseTool` fires for permission-requiring tools
+   - `AskUserQuestion` flows through `canUseTool`
+   - `AbortController` cancels cleanly
+   - Session resume works via `resume: sessionId`
+3. Verify it works from Electron's main process (spawns Node child processes internally)
+
+**Gotchas to verify:**
+- `settingSources` defaults to `[]` — CLAUDE.md won't load unless you pass `['project']`
+- System prompt is minimal by default — must pass `systemPrompt: { type: 'preset', preset: 'claude_code' }`
+- Extended thinking disables `stream_event` messages
+- Package is ~48MB — verify acceptable app bundle impact
+
+#### Step 8B: Refactor `cliAgentManager.ts`
+
+Replace the `spawn()` + `StructuredOutputParser` flow with SDK's `query()`:
+
+**Remove:**
+- `child_process.spawn` usage for Claude Code backend
+- `StructuredOutputParser` dependency (file can be deleted if no other consumers)
+- Binary resolution: `resolveLaunch()`, `resolveBundledClaudeCliPath()`, `resolveNodeRuntime()` (~160 lines)
+- CLI argument construction (`-p`, `--output-format`, `--verbose`, `--resume`)
+
+**Add:**
+- `query()` call in `send()` with full options object
+- Async generator consumption loop that maps SDK messages to `CliAgentMessage`
+- `canUseTool` callback that bridges to renderer via IPC (Promise-based gate)
+- Store `Query` object on session for `stop()` → `query.close()`
+- Session ID capture from `system.init` or `result` messages for resume
+
+**Keep:**
+- Session data model and persistence via `ConversationStore`
+- IPC emission pattern (`emitMessage`, `emitStatus`, `emitStreamDelta`)
+- Codex backend path (still uses `spawn()` if/when Codex is supported)
+
+**Message type mapping:**
+
+| SDK message type | Existing `CliAgentMessage.type` |
+|-----------------|-------------------------------|
+| `system` (subtype: `init`) | `system` |
+| `assistant` | `assistant` |
+| `user` (tool_result content) | `tool_result` |
+| `stream_event` | stream delta (not a message, updates `streamingContent`) |
+| `result` (subtype: `success`) | `result` |
+| `result` (subtype: `error_*`) | `error` |
+
+**Permission gate implementation:**
+
+```typescript
+// In cliAgentManager.ts
+private pendingApprovals = new Map<string, {
+  resolve: (result: PermissionResult) => void;
+  sessionId: string;
+}>();
+
+// canUseTool callback stores a pending Promise
+canUseTool: async (toolName, input, { toolUseID, signal }) => {
+  return new Promise<PermissionResult>((resolve) => {
+    this.pendingApprovals.set(toolUseID, { resolve, sessionId });
+    this.emitMessage(sessionId, {
+      type: toolName === 'AskUserQuestion' ? 'ask_user_question' : 'permission_request',
+      toolUseId: toolUseID,
+      toolName,
+      permissionInput: input,
+      status: 'pending'
+    });
+    signal.addEventListener('abort', () => {
+      this.pendingApprovals.delete(toolUseID);
+      resolve({ behavior: 'deny', message: 'Cancelled' });
+    });
+  });
+};
+
+// Called when renderer responds
+respondToPermission(toolUseId: string, approved: boolean, updatedInput?: Record<string, unknown>) {
+  const pending = this.pendingApprovals.get(toolUseId);
+  if (!pending) return;
+  this.pendingApprovals.delete(toolUseId);
+  if (approved) {
+    pending.resolve({ behavior: 'allow', updatedInput });
+  } else {
+    pending.resolve({ behavior: 'deny', message: 'User rejected this action' });
+  }
+}
+```
+
+#### Step 8C: IPC + Types
+
+**New shared types** (add to `cliAgentTypes.ts`):
+
+```typescript
+// Extend CliAgentMessage.type
+type: 'system' | 'assistant' | 'user' | 'tool_use' | 'tool_result'
+     | 'status' | 'error' | 'result'
+     | 'permission_request' | 'ask_user_question'  // NEW
+
+// New fields on CliAgentMessage for permission/question rows
+toolUseId?: string
+toolName?: string
+permissionInput?: Record<string, unknown>
+permissionStatus?: 'pending' | 'approved' | 'rejected' | 'expired'
+questionData?: {
+  questions: Array<{
+    question: string
+    header: string
+    options: Array<{ label: string; description: string }>
+    multiSelect: boolean
+  }>
+}
+
+// New process status
+export type CliAgentProcessStatus =
+  | 'stopped' | 'starting' | 'running' | 'rate_limited' | 'error' | 'stopping'
+  | 'awaiting_permission' | 'awaiting_answer'  // NEW
+```
+
+**New IPC channels** (add to `shared/src/index.ts`):
+
+```typescript
+CLI_AGENT_PERMISSION_RESPONSE: 'cli-agent:permission-response'   // renderer → main
+CLI_AGENT_QUESTION_RESPONSE:   'cli-agent:question-response'     // renderer → main
+```
+
+**Preload bridge** (add to `preload.ts`):
+
+```typescript
+cliAgentRespondToPermission: (toolUseId: string, approved: boolean) =>
+  ipcRenderer.send(IpcChannels.CLI_AGENT_PERMISSION_RESPONSE, toolUseId, approved)
+
+cliAgentRespondToQuestion: (toolUseId: string, answers: Record<string, string>) =>
+  ipcRenderer.send(IpcChannels.CLI_AGENT_QUESTION_RESPONSE, toolUseId, answers)
+```
+
+#### Step 8D: Renderer UI
+
+**`CliPermissionCard.tsx`** — inline approval card:
+- Reuse visual language of existing `ToolCallCard`
+- Show tool name, input summary, Allow/Deny buttons
+- Disable buttons after resolution
+- Show "auto" badge when auto-approved by tier
+
+**`CliQuestionCard.tsx`** — inline question card:
+- Render question text and selectable options
+- Support single-select and multi-select
+- Submit button sends selected answers back
+
+**`useCliAgent.ts` additions:**
+- Listen for `permission_request` and `ask_user_question` messages
+- Expose `respondToPermission(toolUseId, approved)` action
+- Expose `respondToQuestion(toolUseId, answers)` action
+- Update session status to `awaiting_permission` / `awaiting_answer` when pending
+
+**`CliAgentPane.tsx` additions:**
+- Render permission cards and question cards inline in message stream
+- Show distinct status indicator for awaiting states
+- Stale pending cards expire on stop/destroy/workspace switch
+
+#### Step 8E: Permission Tiers
+
+Map aIDE's existing tier system to SDK options:
+
+| aIDE Tier | SDK `permissionMode` | SDK `allowedTools` | `canUseTool` |
+|-----------|---------------------|-------------------|--------------|
+| **Confirm** | `"default"` | `[]` | All tools go through callback → renderer approval |
+| **Auto-approve** | `"acceptEdits"` | `["Read", "Glob", "Grep", "search_files", "git_status"]` | Writes + terminal go through callback |
+| **Autopilot** | `"bypassPermissions"` + `allowDangerouslySkipPermissions: true` | N/A | No callback needed |
+
+Per-tool overrides from `.aide/settings.json` map to `allowedTools` / `disallowedTools`:
+- `"terminal_exec": { "allowPatterns": ["npm test"] }` → `allowedTools: ["Bash(npm test:*)"]`
+- `"denyPatterns": ["rm -rf"]` → `disallowedTools: ["Bash(rm -rf:*)"]`
+
+#### Step 8F: Workspace MCP Support (formerly Step 9)
+
+The SDK has built-in MCP support — this collapses into SDK config:
+
+1. Read `.aide/mcp.json` on session start
+2. Pass servers directly to `query()`:
+   ```typescript
+   mcpServers: {
+     "github": { type: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], env: { ... } },
+     "postgres": { type: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-postgres"], env: { ... } }
+   }
+   ```
+3. MCP tools automatically appear in Claude's tool list
+4. Dynamic management via `query.setMcpServers()` and `query.mcpServerStatus()`
+5. Expose `MCP_LIST_SERVERS` / `MCP_SERVER_STATUS` IPC using `query.mcpServerStatus()`
+6. SDK supports `stdio`, `sse`, and `http` transports (not just stdio)
+
+No custom `mcpManager.ts` or `mcpStdioTransport.ts` needed — the SDK handles all of this.
+
+#### Step 8G: Built-in Agent Audit
+
+Do not redesign built-in agent permissions here. Only verify existing behavior still works:
+- Confirm tier still shows approval cards
+- Auto-approve still behaves correctly
+- Autopilot still behaves correctly
+- Edit mode working set still constrains writes
+- Stop still cancels in-flight work
+
+Fix only regressions or blockers.
+
+#### Step 8H: Documentation and Hygiene
+
+When Step 8 lands:
+- Update `IDE_BUILD_PLAN.md`
+- Remove `structuredOutputParser.ts` if no longer used
+- Remove binary resolution code from `cliAgentManager.ts`
+- Update settings schema: `agent.claudeCodePath` may no longer be needed (SDK bundles runtime)
+
+### Step 9: Polish + Persistence
+- Chat history save/restore
+- Mode switching cleanup
+- Working set UI for Edit mode
+- Stop button and error states
+- Stale permission request expiration on reload/destroy
+- Model selection UI (SDK exposes `query.supportedModels()`)
+- File rewind support (SDK exposes `query.rewindFiles()` with `enableFileCheckpointing: true`)
+
+---
+
+## SDK Reference Notes
+
+**Package:** `@anthropic-ai/claude-agent-sdk` (renamed from `@anthropic-ai/claude-code`)
+**Dependencies:** `@anthropic-ai/sdk` >=0.74.0, `@modelcontextprotocol/sdk` >=1.27.1
+**Size:** ~48MB (bundles full Claude Code runtime)
+**Billing:** Uses Claude subscription (Max/Pro/Team/Enterprise), not API pricing
+**Process model:** Each `query()` spawns a child process; sessions persist via `.jsonl` files on disk
+
+**Known gotchas:**
+1. `settingSources` defaults to `[]` — must pass `['project']` to load CLAUDE.md
+2. System prompt is minimal by default — must pass `systemPrompt: { type: 'preset', preset: 'claude_code' }`
+3. Extended thinking (`maxThinkingTokens`) disables `stream_event` messages
+4. `AskUserQuestion` is not available in subagents
+5. `bypassPermissions` cannot run as root on Unix
+
+**Session utilities:**
+```typescript
+import { listSessions, getSessionMessages, getSessionInfo, renameSession, tagSession }
+  from "@anthropic-ai/claude-agent-sdk";
+```
+
+**V2 Preview (unstable, do not use yet):**
+```typescript
+import { unstable_v2_createSession, unstable_v2_prompt } from "@anthropic-ai/claude-agent-sdk";
+```
+
+---
+
+## Resolved Questions
+
+The following questions from the original Step 8 spike are now answered by the SDK approach:
+
+1. **Mid-run permission blocking?** — Yes, via `canUseTool` async callback. The SDK handles the process communication internally.
+2. **Permission payload shape?** — `canUseTool(toolName, input, options)` → `{ behavior: "allow" }` or `{ behavior: "deny", message }`.
+3. **Does deny continue the run?** — Yes, Claude sees the denial message and can adjust. Set `interrupt: true` to stop entirely.
+4. **Clarifying questions?** — `AskUserQuestion` flows through `canUseTool` when `toolName === "AskUserQuestion"`. Respond with `{ behavior: "allow", updatedInput: { questions, answers } }`.
+5. **Can permissions and questions share UI?** — They use the same `canUseTool` callback but need separate card components (approval vs. multi-choice).
+6. **MCP integration?** — Built into SDK via `options.mcpServers`. No custom transport needed.
+7. **`--permission-prompt-tool`?** — Does not exist on current CLI. The SDK's `canUseTool` is the replacement.
+8. **`--input-format stream-json`?** — Intentionally undocumented. Not needed with SDK.
+9. **`--ide` flag?** — Exists but underdocumented. SDK is the better integration path.
+10. **Persistent "always allow"?** — Map to `allowedTools` in SDK options. aIDE controls the tier/override logic, SDK enforces it.
