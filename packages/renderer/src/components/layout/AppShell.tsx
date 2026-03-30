@@ -385,12 +385,12 @@ export function AppShell() {
   // Update Problems panel diagnostics when they change
   useEffect(() => {
     const api = dockviewApiRef.current
-    if (!api || taskDiagnostics.length === 0) return
+    if (!api) return
 
     const problemsPanel = api.panels.find((p) => p.id === 'problems')
     if (problemsPanel) {
       problemsPanel.api.updateParameters({ ...problemsPanel.params, diagnostics: taskDiagnostics })
-    } else {
+    } else if (taskDiagnostics.length > 0) {
       // Open the Problems panel on first diagnostics
       const existingTerminal = api.panels.find(
         (p) => p.id === 'terminal' || p.id.startsWith('terminal-') || p.id.startsWith('task-terminal-'),
