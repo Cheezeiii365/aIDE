@@ -51,7 +51,7 @@ export const defaultKeybindings: KeybindingRule[] = [
 
   // ── Agent ──────────────────────────────────────
   { key: 'Cmd+K Cmd+A', command: 'agent.open' },
-  { key: 'Cmd+k Cmd+H', command: 'agent.history.open' },
+  { key: 'Cmd+K Cmd+H', command: 'agent.history.open' },
 
   // ── View ────────────────────────────────────────
   { key: 'Cmd+B', command: 'view.toggleSidebar' },
