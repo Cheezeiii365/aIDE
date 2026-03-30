@@ -65,6 +65,10 @@ export const defaultKeybindings: KeybindingRule[] = [
   { key: 'Ctrl+Alt+Tab', command: 'pane.cycleRecent' },
   { key: 'Ctrl+Alt+Shift+Tab', command: 'pane.cycleRecentReverse' },
 
+  // ── VS Code Integration ─────────────────────────
+  { key: 'Cmd+K Cmd+V', command: 'workspace.openInVSCode' },
+  { key: 'Cmd+K V', command: 'editor.openFileInVSCode' },
+
   // ── Preferences ─────────────────────────────────
   { key: 'Cmd+,', command: 'settings.open' },
 ]
