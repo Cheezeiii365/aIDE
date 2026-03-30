@@ -411,6 +411,10 @@ const api: WindowApi = {
     return () => ipcRenderer.removeListener(IpcChannels.CONVERSATION_LIST_CHANGED, handler)
   },
 
+  // Open in VS Code
+  openInVSCode: (rootPath: string, files) =>
+    ipcRenderer.invoke(IpcChannels.OPEN_IN_VSCODE, rootPath, files),
+
   // Platform info (for conditional UI like traffic lights)
   platform: process.platform,
 }

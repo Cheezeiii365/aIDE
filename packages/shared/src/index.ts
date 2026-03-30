@@ -81,6 +81,9 @@ export const IpcChannels = {
   FS_OPEN_WORKSPACE: 'fs:open-workspace',
   WORKSPACE_ROOT_GET: 'workspace-root:get',
 
+  // VS Code Integration
+  OPEN_IN_VSCODE: 'vscode:open',
+
   // Filesystem
   FS_READ_DIR: 'fs:read-dir',
   FS_READ_FILE: 'fs:read-file',
@@ -830,6 +833,9 @@ export interface WindowApi {
   conversationRename: (conversationId: string, title: string) => Promise<void>
   conversationGet: (conversationId: string) => Promise<ConversationMeta | null>
   onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
+
+  // VS Code Integration
+  openInVSCode: (filePath: string, line?: number, column?: number) => Promise<{ ok: true } | { error: string }>
 
   // Platform info
   platform: NodeJS.Platform

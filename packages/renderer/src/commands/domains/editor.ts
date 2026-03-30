@@ -12,6 +12,7 @@ import {
   toggleLineCommentInActiveEditor,
   uncommentLineInActiveEditor,
 } from '../../lib/editor/editorComments'
+import { getActiveEditor } from '../../lib/editor/activeEditor'
 import { toggleInlineDiffInActiveEditor } from '../../lib/editor/activeEditorInlineDiff'
 import type { GetCommandContext } from '../context'
 import type { CommandSpec } from './types'
@@ -86,5 +87,32 @@ export function collectEditorCommands(getCtx: GetCommandContext): CommandSpec[] 
         else if (result === 'unsupported') showToast('Line comments are not available for this file type')
       },
     },
+    {
+      def: { id: 'editor.openFileInVSCode', label: 'Open Active File in VS Code', category: 'Editor' },
+      handler: async () => {
+        const root = getCtx().getWorkspaceRoot()
+        if (!root) {
+          showToast('No workspace root available')
+          return
+        }
+
+        const active = getActiveEditor()
+        if (!active) {
+          showToast('No active editor')
+          return
+        }
+
+        const { view, filePath } = active
+        const pos = view.state.selection.main.head
+        const lineInfo = view.state.doc.lineAt(pos)
+        const line = lineInfo.number
+        const col = pos - lineInfo.from + 1
+
+        const result = await window.api.openInVSCode(root, [{ path: filePath, line, col }])
+        if ('error' in result) {
+          showToast(result.error)
+        }
+      },
+    }
   ]
 }
