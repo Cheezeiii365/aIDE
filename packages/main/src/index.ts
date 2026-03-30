@@ -5,7 +5,7 @@ import { execFile, execSync } from 'child_process'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
-import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts } from '@aide/shared'
+import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts, TaskRunContext, TaskTriggerResult } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './terminal/ptyManager'
 import { registerFileWatcherHandlers, startWatchers, stopWatcher } from './workspace/fileWatcher'
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './git/gitStatus'
@@ -283,7 +283,7 @@ async function activateWorkspace(id: string): Promise<void> {
     await ensureAideFolder(entry.rootPath)
     if (activationSeq !== workspaceActivationSeq) return
 
-    initTaskRunner(entry.rootPath)
+    await initTaskRunner(entry.rootPath)
 
     await startWatchers('default', [entry.rootPath])
     if (activationSeq !== workspaceActivationSeq) {
@@ -879,16 +879,21 @@ ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async () => {
   await dismissAudit(rootPath)
 })
 
+/** Whether workspace-open task scheduling is pending (debounce guard). */
+let workspaceOpenScheduled = false
+
 /**
  * Initializes the module-level TaskRunner for the given workspace and forwards its events to the renderer via IPC.
  *
  * Loads task definitions after creating the runner and attaches handlers that propagate status, input requests,
- * diagnostics, PTY output, and PTY exit events to the renderer process.
+ * diagnostics, PTY output, and PTY exit events to the renderer process. After loading, schedules any
+ * runOn.workspaceOpen tasks.
  *
  * @param rootPath - Filesystem path of the workspace to manage tasks for
  */
-function initTaskRunner(rootPath: string): void {
+async function initTaskRunner(rootPath: string): Promise<void> {
   const getWc = () => contentView?.webContents ?? null
+  workspaceOpenScheduled = false
   taskRunner = new TaskRunner(rootPath, {
     onStatusChanged: (execution) => getWc()?.send(IpcChannels.TASK_STATUS_CHANGED, execution),
     onRequestInput: (request) => getWc()?.send(IpcChannels.TASK_REQUEST_INPUT, request),
@@ -896,7 +901,66 @@ function initTaskRunner(rootPath: string): void {
     onPtyData: (ptyId, data) => getWc()?.send(IpcChannels.PTY_DATA_OUT, ptyId, data),
     onPtyExit: (ptyId, exitCode) => getWc()?.send(IpcChannels.PTY_EXIT, ptyId, exitCode),
   })
-  taskRunner.loadTasks()
+  const loaded = await taskRunner.loadTasks()
+  if (loaded) {
+    scheduleWorkspaceOpenTasks(rootPath, getWc)
+  }
+}
+
+/**
+ * Schedule runOn.workspaceOpen tasks after workspace initialization.
+ * Skips tasks that are already running (singleton guard) and respects per-task delay.
+ */
+function scheduleWorkspaceOpenTasks(
+  rootPath: string,
+  getWc: () => Electron.WebContents | null,
+): void {
+  if (!taskRunner || workspaceOpenScheduled) return
+  workspaceOpenScheduled = true
+
+  const tasks = taskRunner.getWorkspaceOpenTasks()
+  if (tasks.length === 0) return
+
+  const ctx = {
+    workspaceRoot: rootPath,
+    workspaceName: rootPath.split('/').pop() ?? rootPath,
+  }
+
+  for (const task of tasks) {
+    if (taskRunner.isTaskRunning(task.id)) {
+      const result: TaskTriggerResult = {
+        taskId: task.id,
+        taskLabel: task.label,
+        source: 'workspaceOpen',
+        outcome: 'skipped',
+        message: 'Already running',
+      }
+      getWc()?.send(IpcChannels.TASK_TRIGGER_RESULT, result)
+      continue
+    }
+
+    const delay = task.runOn?.delay ?? 0
+    const seqAtSchedule = workspaceActivationSeq
+    const launch = () => {
+      if (seqAtSchedule !== workspaceActivationSeq || !taskRunner) return
+      taskRunner.run(task.id, ctx).then((execResult) => {
+        const result: TaskTriggerResult = {
+          taskId: task.id,
+          taskLabel: task.label,
+          source: 'workspaceOpen',
+          outcome: 'error' in execResult ? 'failed' : 'started',
+          message: 'error' in execResult ? execResult.error : undefined,
+        }
+        getWc()?.send(IpcChannels.TASK_TRIGGER_RESULT, result)
+      })
+    }
+
+    if (delay > 0) {
+      setTimeout(launch, delay)
+    } else {
+      launch()
+    }
+  }
 }
 
 ipcMain.handle(IpcChannels.TASK_LIST, async () => {
@@ -905,7 +969,7 @@ ipcMain.handle(IpcChannels.TASK_LIST, async () => {
   return { tasks: taskRunner.getTasks(), compounds: taskRunner.getCompounds() }
 })
 
-ipcMain.handle(IpcChannels.TASK_RUN, async (_event, taskId: string) => {
+ipcMain.handle(IpcChannels.TASK_RUN, async (_event, taskId: string, context?: TaskRunContext) => {
   if (!taskRunner) return { error: 'No workspace open' }
   const rootPath = store.get('workspaceRoot')
   if (!rootPath) return { error: 'No workspace open' }
@@ -913,6 +977,9 @@ ipcMain.handle(IpcChannels.TASK_RUN, async (_event, taskId: string) => {
   const ctx = {
     workspaceRoot: rootPath,
     workspaceName: rootPath.split('/').pop() ?? rootPath,
+    activeFile: context?.activeFile,
+    selectedText: context?.selectedText,
+    lineNumber: context?.lineNumber,
   }
   return taskRunner.run(taskId, ctx)
 })
@@ -935,6 +1002,47 @@ ipcMain.handle(IpcChannels.TASK_GENERATE, async () => {
   const tasks = await detectTasks(rootPath)
   if (tasks.length === 0) return { error: 'No tasks detected' }
   return generateTasksFile(rootPath, tasks)
+})
+
+ipcMain.on(IpcChannels.TASK_FILE_SAVED, (_event, filePath: string) => {
+  if (!taskRunner) return
+  const rootPath = store.get('workspaceRoot')
+  if (!rootPath) return
+  const getWc = () => contentView?.webContents ?? null
+
+  const relativePath = relative(rootPath, filePath).split(/[\\/]/).join('/')
+  const tasks = taskRunner.getFileSaveTasks(relativePath)
+
+  const seqAtSchedule = workspaceActivationSeq
+
+  for (const task of tasks) {
+    if (taskRunner.isTaskRunning(task.id)) continue
+
+    const delay = task.runOn?.delay ?? 0
+    const run = () => {
+      if (seqAtSchedule !== workspaceActivationSeq || !taskRunner) return
+      const ctx = {
+        workspaceRoot: rootPath,
+        workspaceName: rootPath.split('/').pop() ?? rootPath,
+      }
+      taskRunner.run(task.id, ctx).then((result) => {
+        const triggerResult: TaskTriggerResult = {
+          taskId: task.id,
+          taskLabel: task.label,
+          source: 'fileSave',
+          outcome: 'error' in result ? 'failed' : 'started',
+          message: 'error' in result ? result.error : undefined,
+        }
+        getWc()?.send(IpcChannels.TASK_TRIGGER_RESULT, triggerResult)
+      })
+    }
+
+    if (delay > 0) {
+      setTimeout(run, delay)
+    } else {
+      run()
+    }
+  }
 })
 
 // Filesystem IPC handlers

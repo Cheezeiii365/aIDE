@@ -139,6 +139,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
                 if ('success' in res) {
                   cleanContentMap.set(filePath, content)
                   setDirty(filePath, false)
+                  window.api.notifyFileSaved(filePath)
                 }
               })
               return true

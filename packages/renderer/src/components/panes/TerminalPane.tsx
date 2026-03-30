@@ -33,6 +33,9 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
   const fitRef = useRef<FitAddon | null>(null)
   const ptyIdRef = useRef<string | null>(null)
   const terminalIdRef = useRef<string>(params?.terminalId || globalThis.crypto?.randomUUID?.() || `terminal-${Date.now()}`)
+  const cleanupDataRef = useRef<(() => void) | null>(null)
+  const cleanupExitRef = useRef<(() => void) | null>(null)
+  const inputDisposableRef = useRef<{ dispose(): void } | null>(null)
   const { theme } = useTheme()
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
@@ -52,8 +55,6 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
     if (!hostRef.current) return
 
     let destroyed = false
-    let cleanupData: (() => void) | null = null
-    let cleanupExit: (() => void) | null = null
 
     const term = new Terminal({
       cursorBlink: true,
@@ -82,9 +83,34 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
     /**
      * Initializes a PTY for the terminal, attaches IO handlers, and synchronizes terminal state.
      *
-     * Creates a PTY using the component parameters (including a stable terminal id and cwd), stores the returned PTY id, writes any returned scrollback into the terminal, sends an initial resize to match the terminal's columns and rows, forwards terminal input to the PTY, and subscribes to PTY data and exit events. Registers cleanup callbacks (assigned to outer-scope variables) for unsubscribing from PTY data and exit notifications. If the component is destroyed before completion, initialization aborts without making changes.
+     * If a taskPtyId is provided, attaches to the existing task-owned PTY instead of creating a new one.
+     * Otherwise creates a PTY using the component parameters (including a stable terminal id and cwd),
+     * stores the returned PTY id, writes any returned scrollback into the terminal, sends an initial
+     * resize to match the terminal's columns and rows, forwards terminal input to the PTY, and
+     * subscribes to PTY data and exit events.
      */
     async function init() {
+      // Task-owned PTY: attach to existing stream without creating a new PTY
+      if (params?.taskPtyId) {
+        const id = params.taskPtyId
+        ptyIdRef.current = id
+
+        inputDisposableRef.current = term.onData((data) => {
+          window.api.ptyWrite(id, data)
+        })
+
+        cleanupDataRef.current = window.api.onPtyData((incomingId: string, data: string) => {
+          if (incomingId === id) term.write(data)
+        })
+
+        cleanupExitRef.current = window.api.onPtyExit((incomingId: string, exitCode: number) => {
+          if (incomingId === id) {
+            term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
+          }
+        })
+        return
+      }
+
       const cwd = params?.worktreePath || undefined
       const { id, scrollback } = await window.api.ptyCreate({
         id: terminalIdRef.current,
@@ -101,15 +127,15 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       }
       window.api.ptyResize(id, term.cols, term.rows)
 
-      term.onData((data) => {
+      inputDisposableRef.current = term.onData((data) => {
         window.api.ptyWrite(id, data)
       })
 
-      cleanupData = window.api.onPtyData((incomingId: string, data: string) => {
+      cleanupDataRef.current = window.api.onPtyData((incomingId: string, data: string) => {
         if (incomingId === id) term.write(data)
       })
 
-      cleanupExit = window.api.onPtyExit((incomingId: string, exitCode: number) => {
+      cleanupExitRef.current = window.api.onPtyExit((incomingId: string, exitCode: number) => {
         if (incomingId === id) {
           term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
         }
@@ -134,14 +160,55 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       destroyed = true
       observer.disconnect()
       if (resizeTimer) clearTimeout(resizeTimer)
-      cleanupData?.()
-      cleanupExit?.()
+      inputDisposableRef.current?.dispose()
+      cleanupDataRef.current?.()
+      cleanupExitRef.current?.()
+      inputDisposableRef.current = null
+      cleanupDataRef.current = null
+      cleanupExitRef.current = null
       term.dispose()
       termRef.current = null
       fitRef.current = null
       ptyIdRef.current = null
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rebind PTY listeners when taskPtyId changes (reused task terminal panels)
+  useEffect(() => {
+    const term = termRef.current
+    const newPtyId = params?.taskPtyId
+    if (!term || !newPtyId) return
+    // Skip if already bound to this PTY (initial mount handled it)
+    if (ptyIdRef.current === newPtyId) return
+
+    // Tear down previous PTY listeners
+    inputDisposableRef.current?.dispose()
+    cleanupDataRef.current?.()
+    cleanupExitRef.current?.()
+
+    ptyIdRef.current = newPtyId
+
+    // Clear terminal for the new task run
+    term.clear()
+    term.write('\x1b[2J\x1b[H') // full clear + cursor home
+
+    inputDisposableRef.current = term.onData((data) => {
+      window.api.ptyWrite(newPtyId, data)
+    })
+
+    cleanupDataRef.current = window.api.onPtyData((incomingId: string, data: string) => {
+      if (incomingId === newPtyId) term.write(data)
+    })
+
+    cleanupExitRef.current = window.api.onPtyExit((incomingId: string, exitCode: number) => {
+      if (incomingId === newPtyId) {
+        term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
+      }
+    })
+
+    // Sync terminal size with the new PTY
+    window.api.ptyResize(newPtyId, term.cols, term.rows)
+  }, [params?.taskPtyId])
 
   // Focus terminal when panel becomes active
   useEffect(() => {

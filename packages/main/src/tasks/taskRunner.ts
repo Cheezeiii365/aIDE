@@ -99,6 +99,26 @@ export class TaskRunner {
   }
 
   /**
+   * Check if a task with the given taskId is currently running.
+   */
+  isTaskRunning(taskId: string): boolean {
+    for (const r of this.running.values()) {
+      if (r.execution.taskId === taskId) return true
+    }
+    return false
+  }
+
+  /**
+   * Get the running execution for a given taskId, if any.
+   */
+  getRunningExecutionByTaskId(taskId: string): TaskExecution | null {
+    for (const r of this.running.values()) {
+      if (r.execution.taskId === taskId) return r.execution
+    }
+    return null
+  }
+
+  /**
    * Resolve a task by ID, applying platform-specific overrides.
    */
   private resolveTask(taskId: string): AideTask | null {
@@ -311,6 +331,8 @@ export class TaskRunner {
       status: 'running',
       startedAt: Date.now(),
       ptyId,
+      panelPolicy: task.presentation?.panel ?? 'shared',
+      closeOnExit: task.presentation?.close ?? false,
     }
 
     // Set up problem matcher if configured

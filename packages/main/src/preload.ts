@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload } from '@aide/shared'
+import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, TaskRunContext, TaskTriggerResult, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload } from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -189,8 +189,8 @@ const api: WindowApi = {
   // Task system
   listTasks: (): Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }> =>
     ipcRenderer.invoke(IpcChannels.TASK_LIST),
-  runTask: (taskId: string): Promise<{ executionId: string } | { error: string }> =>
-    ipcRenderer.invoke(IpcChannels.TASK_RUN, taskId),
+  runTask: (taskId: string, context?: TaskRunContext): Promise<{ executionId: string } | { error: string }> =>
+    ipcRenderer.invoke(IpcChannels.TASK_RUN, taskId, context),
   killTask: (executionId: string) =>
     ipcRenderer.send(IpcChannels.TASK_KILL, executionId),
   reloadTasks: (): Promise<void> =>
@@ -199,6 +199,8 @@ const api: WindowApi = {
     ipcRenderer.invoke(IpcChannels.TASK_GENERATE),
   provideTaskInput: (requestId: string, value: string | null) =>
     ipcRenderer.send(IpcChannels.TASK_PROVIDE_INPUT, requestId, value),
+  notifyFileSaved: (filePath: string) =>
+    ipcRenderer.send(IpcChannels.TASK_FILE_SAVED, filePath),
   onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, execution: TaskExecution) => callback(execution)
     ipcRenderer.on(IpcChannels.TASK_STATUS_CHANGED, handler)
@@ -218,6 +220,11 @@ const api: WindowApi = {
     const handler = (_event: Electron.IpcRendererEvent, tasks: AideTask[]) => callback(tasks)
     ipcRenderer.on(IpcChannels.TASK_AUTO_DETECT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.TASK_AUTO_DETECT, handler)
+  },
+  onTaskTriggerResult: (callback: (result: TaskTriggerResult) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, result: TaskTriggerResult) => callback(result)
+    ipcRenderer.on(IpcChannels.TASK_TRIGGER_RESULT, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.TASK_TRIGGER_RESULT, handler)
   },
 
   // Workspace registry

@@ -8,6 +8,12 @@ export interface TerminalPanelParams {
   shell?: string
   title?: string
   zoomFactor?: number
+  /** When set, attach to an existing PTY (task-owned) instead of creating a new one. */
+  taskPtyId?: string
+  /** The task execution ID this terminal is bound to. */
+  taskExecutionId?: string
+  /** The task ID this terminal is bound to (for dedicated panel reuse). */
+  taskId?: string
 }
 
 /**
@@ -109,6 +115,7 @@ export function serializeTerminalState(dockviewApi: DockviewApi | null): AideLoc
   for (const panel of dockviewApi.panels) {
     const params = getTerminalParams(panel)
     if (!params?.workspaceId) continue
+    if (params.taskExecutionId || params.taskPtyId || params.taskId) continue
 
     terminals.push({
       id: params.terminalId,
@@ -120,7 +127,12 @@ export function serializeTerminalState(dockviewApi: DockviewApi | null): AideLoc
   }
 
   const activeParams = dockviewApi.activePanel ? getTerminalParams(dockviewApi.activePanel) : null
-  if (activeParams?.terminalId) {
+  if (
+    activeParams?.terminalId &&
+    !activeParams.taskExecutionId &&
+    !activeParams.taskPtyId &&
+    !activeParams.taskId
+  ) {
     activeTerminalId = activeParams.terminalId
   }
 

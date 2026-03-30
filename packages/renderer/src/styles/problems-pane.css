@@ -1,0 +1,127 @@
+.problems-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.problems-pane--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.problems-pane__empty-msg {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.problems-pane__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.problems-pane__count--error {
+  color: var(--error);
+}
+
+.problems-pane__count--warning {
+  color: var(--warning);
+}
+
+.problems-pane__list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.problems-pane__group {
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.problems-pane__file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.problems-pane__file-count {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.problems-pane__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 12px 3px 24px;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.problems-pane__item:hover {
+  background: var(--bg-hover);
+}
+
+.problems-pane__severity {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.problems-pane__item--error .problems-pane__severity {
+  color: var(--error);
+}
+
+.problems-pane__item--warning .problems-pane__severity {
+  color: var(--warning);
+}
+
+.problems-pane__item--info .problems-pane__severity {
+  color: var(--info, var(--text-secondary));
+}
+
+.problems-pane__message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problems-pane__location {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+}
+
+.problems-pane__source {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+}

@@ -68,3 +68,7 @@ terraform.tfstate
 terraform.tfstate.backup
 *.tfvars
 .aide/local/
+
+# VS Code
+.vscode/
+aide.code-workspace
