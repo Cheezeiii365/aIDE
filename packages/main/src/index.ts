@@ -283,7 +283,7 @@ async function activateWorkspace(id: string): Promise<void> {
     await ensureAideFolder(entry.rootPath)
     if (activationSeq !== workspaceActivationSeq) return
 
-    initTaskRunner(entry.rootPath)
+    await initTaskRunner(entry.rootPath)
 
     await startWatchers('default', [entry.rootPath])
     if (activationSeq !== workspaceActivationSeq) {
