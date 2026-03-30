@@ -78,10 +78,12 @@ const mockApi: WindowApi = {
   reloadTasks: vi.fn().mockResolvedValue(undefined),
   generateTasks: vi.fn().mockResolvedValue({ success: true }),
   provideTaskInput: vi.fn(),
+  notifyFileSaved: vi.fn(),
   onTaskStatusChanged: vi.fn().mockReturnValue(() => {}),
   onTaskRequestInput: vi.fn().mockReturnValue(() => {}),
   onTaskDiagnostics: vi.fn().mockReturnValue(() => {}),
   onTaskAutoDetect: vi.fn().mockReturnValue(() => {}),
+  onTaskTriggerResult: vi.fn().mockReturnValue(() => {}),
   listWorkspaces: vi.fn().mockResolvedValue([]),
   createWorkspace: vi.fn().mockResolvedValue({
     id: 'ws-1',

@@ -33,7 +33,7 @@ import {
   clearWorkspaceRuntimeSnapshot,
   saveWorkspaceRuntimeSnapshot,
 } from '../../lib/workspace/workspaceRuntimeSnapshots'
-import type { AideTask, BrowserSessionMode, GitignoreAuditResult, TaskExecution, TaskInputRequest } from '@aide/shared'
+import type { AideTask, BrowserSessionMode, GitignoreAuditResult, TaskExecution, TaskInputRequest, TaskTriggerResult } from '@aide/shared'
 import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
 
 /**
@@ -68,12 +68,15 @@ export function AppShell() {
   const commandContextRef = useRef<CommandContext | null>(null)
   const {
     runningTasks,
+    diagnostics: taskDiagnostics,
     runTask,
     killTask,
     reloadTasks,
     getLastTaskId,
     getRunningTasks,
+    clearDiagnostics: clearAllDiagnostics,
   } = useTasks()
+  const taskTerminalMapRef = useRef(new Map<string, string>())
 
   // Workspace registry
   const {
@@ -291,6 +294,121 @@ export function AppShell() {
     })
     return unsub
   }, [])
+
+  // Terminal routing for task executions
+  useEffect(() => {
+    const unsub = window.api.onTaskStatusChanged((execution) => {
+      const api = dockviewApiRef.current
+      if (!api) return
+
+      if (execution.status === 'running' && execution.ptyId) {
+        const policy = execution.panelPolicy ?? 'shared'
+        let panelId: string
+
+        if (policy === 'shared') {
+          panelId = 'task-terminal-shared'
+        } else if (policy === 'dedicated') {
+          panelId = `task-terminal-${execution.taskId}`
+        } else {
+          panelId = `task-terminal-${execution.executionId}`
+        }
+
+        // Track mapping for cleanup
+        taskTerminalMapRef.current.set(execution.executionId, panelId)
+
+        const existing = api.panels.find((p) => p.id === panelId)
+        if (existing) {
+          // Reuse: update the ptyId to the new execution's PTY
+          existing.api.updateParameters({
+            ...existing.params,
+            taskPtyId: execution.ptyId,
+            taskExecutionId: execution.executionId,
+            taskId: execution.taskId,
+            title: `Task: ${execution.taskLabel}`,
+          })
+          existing.api.setActive()
+        } else {
+          // Create new task terminal panel
+          const existingTerminal = api.panels.find(
+            (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
+          )
+          api.addPanel({
+            id: panelId,
+            component: 'terminalPane',
+            title: `Task: ${execution.taskLabel}`,
+            params: {
+              terminalId: panelId,
+              workspaceId: activeWorkspaceId ?? undefined,
+              taskPtyId: execution.ptyId,
+              taskExecutionId: execution.executionId,
+              taskId: execution.taskId,
+              title: `Task: ${execution.taskLabel}`,
+              zoomFactor: 1,
+            },
+            position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
+          })
+        }
+      }
+
+      // Handle close-on-exit for 'new' policy terminals
+      if (
+        execution.status === 'succeeded'
+        && execution.closeOnExit
+        && execution.panelPolicy === 'new'
+      ) {
+        const termPanelId = taskTerminalMapRef.current.get(execution.executionId)
+        if (termPanelId && api) {
+          const panel = api.panels.find((p) => p.id === termPanelId)
+          if (panel) {
+            setTimeout(() => panel.api.close(), 500)
+          }
+        }
+        taskTerminalMapRef.current.delete(execution.executionId)
+      }
+    })
+    return unsub
+  }, [activeWorkspaceId])
+
+  // Listen for task trigger results (auto-run outcomes) and show toasts
+  useEffect(() => {
+    const unsub = window.api.onTaskTriggerResult((result: TaskTriggerResult) => {
+      if (result.outcome === 'failed') {
+        showToast(`Task "${result.taskLabel}" failed to start: ${result.message ?? 'unknown error'}`)
+      } else if (result.outcome === 'skipped') {
+        // Silently skip - no toast needed for already-running tasks
+      }
+      // 'started' is normal, no toast needed
+    })
+    return unsub
+  }, [])
+
+  // Update Problems panel diagnostics when they change
+  useEffect(() => {
+    const api = dockviewApiRef.current
+    if (!api || taskDiagnostics.length === 0) return
+
+    const problemsPanel = api.panels.find((p) => p.id === 'problems')
+    if (problemsPanel) {
+      problemsPanel.api.updateParameters({ ...problemsPanel.params, diagnostics: taskDiagnostics })
+    } else {
+      // Open the Problems panel on first diagnostics
+      const existingTerminal = api.panels.find(
+        (p) => p.id === 'terminal' || p.id.startsWith('terminal-') || p.id.startsWith('task-terminal-'),
+      )
+      api.addPanel({
+        id: 'problems',
+        component: 'problemsPane',
+        title: 'Problems',
+        params: { diagnostics: taskDiagnostics, zoomFactor: 1 },
+        position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
+      })
+    }
+  }, [taskDiagnostics])
+
+  // Clear diagnostics on workspace switch
+  useEffect(() => {
+    clearAllDiagnostics()
+  }, [activeWorkspaceId, clearAllDiagnostics])
 
   // Keep sidebarVisible context key in sync
   useEffect(() => {

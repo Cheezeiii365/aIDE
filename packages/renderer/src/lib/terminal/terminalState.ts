@@ -8,6 +8,12 @@ export interface TerminalPanelParams {
   shell?: string
   title?: string
   zoomFactor?: number
+  /** When set, attach to an existing PTY (task-owned) instead of creating a new one. */
+  taskPtyId?: string
+  /** The task execution ID this terminal is bound to. */
+  taskExecutionId?: string
+  /** The task ID this terminal is bound to (for dedicated panel reuse). */
+  taskId?: string
 }
 
 /**

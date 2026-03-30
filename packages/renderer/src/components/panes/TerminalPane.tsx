@@ -82,9 +82,34 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
     /**
      * Initializes a PTY for the terminal, attaches IO handlers, and synchronizes terminal state.
      *
-     * Creates a PTY using the component parameters (including a stable terminal id and cwd), stores the returned PTY id, writes any returned scrollback into the terminal, sends an initial resize to match the terminal's columns and rows, forwards terminal input to the PTY, and subscribes to PTY data and exit events. Registers cleanup callbacks (assigned to outer-scope variables) for unsubscribing from PTY data and exit notifications. If the component is destroyed before completion, initialization aborts without making changes.
+     * If a taskPtyId is provided, attaches to the existing task-owned PTY instead of creating a new one.
+     * Otherwise creates a PTY using the component parameters (including a stable terminal id and cwd),
+     * stores the returned PTY id, writes any returned scrollback into the terminal, sends an initial
+     * resize to match the terminal's columns and rows, forwards terminal input to the PTY, and
+     * subscribes to PTY data and exit events.
      */
     async function init() {
+      // Task-owned PTY: attach to existing stream without creating a new PTY
+      if (params?.taskPtyId) {
+        const id = params.taskPtyId
+        ptyIdRef.current = id
+
+        term.onData((data) => {
+          window.api.ptyWrite(id, data)
+        })
+
+        cleanupData = window.api.onPtyData((incomingId: string, data: string) => {
+          if (incomingId === id) term.write(data)
+        })
+
+        cleanupExit = window.api.onPtyExit((incomingId: string, exitCode: number) => {
+          if (incomingId === id) {
+            term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
+          }
+        })
+        return
+      }
+
       const cwd = params?.worktreePath || undefined
       const { id, scrollback } = await window.api.ptyCreate({
         id: terminalIdRef.current,

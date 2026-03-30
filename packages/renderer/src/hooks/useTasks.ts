@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { AideTask, CompoundTask, TaskExecution } from '@aide/shared'
+import type { AideTask, CompoundTask, TaskExecution, TaskDiagnostic, TaskRunContext } from '@aide/shared'
+import { getActiveEditor } from '../lib/editor/activeEditor'
 
 export interface TasksState {
   tasks: AideTask[]
   compounds: CompoundTask[]
   runningTasks: TaskExecution[]
+  diagnostics: TaskDiagnostic[]
   /** Snapshot at last render; prefer `getLastTaskId()` for command handlers. */
   lastTaskId: string | null
   getLastTaskId: () => string | null
@@ -12,28 +14,21 @@ export interface TasksState {
   runTask: (taskId: string) => Promise<void>
   killTask: (executionId: string) => void
   reloadTasks: () => Promise<void>
+  clearDiagnostics: () => void
+  clearDiagnosticsForTask: (taskId: string) => void
 }
 
 /**
- * React hook that manages available tasks, compound tasks, and currently running task executions.
+ * React hook that manages available tasks, compound tasks, running executions, and diagnostics.
  *
- * Returns an object providing current task lists, active executions, the most-recently requested task id,
- * and actions to run, kill, or reload tasks.
- *
- * @returns An object with:
- * - `tasks`: array of available `AideTask` definitions
- * - `compounds`: array of available `CompoundTask` definitions
- * - `runningTasks`: array of active `TaskExecution` entries
- * - `lastTaskId`: snapshot at last render; use `getLastTaskId()` from keybindings/commands
- * - `getLastTaskId()`, `getRunningTasks()`: fresh reads for command handlers
- * - `runTask(taskId)`: function to start a task by id
- * - `killTask(executionId)`: function to stop an execution by id
- * - `reloadTasks()`: function to refresh task definitions
+ * Gathers active editor context (file, selection, line) when running tasks so that
+ * ${file}, ${selectedText}, ${lineNumber} variables resolve correctly in the main process.
  */
 export function useTasks(): TasksState {
   const [tasks, setTasks] = useState<AideTask[]>([])
   const [compounds, setCompounds] = useState<CompoundTask[]>([])
   const [runningTasks, setRunningTasks] = useState<TaskExecution[]>([])
+  const [diagnostics, setDiagnostics] = useState<TaskDiagnostic[]>([])
   const lastTaskIdRef = useRef<string | null>(null)
   const runningTasksRef = useRef<TaskExecution[]>([])
   runningTasksRef.current = runningTasks
@@ -51,6 +46,8 @@ export function useTasks(): TasksState {
     const unsub = window.api.onTaskStatusChanged((execution) => {
       setRunningTasks((prev) => {
         if (execution.status === 'running') {
+          // Clear diagnostics for this task when it starts
+          setDiagnostics((d) => d.filter((diag) => diag.source !== execution.taskId))
           // Add or update
           const existing = prev.findIndex((e) => e.executionId === execution.executionId)
           if (existing >= 0) {
@@ -67,9 +64,29 @@ export function useTasks(): TasksState {
     return unsub
   }, [])
 
+  // Subscribe to diagnostics
+  useEffect(() => {
+    const unsub = window.api.onTaskDiagnostics((newDiagnostics) => {
+      setDiagnostics((prev) => [...prev, ...newDiagnostics])
+    })
+    return unsub
+  }, [])
+
   const runTask = useCallback(async (taskId: string) => {
     lastTaskIdRef.current = taskId
-    await window.api.runTask(taskId)
+
+    // Gather active editor context for variable resolution
+    const editor = getActiveEditor()
+    let context: TaskRunContext | undefined
+    if (editor) {
+      const { view, filePath } = editor
+      const sel = view.state.selection.main
+      const selectedText = view.state.sliceDoc(sel.from, sel.to) || undefined
+      const lineNumber = view.state.doc.lineAt(sel.head).number
+      context = { activeFile: filePath, selectedText, lineNumber }
+    }
+
+    await window.api.runTask(taskId, context)
   }, [])
 
   const killTask = useCallback((executionId: string) => {
@@ -84,18 +101,24 @@ export function useTasks(): TasksState {
   }, [])
 
   const getLastTaskId = useCallback(() => lastTaskIdRef.current, [])
-
   const getRunningTasks = useCallback(() => runningTasksRef.current, [])
+  const clearDiagnostics = useCallback(() => setDiagnostics([]), [])
+  const clearDiagnosticsForTask = useCallback((taskId: string) => {
+    setDiagnostics((prev) => prev.filter((d) => d.source !== taskId))
+  }, [])
 
   return {
     tasks,
     compounds,
     runningTasks,
+    diagnostics,
     lastTaskId: lastTaskIdRef.current,
     getLastTaskId,
     getRunningTasks,
     runTask,
     killTask,
     reloadTasks,
+    clearDiagnostics,
+    clearDiagnosticsForTask,
   }
 }

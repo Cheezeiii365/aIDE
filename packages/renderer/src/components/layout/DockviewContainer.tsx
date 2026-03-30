@@ -13,6 +13,7 @@ import { SettingsPane } from '../panes/SettingsPane'
 import { ChatPane } from '../panes/ChatPane'
 import { CliAgentPane } from '../panes/CliAgentPane'
 import { ChatHistoryPane } from '../panes/ChatHistoryPane'
+import { ProblemsPane } from '../panes/ProblemsPane'
 import 'dockview/dist/styles/dockview.css'
 import '../../styles/dockview-theme.css'
 
@@ -28,6 +29,7 @@ const components = {
   chatPane: ChatPane,
   cliAgentPane: CliAgentPane,
   chatHistoryPane: ChatHistoryPane,
+  problemsPane: ProblemsPane,
 }
 
 const tabComponents = {

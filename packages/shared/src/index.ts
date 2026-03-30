@@ -155,6 +155,8 @@ export const IpcChannels = {
   TASK_RELOAD: 'task:reload',
   TASK_AUTO_DETECT: 'task:auto-detect',
   TASK_GENERATE: 'task:generate',
+  TASK_FILE_SAVED: 'task:file-saved',
+  TASK_TRIGGER_RESULT: 'task:trigger-result',
 
   // Workspace registry
   WORKSPACE_LIST: 'workspace:list',
@@ -625,6 +627,8 @@ export interface TaskExecution {
   startedAt: number
   exitCode?: number
   ptyId: string
+  panelPolicy?: 'shared' | 'dedicated' | 'new'
+  closeOnExit?: boolean
 }
 
 export interface TaskInputRequest {
@@ -640,6 +644,22 @@ export interface TaskDiagnostic {
   severity: 'error' | 'warning' | 'info'
   message: string
   source: string
+}
+
+export interface TaskRunContext {
+  activeFile?: string
+  selectedText?: string
+  lineNumber?: number
+}
+
+export type TaskTriggerSource = 'workspaceOpen' | 'fileSave' | 'manual'
+
+export interface TaskTriggerResult {
+  taskId: string
+  taskLabel: string
+  source: TaskTriggerSource
+  outcome: 'started' | 'skipped' | 'failed'
+  message?: string
 }
 
 /** Single source of truth for the preload bridge API shape. */
@@ -746,15 +766,17 @@ export interface WindowApi {
 
   // Task system
   listTasks: () => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
-  runTask: (taskId: string) => Promise<{ executionId: string } | { error: string }>
+  runTask: (taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
   killTask: (executionId: string) => void
   reloadTasks: () => Promise<void>
   generateTasks: () => Promise<{ success: true } | { error: string }>
   provideTaskInput: (requestId: string, value: string | null) => void
+  notifyFileSaved: (filePath: string) => void
   onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => () => void
   onTaskRequestInput: (callback: (request: TaskInputRequest) => void) => () => void
   onTaskDiagnostics: (callback: (diagnostics: TaskDiagnostic[]) => void) => () => void
   onTaskAutoDetect: (callback: (tasks: AideTask[]) => void) => () => void
+  onTaskTriggerResult: (callback: (result: TaskTriggerResult) => void) => () => void
 
   // Workspace registry
   listWorkspaces: () => Promise<WorkspaceEntry[]>
