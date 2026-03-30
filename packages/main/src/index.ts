@@ -1067,31 +1067,25 @@ ipcMain.handle(
     rootPath: string,
     files?: Array<{ path: string; line: number; col: number }>,
   ) => {
-    try {
-      execSync('command -v code', { stdio: 'ignore' })
-    } catch {
-      return {
-        error: 'VS Code CLI not found. Install it via: VS Code -> Cmd+Shift+P -> "Shell Command: Install"',
-      }
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      execFile('code', [rootPath], (err) => {
-        if (err) return reject(err)
-        resolve()
-      })
-    })
-
-    for (const file of files ?? []) {
-      await new Promise<void>((resolve, reject) => {
-        execFile('code', ['--goto', `${file.path}:${file.line}:${file.col}`], (err) => {
+    const runCode = (args: string[]) =>
+      new Promise<void>((resolve, reject) => {
+        execFile('code', args, (err) => {
           if (err) return reject(err)
           resolve()
         })
       })
-    }
 
-    return { ok: true }
+    try {
+      execSync('command -v code', { stdio: 'ignore' })
+      await runCode([rootPath])
+      for (const file of files ?? []) {
+        await runCode(['--goto', `${file.path}:${file.line}:${file.col}`])
+      }
+      return { ok: true as const }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      return { error: `Failed to open in VS Code: ${message}` }
+    }
   },
 )
 
