@@ -940,8 +940,9 @@ function scheduleWorkspaceOpenTasks(
     }
 
     const delay = task.runOn?.delay ?? 0
+    const seqAtSchedule = workspaceActivationSeq
     const launch = () => {
-      if (!taskRunner) return
+      if (seqAtSchedule !== workspaceActivationSeq || !taskRunner) return
       taskRunner.run(task.id, ctx).then((execResult) => {
         const result: TaskTriggerResult = {
           taskId: task.id,
@@ -1012,12 +1013,14 @@ ipcMain.on(IpcChannels.TASK_FILE_SAVED, (_event, filePath: string) => {
   const relativePath = relative(rootPath, filePath).split(/[\\/]/).join('/')
   const tasks = taskRunner.getFileSaveTasks(relativePath)
 
+  const seqAtSchedule = workspaceActivationSeq
+
   for (const task of tasks) {
     if (taskRunner.isTaskRunning(task.id)) continue
 
     const delay = task.runOn?.delay ?? 0
     const run = () => {
-      if (!taskRunner) return
+      if (seqAtSchedule !== workspaceActivationSeq || !taskRunner) return
       const ctx = {
         workspaceRoot: rootPath,
         workspaceName: rootPath.split('/').pop() ?? rootPath,
