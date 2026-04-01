@@ -291,6 +291,14 @@ export class AgentManager {
     this.autoApprove = autoApprove
   }
 
+  getActiveSessionCount(): number {
+    return this.activeLoops.size
+  }
+
+  getPendingApprovalCount(): number {
+    return this.pendingApprovals.size
+  }
+
   async destroy(): Promise<void> {
     // Abort all active loops
     for (const [sessionId] of this.activeLoops) {

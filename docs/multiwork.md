@@ -19,6 +19,12 @@ Use these terms precisely throughout this refactor.
 - `workspace switch`
   - a UI focus change between workspaces
   - should not imply runtime destruction
+- `runtime state`
+  - the user-visible and resource-policy posture of a live runtime
+  - canonical states: `foreground`, `backgrounded`, `asleep`, optional `blocked`
+- `runtime status`
+  - the lifecycle and health status of a runtime instance
+  - canonical statuses: `starting`, `running`, `stopping`, `stopped`, `error`
 - `foreground`
   - workspace is visible or actively selected in the UI
 - `backgrounded`
@@ -79,11 +85,11 @@ The result is a false multi-workspace model: the UI suggests concurrency, but on
 - Move global UI concerns into explicit global services instead of panel-local listeners
 - Prefer additive migration over a one-shot rewrite
 
-## Runtime State Machine
+## Runtime Model
 
-The runtime model should explicitly separate UI focus, backend liveness, and resource policy.
+The runtime model should explicitly separate UI focus/resource posture from backend lifecycle/health.
 
-### Primary states
+### Runtime states
 
 - `foreground`
   - workspace is open, selected, or actively edited by the user
@@ -104,15 +110,24 @@ The runtime model should explicitly separate UI focus, backend liveness, and res
     - minimal watchers or reduced watcher handling
     - durable state retained for quick wake-up
 
-### Optional explicit states
+### Optional explicit runtime state
 
 - `blocked`
   - waiting on user approval or other required input
   - should not be treated the same as asleep, because it still needs prominent status and notification handling
+
+### Runtime status
+
+- `starting`
+  - runtime is being initialized and should not yet be treated as fully operational
+- `running`
+  - runtime exists and is healthy enough to do work
+- `stopping`
+  - runtime is tearing down services and should not accept new work
+- `stopped`
+  - runtime is not live
 - `error`
   - runtime is unhealthy and may require recovery, restart, or user intervention
-- `starting`, `stopping`, `stopped`, `degraded`
-  - internal lifecycle states that may still be useful for supervision and telemetry
 
 ### Transition rules
 
@@ -135,7 +150,7 @@ Do not sleep a workspace just because an agent finished. A workspace should only
 
 ### Architectural implication
 
-The runtime state machine is more important than the eventual process model. Get the runtime lifecycle correct first. Process isolation, if needed later, should be an implementation detail behind the `RuntimeHost` boundary.
+The runtime state machine is more important than the eventual process model. Get the split between runtime state and runtime status correct first. Process isolation, if needed later, should be an implementation detail behind the `RuntimeHost` boundary.
 
 ## Target Architecture
 
@@ -151,7 +166,7 @@ Core concepts:
   - starts, looks up, transitions, suspends, resumes, and destroys runtimes
 - `WorkspaceRuntime`
   - owns the services for exactly one workspace
-  - exposes lifecycle and status
+  - exposes runtime state and runtime status
   - is the only place that knows the effective repo root / active worktree / live agents / live tasks for that workspace
 - `RuntimeHost`
   - initially the Electron main process
@@ -216,14 +231,14 @@ Deliverables:
 
 - a written `WorkspaceRuntime` definition
 - a written vocabulary section distinguishing runtime, process, and runtime host
-- a written runtime lifecycle model
-- a written runtime state machine for `foreground`, `backgrounded`, `asleep`, and optional `blocked`
+- a written runtime lifecycle/status model
+- a written runtime state model for `foreground`, `backgrounded`, `asleep`, and optional `blocked`
 - an inventory of current singleton services and where they move
 - a canonical list of all events that must carry `workspaceId`
 
 Decisions to make:
 
-- lifecycle states: `starting`, `running`, `degraded`, `paused`, `stopping`, `stopped`, `error`
+- runtime statuses: `starting`, `running`, `stopping`, `stopped`, `error`
 - runtime states: `foreground`, `backgrounded`, `asleep`, and whether `blocked` is modeled explicitly
 - whether inactive runtimes are always live or can be suspended further under resource pressure
 - whether browser panes and PTYs remain globally managed or become runtime-owned adapters

@@ -17,6 +17,8 @@ import { auditGitignore, appendToGitignore, isAuditDismissed, dismissAudit } fro
 import { TaskRunner } from './tasks/taskRunner'
 import { detectTasks, generateTasksFile, hasTasksFile } from './tasks/taskAutoDetect'
 import { WorkspaceRegistry } from './workspace/workspaceRegistry'
+import { WorkspaceRuntime } from './workspace/WorkspaceRuntime'
+import { WorkspaceRuntimeRegistry } from './workspace/WorkspaceRuntimeRegistry'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './workspace/stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './git/gitDiff'
@@ -29,18 +31,19 @@ import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig,
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
 
-let taskRunner: TaskRunner | null = null
-let agentManager: AgentManager | null = null
-let cliAgentManager: CliAgentManager | null = null
-let conversationStore: ConversationStore | null = null
-let nativeSessionWatcher: ClaudeNativeSessionWatcher | null = null
-let nativeSessionCache: ConversationMeta[] = []
-
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
 const browserPaneManager = new BrowserPaneManager({
   getWindow: () => mainWindow,
   getRendererWebContents: () => contentView?.webContents ?? null,
+})
+const runtimeRegistry = new WorkspaceRuntimeRegistry({
+  createRuntime: (entry) =>
+    new WorkspaceRuntime(entry, {
+      startServices: (runtime) => startRuntimeServices(runtime),
+      stopServices: (runtime) => stopRuntimeServices(runtime),
+      onSnapshotChanged: () => broadcastRuntimeSnapshots(),
+    }),
 })
 
 /**
@@ -255,105 +258,63 @@ function broadcastWorkspaceRegistry(): void {
   contentView?.webContents.send(IpcChannels.WORKSPACE_REGISTRY_CHANGED, workspaces)
 }
 
-/**
- * Activate the workspace identified by `id` and initialize its background services.
- *
- * Updates the registry and persisted workspace root, stops any existing task runner, watchers, and pollers, and — if the workspace has a filesystem root — ensures the workspace `.aide` folder exists, initializes the task runner, and starts file watchers, git polling, and worktree polling. Finally broadcasts the updated workspace registry to the renderer.
- *
- * @param id - The workspace id to activate
- */
-let workspaceActivationSeq = 0
+function broadcastRuntimeSnapshots(): void {
+  contentView?.webContents.send(
+    IpcChannels.WORKSPACE_RUNTIME_SNAPSHOTS_CHANGED,
+    runtimeRegistry.snapshotAll(),
+  )
+}
+
+function getFocusedRuntime(): WorkspaceRuntime | null {
+  return runtimeRegistry.getFocused()
+}
+
+function getTaskRunner(runtime: WorkspaceRuntime | null): TaskRunner | null {
+  return (runtime?.services.taskRunner as TaskRunner | null) ?? null
+}
+
+function getAgentManager(runtime: WorkspaceRuntime | null): AgentManager | null {
+  return (runtime?.services.agentManager as AgentManager | null) ?? null
+}
+
+function getCliAgentManager(runtime: WorkspaceRuntime | null): CliAgentManager | null {
+  return (runtime?.services.cliAgentManager as CliAgentManager | null) ?? null
+}
+
+function getConversationStore(runtime: WorkspaceRuntime | null): ConversationStore | null {
+  return (runtime?.services.conversationStore as ConversationStore | null) ?? null
+}
+
+function getNativeSessionWatcher(runtime: WorkspaceRuntime | null): ClaudeNativeSessionWatcher | null {
+  return (runtime?.services.nativeSessionWatcher as ClaudeNativeSessionWatcher | null) ?? null
+}
+
+function getNativeSessionCache(runtime: WorkspaceRuntime | null): ConversationMeta[] {
+  return (runtime?.services.nativeSessionCache as ConversationMeta[] | null) ?? []
+}
 
 async function activateWorkspace(id: string): Promise<void> {
-  const activationSeq = ++workspaceActivationSeq
   const entry = workspaceRegistry.get(id)
   if (!entry) return
+  const runtime = runtimeRegistry.getOrCreate(entry)
 
   workspaceRegistry.setActive(id)
   store.set('workspaceRoot', entry.rootPath)
   store.set('activeWorktree', null)
-
-  // Stop old pollers before starting new ones
-  taskRunner?.killAll()
-  taskRunner = null
-  stopGitPolling()
-  stopWorktreePolling()
-  stopWatcher()
+  await runtime.start()
+  runtimeRegistry.focus(id)
   if (entry.rootPath) {
-    await ensureAideFolder(entry.rootPath)
-    if (activationSeq !== workspaceActivationSeq) return
-
-    await initTaskRunner(entry.rootPath)
-
     await startWatchers('default', [entry.rootPath])
-    if (activationSeq !== workspaceActivationSeq) {
-      stopWatcher()
-      return
-    }
-
     const getWc = () => contentView?.webContents ?? null
     await startGitPolling(entry.rootPath, getWc)
-    if (activationSeq !== workspaceActivationSeq) {
-      stopGitPolling()
-      stopWatcher()
-      return
-    }
-
     await startWorktreePolling(entry.rootPath, getWc, store)
-    if (activationSeq !== workspaceActivationSeq) {
-      stopWorktreePolling()
-      stopGitPolling()
-      stopWatcher()
-      return
-    }
+  } else {
+    await stopWatcher()
+    stopGitPolling()
+    stopWorktreePolling()
   }
-
-  // Initialize conversation store + agent managers for this workspace
-  await agentManager?.destroy()
-  await cliAgentManager?.destroy()
-  nativeSessionWatcher?.stop()
-  agentManager = null
-  cliAgentManager = null
-  conversationStore = null
-  nativeSessionWatcher = null
-  nativeSessionCache = []
-  if (entry.rootPath) {
-    conversationStore = new ConversationStore(entry.rootPath)
-    const wsId = entry.id
-    nativeSessionWatcher = new ClaudeNativeSessionWatcher({
-      workspaceRoot: entry.rootPath,
-      workspaceId: wsId,
-      emit: (sessions) => {
-        nativeSessionCache = sessions
-        contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
-          workspaceId: wsId,
-          conversations: sessions,
-          source: 'claude-native',
-        })
-      },
-    })
-    void nativeSessionWatcher.start()
-    const permConfig = loadPermissionConfig()
-    agentManager = new AgentManager({
-      config: loadLlmConfig(),
-      workspaceRoot: entry.rootPath,
-      getWebContents: () => contentView?.webContents ?? null,
-      browserPaneManager,
-      permissionTier: permConfig.permissionTier,
-      autoApprove: permConfig.autoApprove,
-      conversationStore,
-    })
-    const resolved = resolveAppDefaults(store)
-    cliAgentManager = new CliAgentManager({
-      workspaceRoot: entry.rootPath,
-      getWebContents: () => contentView?.webContents ?? null,
-      claudeCodePath: resolved['agent.claudeCodePath'],
-      codexPath: resolved['agent.codexPath'],
-      conversationStore,
-    })
-  }
-
   broadcastWorkspaceRegistry()
+  broadcastRuntimeSnapshots()
 }
 
 /**
@@ -389,6 +350,71 @@ function loadPermissionConfig(): { permissionTier: PermissionTier; autoApprove: 
     permissionTier: (userDefaults['agent.permissionTier'] as PermissionTier) || 'confirm',
     autoApprove: (userDefaults['agent.autoApprove'] as Record<string, boolean | ToolPermissionConfig>) || {},
   }
+}
+
+async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
+  const rootPath = runtime.rootPath
+  runtime.clearServices()
+  if (!rootPath) {
+    runtime.refreshWorkload()
+    return
+  }
+
+  await ensureAideFolder(rootPath)
+  await initTaskRunner(runtime, rootPath)
+
+  const conversationStore = new ConversationStore(rootPath)
+  let nativeSessionCache: ConversationMeta[] = []
+  const nativeSessionWatcher = new ClaudeNativeSessionWatcher({
+    workspaceRoot: rootPath,
+    workspaceId: runtime.workspaceId,
+    emit: (sessions) => {
+      nativeSessionCache = sessions
+      runtime.setServices({ nativeSessionCache })
+      runtime.refreshWorkload()
+      contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+        workspaceId: runtime.workspaceId,
+        conversations: sessions,
+        source: 'claude-native',
+      })
+    },
+  })
+  await nativeSessionWatcher.start()
+
+  const permConfig = loadPermissionConfig()
+  const agentManager = new AgentManager({
+    config: loadLlmConfig(),
+    workspaceRoot: rootPath,
+    getWebContents: () => contentView?.webContents ?? null,
+    browserPaneManager,
+    permissionTier: permConfig.permissionTier,
+    autoApprove: permConfig.autoApprove,
+    conversationStore,
+  })
+  const resolved = resolveAppDefaults(store)
+  const cliAgentManager = new CliAgentManager({
+    workspaceRoot: rootPath,
+    getWebContents: () => contentView?.webContents ?? null,
+    claudeCodePath: resolved['agent.claudeCodePath'],
+    codexPath: resolved['agent.codexPath'],
+    conversationStore,
+  })
+
+  runtime.setServices({
+    conversationStore,
+    nativeSessionWatcher,
+    nativeSessionCache,
+    agentManager,
+    cliAgentManager,
+  })
+  runtime.refreshWorkload()
+}
+
+async function stopRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
+  getTaskRunner(runtime)?.killAll()
+  getNativeSessionWatcher(runtime)?.stop()
+  await getAgentManager(runtime)?.destroy()
+  await getCliAgentManager(runtime)?.destroy()
 }
 
 ipcMain.handle(IpcChannels.WORKSPACE_LIST, () => {
@@ -450,30 +476,33 @@ ipcMain.handle(IpcChannels.WORKSPACE_SET_ROOT, async (_event, id: string, rootPa
 ipcMain.handle(IpcChannels.WORKSPACE_REMOVE, async (_event, id: string) => {
   const wasActive = workspaceRegistry.getActiveId() === id
   workspaceRegistry.remove(id)
+  await runtimeRegistry.delete(id)
 
   if (wasActive) {
     const nextId = workspaceRegistry.getActiveId()
     if (nextId) {
       await activateWorkspace(nextId)
     } else {
-      taskRunner?.killAll()
-      taskRunner = null
+      await stopWatcher()
       stopGitPolling()
       stopWorktreePolling()
-      stopWatcher()
+      runtimeRegistry.clearFocus()
       store.set('workspaceRoot', null)
       store.set('activeWorktree', null)
       broadcastWorkspaceRegistry()
+      broadcastRuntimeSnapshots()
     }
     return
   }
 
   broadcastWorkspaceRegistry()
+  broadcastRuntimeSnapshots()
 })
 
 ipcMain.handle(IpcChannels.WORKSPACE_CLOSE, async (_event, id: string) => {
   const wasActive = workspaceRegistry.getActiveId() === id
   workspaceRegistry.close(id)
+  await runtimeRegistry.delete(id)
 
   if (wasActive) {
     const remaining = workspaceRegistry.getSessionWorkspaces()
@@ -481,18 +510,18 @@ ipcMain.handle(IpcChannels.WORKSPACE_CLOSE, async (_event, id: string) => {
     if (nextId) {
       await activateWorkspace(nextId)
     } else {
-      // No workspaces left — clean up all background services
-      taskRunner?.killAll()
-      taskRunner = null
+      await stopWatcher()
       stopGitPolling()
       stopWorktreePolling()
-      stopWatcher()
+      runtimeRegistry.clearFocus()
       store.set('workspaceRoot', null)
       store.set('activeWorktree', null)
       broadcastWorkspaceRegistry()
+      broadcastRuntimeSnapshots()
     }
   } else {
     broadcastWorkspaceRegistry()
+    broadcastRuntimeSnapshots()
   }
 })
 
@@ -502,63 +531,96 @@ ipcMain.handle(IpcChannels.WORKSPACE_SWITCH, async (_event, id: string) => {
 
 ipcMain.handle(IpcChannels.WORKSPACE_UPDATE, (_event, id: string, patch: Partial<{ name: string; icon: string; color: string }>) => {
   workspaceRegistry.update(id, patch)
+  const entry = workspaceRegistry.get(id)
+  if (entry) {
+    runtimeRegistry.get(id)?.syncEntry(entry)
+  }
   broadcastWorkspaceRegistry()
+  broadcastRuntimeSnapshots()
 })
 
 ipcMain.handle(IpcChannels.WORKSPACE_REORDER, (_event, ids: string[]) => {
   workspaceRegistry.reorder(ids)
   broadcastWorkspaceRegistry()
+  broadcastRuntimeSnapshots()
 })
 
 ipcMain.handle(IpcChannels.WORKSPACE_GET_ACTIVE, () => {
   return workspaceRegistry.getActiveId()
 })
 
+ipcMain.handle(IpcChannels.WORKSPACE_RUNTIME_SNAPSHOTS_GET, () => {
+  return runtimeRegistry.snapshotAll()
+})
+
 // ─── Chat / Agent IPC handlers ─────────────────────────────────────
 
 ipcMain.handle(IpcChannels.CHAT_SEND_MESSAGE, async (_event, sessionId: string, content: string) => {
+  const agentManager = getAgentManager(getFocusedRuntime())
   if (!agentManager) return { error: 'No workspace open' }
-  return agentManager.sendMessage(sessionId, content)
+  const result = await agentManager.sendMessage(sessionId, content)
+  getFocusedRuntime()?.refreshWorkload()
+  return result
 })
 
 ipcMain.handle(IpcChannels.CHAT_GET_HISTORY, async (_event, workspaceId: string, conversationId?: string) => {
+  const agentManager = getAgentManager(runtimeRegistry.get(workspaceId))
   if (!agentManager) return null
   return agentManager.getHistory(workspaceId, conversationId)
 })
 
 ipcMain.handle(IpcChannels.CHAT_SET_MODE, async (_event, sessionId: string, mode: ChatMode) => {
+  const agentManager = getAgentManager(getFocusedRuntime())
   agentManager?.setMode(sessionId, mode)
 })
 
 ipcMain.handle(IpcChannels.CHAT_SET_WORKING_SET, async (_event, sessionId: string, paths: string[]) => {
+  const agentManager = getAgentManager(getFocusedRuntime())
   agentManager?.setWorkingSet(sessionId, paths)
 })
 
 ipcMain.handle(IpcChannels.CHAT_TOOL_APPROVE, async (_event, sessionId: string, toolCallId: string) => {
+  const runtime = getFocusedRuntime()
+  const agentManager = getAgentManager(runtime)
   agentManager?.approveToolCall(sessionId, toolCallId)
+  runtime?.refreshWorkload()
 })
 
 ipcMain.handle(IpcChannels.CHAT_TOOL_REJECT, async (_event, sessionId: string, toolCallId: string) => {
+  const runtime = getFocusedRuntime()
+  const agentManager = getAgentManager(runtime)
   agentManager?.rejectToolCall(sessionId, toolCallId)
+  runtime?.refreshWorkload()
 })
 
 ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
+  const runtime = getFocusedRuntime()
+  const agentManager = getAgentManager(runtime)
   agentManager?.stop(sessionId)
+  runtime?.refreshWorkload()
 })
 
 // ─── CLI Agent IPC handlers ─────────────────────────────────────
 
 ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) => {
+  const runtime = runtimeRegistry.get(workspaceId)
+  const cliAgentManager = getCliAgentManager(runtime)
   if (!cliAgentManager) return { error: 'No workspace open' }
-  return cliAgentManager.start(workspaceId, backend, conversationId, worktreePath)
+  const result = await cliAgentManager.start(workspaceId, backend, conversationId, worktreePath)
+  runtime?.refreshWorkload()
+  return result
 })
 
 ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, content: string) => {
+  const cliAgentManager = getCliAgentManager(getFocusedRuntime())
   if (!cliAgentManager) return { error: 'No workspace open' }
-  return cliAgentManager.send(sessionId, content)
+  const result = await cliAgentManager.send(sessionId, content)
+  getFocusedRuntime()?.refreshWorkload()
+  return result
 })
 
 ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: string, sessionId?: string) => {
+  const cliAgentManager = getCliAgentManager(runtimeRegistry.get(workspaceId))
   if (!cliAgentManager) return null
   if (sessionId) {
     const s = cliAgentManager.getSessionById(sessionId)
@@ -571,9 +633,10 @@ ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: st
 ipcMain.handle(
   IpcChannels.CLI_AGENT_LOAD_MESSAGES,
   async (_event, workspaceId: string, conversationId: string): Promise<CliAgentMessage[]> => {
-    if (workspaceRegistry.getActiveId() !== workspaceId) {
-      return []
-    }
+    const runtime = runtimeRegistry.get(workspaceId)
+    const nativeSessionCache = getNativeSessionCache(runtime)
+    const nativeSessionWatcher = getNativeSessionWatcher(runtime)
+    const conversationStore = getConversationStore(runtime)
     const nativeMeta =
       nativeSessionCache.find((c) => c.id === conversationId) ??
       nativeSessionCache.find((c) => c.claudeSessionId === conversationId)
@@ -600,17 +663,25 @@ ipcMain.handle(
 )
 
 ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
+  const runtime = getFocusedRuntime()
+  const cliAgentManager = getCliAgentManager(runtime)
   cliAgentManager?.stop(sessionId)
+  runtime?.refreshWorkload()
 })
 
 // ─── Conversation History IPC handlers ──────────────────────────
 
 ipcMain.handle(IpcChannels.CONVERSATION_LIST, async (_event, workspaceId: string) => {
+  const runtime = runtimeRegistry.get(workspaceId)
+  const conversationStore = getConversationStore(runtime)
+  const nativeSessionCache = getNativeSessionCache(runtime)
   const aideConvos = await conversationStore?.loadIndex() ?? []
   return [...aideConvos, ...nativeSessionCache]
 })
 
 ipcMain.handle(IpcChannels.CONVERSATION_CREATE, async (_event, opts: ConversationCreateOpts) => {
+  const runtime = runtimeRegistry.get(opts.workspaceId)
+  const conversationStore = getConversationStore(runtime)
   if (!conversationStore) return { error: 'No workspace open' }
   const meta = await conversationStore.create(opts)
   // Notify renderer
@@ -623,6 +694,10 @@ ipcMain.handle(IpcChannels.CONVERSATION_CREATE, async (_event, opts: Conversatio
 })
 
 ipcMain.handle(IpcChannels.CONVERSATION_DELETE, async (_event, conversationId: string) => {
+  const runtime = getFocusedRuntime()
+  const conversationStore = getConversationStore(runtime)
+  const agentManager = getAgentManager(runtime)
+  const cliAgentManager = getCliAgentManager(runtime)
   if (!conversationStore) return
   const meta = await conversationStore.get(conversationId)
   await conversationStore.delete(conversationId)
@@ -640,6 +715,8 @@ ipcMain.handle(IpcChannels.CONVERSATION_DELETE, async (_event, conversationId: s
 })
 
 ipcMain.handle(IpcChannels.CONVERSATION_RENAME, async (_event, conversationId: string, title: string) => {
+  const runtime = getFocusedRuntime()
+  const conversationStore = getConversationStore(runtime)
   if (!conversationStore) return
   await conversationStore.updateMeta(conversationId, { title, autoTitled: false, updatedAt: Date.now() })
   const meta = await conversationStore.get(conversationId)
@@ -653,6 +730,7 @@ ipcMain.handle(IpcChannels.CONVERSATION_RENAME, async (_event, conversationId: s
 })
 
 ipcMain.handle(IpcChannels.CONVERSATION_GET, async (_event, conversationId: string) => {
+  const conversationStore = getConversationStore(getFocusedRuntime())
   return conversationStore?.get(conversationId) ?? null
 })
 
@@ -767,16 +845,22 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
   store.set('editorDefaults', current)
 
   // Push agent config updates to AgentManager if an agent.* key changed
-  if (key.startsWith('agent.') && agentManager) {
-    agentManager.updateConfig(loadLlmConfig())
+  if (key.startsWith('agent.')) {
+    const config = loadLlmConfig()
     const permConfig = loadPermissionConfig()
-    agentManager.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+    for (const runtime of runtimeRegistry.list()) {
+      getAgentManager(runtime)?.updateConfig(config)
+      getAgentManager(runtime)?.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+      runtime.refreshWorkload()
+    }
   }
 
   // Push CLI agent path updates
-  if ((key === 'agent.claudeCodePath' || key === 'agent.codexPath') && cliAgentManager) {
+  if (key === 'agent.claudeCodePath' || key === 'agent.codexPath') {
     const appDefs = resolveAppDefaults(store)
-    cliAgentManager.updatePaths(appDefs['agent.claudeCodePath'], appDefs['agent.codexPath'])
+    for (const runtime of runtimeRegistry.list()) {
+      getCliAgentManager(runtime)?.updatePaths(appDefs['agent.claudeCodePath'], appDefs['agent.codexPath'])
+    }
   }
 
   // Broadcast resolved settings
@@ -879,9 +963,6 @@ ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async () => {
   await dismissAudit(rootPath)
 })
 
-/** Whether workspace-open task scheduling is pending (debounce guard). */
-let workspaceOpenScheduled = false
-
 /**
  * Initializes the module-level TaskRunner for the given workspace and forwards its events to the renderer via IPC.
  *
@@ -891,19 +972,27 @@ let workspaceOpenScheduled = false
  *
  * @param rootPath - Filesystem path of the workspace to manage tasks for
  */
-async function initTaskRunner(rootPath: string): Promise<void> {
+async function initTaskRunner(runtime: WorkspaceRuntime, rootPath: string): Promise<void> {
   const getWc = () => contentView?.webContents ?? null
-  workspaceOpenScheduled = false
-  taskRunner = new TaskRunner(rootPath, {
-    onStatusChanged: (execution) => getWc()?.send(IpcChannels.TASK_STATUS_CHANGED, execution),
-    onRequestInput: (request) => getWc()?.send(IpcChannels.TASK_REQUEST_INPUT, request),
+  runtime.resetWorkspaceOpenScheduled()
+  const taskRunner = new TaskRunner(rootPath, {
+    onStatusChanged: (execution) => {
+      getWc()?.send(IpcChannels.TASK_STATUS_CHANGED, execution)
+      runtime.refreshWorkload()
+    },
+    onRequestInput: (request) => {
+      getWc()?.send(IpcChannels.TASK_REQUEST_INPUT, request)
+      runtime.refreshWorkload()
+    },
     onDiagnostics: (diagnostics) => getWc()?.send(IpcChannels.TASK_DIAGNOSTICS, diagnostics),
     onPtyData: (ptyId, data) => getWc()?.send(IpcChannels.PTY_DATA_OUT, ptyId, data),
     onPtyExit: (ptyId, exitCode) => getWc()?.send(IpcChannels.PTY_EXIT, ptyId, exitCode),
   })
+  runtime.setServices({ taskRunner })
   const loaded = await taskRunner.loadTasks()
+  runtime.refreshWorkload()
   if (loaded) {
-    scheduleWorkspaceOpenTasks(rootPath, getWc)
+    scheduleWorkspaceOpenTasks(runtime, rootPath, getWc)
   }
 }
 
@@ -912,11 +1001,13 @@ async function initTaskRunner(rootPath: string): Promise<void> {
  * Skips tasks that are already running (singleton guard) and respects per-task delay.
  */
 function scheduleWorkspaceOpenTasks(
+  runtime: WorkspaceRuntime,
   rootPath: string,
   getWc: () => Electron.WebContents | null,
 ): void {
-  if (!taskRunner || workspaceOpenScheduled) return
-  workspaceOpenScheduled = true
+  const taskRunner = getTaskRunner(runtime)
+  if (!taskRunner || runtime.isWorkspaceOpenScheduled()) return
+  runtime.markWorkspaceOpenScheduled()
 
   const tasks = taskRunner.getWorkspaceOpenTasks()
   if (tasks.length === 0) return
@@ -940,10 +1031,11 @@ function scheduleWorkspaceOpenTasks(
     }
 
     const delay = task.runOn?.delay ?? 0
-    const seqAtSchedule = workspaceActivationSeq
+    const seqAtSchedule = runtime.getLifecycle().activationSeq
     const launch = () => {
-      if (seqAtSchedule !== workspaceActivationSeq || !taskRunner) return
+      if (!runtime.acceptsActivation(seqAtSchedule) || !taskRunner) return
       taskRunner.run(task.id, ctx).then((execResult) => {
+        runtime.refreshWorkload()
         const result: TaskTriggerResult = {
           taskId: task.id,
           taskLabel: task.label,
@@ -964,14 +1056,17 @@ function scheduleWorkspaceOpenTasks(
 }
 
 ipcMain.handle(IpcChannels.TASK_LIST, async () => {
+  const taskRunner = getTaskRunner(getFocusedRuntime())
   if (!taskRunner) return { tasks: [], compounds: [] }
   await taskRunner.loadTasks()
   return { tasks: taskRunner.getTasks(), compounds: taskRunner.getCompounds() }
 })
 
 ipcMain.handle(IpcChannels.TASK_RUN, async (_event, taskId: string, context?: TaskRunContext) => {
+  const runtime = getFocusedRuntime()
+  const taskRunner = getTaskRunner(runtime)
   if (!taskRunner) return { error: 'No workspace open' }
-  const rootPath = store.get('workspaceRoot')
+  const rootPath = runtime?.rootPath ?? null
   if (!rootPath) return { error: 'No workspace open' }
 
   const ctx = {
@@ -981,19 +1076,28 @@ ipcMain.handle(IpcChannels.TASK_RUN, async (_event, taskId: string, context?: Ta
     selectedText: context?.selectedText,
     lineNumber: context?.lineNumber,
   }
-  return taskRunner.run(taskId, ctx)
+  const result = await taskRunner.run(taskId, ctx)
+  runtime?.refreshWorkload()
+  return result
 })
 
 ipcMain.on(IpcChannels.TASK_KILL, (_event, executionId: string) => {
+  const runtime = getFocusedRuntime()
+  const taskRunner = getTaskRunner(runtime)
   taskRunner?.kill(executionId)
+  runtime?.refreshWorkload()
 })
 
 ipcMain.handle(IpcChannels.TASK_RELOAD, async () => {
+  const taskRunner = getTaskRunner(getFocusedRuntime())
   await taskRunner?.loadTasks()
 })
 
 ipcMain.on(IpcChannels.TASK_PROVIDE_INPUT, (_event, requestId: string, value: string | null) => {
+  const runtime = getFocusedRuntime()
+  const taskRunner = getTaskRunner(runtime)
   taskRunner?.provideInput(requestId, value)
+  runtime?.refreshWorkload()
 })
 
 ipcMain.handle(IpcChannels.TASK_GENERATE, async () => {
@@ -1005,27 +1109,31 @@ ipcMain.handle(IpcChannels.TASK_GENERATE, async () => {
 })
 
 ipcMain.on(IpcChannels.TASK_FILE_SAVED, (_event, filePath: string) => {
+  const runtime = runtimeRegistry.findByFilePath(filePath)
+  if (!runtime) return
+  const taskRunner = getTaskRunner(runtime)
   if (!taskRunner) return
-  const rootPath = store.get('workspaceRoot')
+  const rootPath = runtime.rootPath
   if (!rootPath) return
   const getWc = () => contentView?.webContents ?? null
 
   const relativePath = relative(rootPath, filePath).split(/[\\/]/).join('/')
   const tasks = taskRunner.getFileSaveTasks(relativePath)
 
-  const seqAtSchedule = workspaceActivationSeq
+  const seqAtSchedule = runtime.getLifecycle().activationSeq
 
   for (const task of tasks) {
     if (taskRunner.isTaskRunning(task.id)) continue
 
     const delay = task.runOn?.delay ?? 0
     const run = () => {
-      if (seqAtSchedule !== workspaceActivationSeq || !taskRunner) return
+      if (!runtime.acceptsActivation(seqAtSchedule) || !taskRunner) return
       const ctx = {
         workspaceRoot: rootPath,
         workspaceName: rootPath.split('/').pop() ?? rootPath,
       }
       taskRunner.run(task.id, ctx).then((result) => {
+        runtime.refreshWorkload()
         const triggerResult: TaskTriggerResult = {
           taskId: task.id,
           taskLabel: task.label,
@@ -1303,6 +1411,7 @@ app.whenReady().then(async () => {
   if (isClean) {
     console.log('[startup] --clean flag detected, clearing session')
     workspaceRegistry.setSessionWorkspaces([])
+    runtimeRegistry.clearFocus()
     store.set('workspaceRoot', null)
     store.set('activeWorktree', null)
   }
@@ -1349,6 +1458,10 @@ registerGitStatusHandlers()
     await activateWorkspace(validSessionIds[0])
   } else {
     // No workspaces — renderer shows welcome tab (default Dockview layout)
+    await stopWatcher()
+    stopGitPolling()
+    stopWorktreePolling()
+    runtimeRegistry.clearFocus()
     store.set('workspaceRoot', null)
     store.set('activeWorktree', null)
   }
@@ -1370,14 +1483,14 @@ app.on('before-quit', (event) => {
     wc.send(IpcChannels.LIFECYCLE_REQUEST_SAVE)
 
     // Wait for renderer to confirm save, or timeout after 2s
-    const saveTimeout = setTimeout(() => finishQuit(), 2000)
+    const saveTimeout = setTimeout(() => { void finishQuit() }, 2000)
 
     ipcMain.once(IpcChannels.LIFECYCLE_SAVE_COMPLETE, () => {
       clearTimeout(saveTimeout)
-      finishQuit()
+      void finishQuit()
     })
   } else {
-    finishQuit()
+    void finishQuit()
   }
 })
 
@@ -1386,7 +1499,7 @@ app.on('before-quit', (event) => {
  *
  * Persists the current session workspace order to the registry, sets the stored `cleanShutdown` flag to `true`, terminates running tasks and PTYs, stops git/worktree/watch polling, and calls `app.quit()`.
  */
-function finishQuit(): void {
+async function finishQuit(): Promise<void> {
   // Save session state to registry
   const sessionWorkspaces = workspaceRegistry.getAll().map((w) => w.id)
   workspaceRegistry.setSessionWorkspaces(sessionWorkspaces)
@@ -1394,19 +1507,11 @@ function finishQuit(): void {
   // Mark clean shutdown
   store.set('cleanShutdown', true)
 
-  // Clean up resources (async destroy for persistence, but don't block quit)
-  agentManager?.destroy().catch(() => {})
-  agentManager = null
-  cliAgentManager?.destroy().catch(() => {})
-  cliAgentManager = null
-  nativeSessionWatcher?.stop()
-  nativeSessionWatcher = null
-  conversationStore = null
-  taskRunner?.killAll()
   killAllPtys()
   stopGitPolling()
   stopWorktreePolling()
-  stopWatcher()
+  await stopWatcher()
+  await runtimeRegistry.disposeAll()
 
   app.quit()
 }

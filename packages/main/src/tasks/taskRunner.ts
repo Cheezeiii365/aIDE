@@ -177,6 +177,10 @@ export class TaskRunner {
     }
   }
 
+  getPendingInputCount(): number {
+    return this.pendingInputResolvers.size
+  }
+
   /**
    * Topological sort of task dependency graph. Returns ordered task IDs or throws on cycle.
    */

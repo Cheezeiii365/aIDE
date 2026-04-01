@@ -81,6 +81,7 @@ export function AppShell() {
   // Workspace registry
   const {
     workspaces,
+    runtimeSnapshots,
     activeWorkspaceId,
     activeWorkspace,
     switchWorkspace,
@@ -767,6 +768,7 @@ export function AppShell() {
     <div className="app-shell">
       <WorkspaceRibbon
         workspaces={workspaces}
+        runtimeSnapshots={runtimeSnapshots}
         activeWorkspaceId={activeWorkspaceId}
         onSwitch={switchWorkspace}
         onOpenFolder={handleOpenFolder}

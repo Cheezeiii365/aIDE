@@ -1,6 +1,6 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 29, 2026
+> **Last updated:** April 1, 2026
 > **Status:** Active development (Phase 2 in progress)
 
 ---
@@ -1263,6 +1263,7 @@ Track milestone completion here. Update as you go.
 | 4.0b Gitignore security audit | ✅ Complete | `gitignoreAudit.ts`, review modal, command palette command, toast flow |
 | 4.0c Task system | ✅ Complete | `taskRunner.ts`, `taskVariableResolver.ts`, `problemMatcher.ts`, `taskAutoDetect.ts`, `useTasks` hook, `TaskInputModal`, status bar indicator, command palette commands |
 | 4.0d Task runner parity (Phase 1) | ✅ Complete | `runOn.workspaceOpen` auto-triggers, `runOn.fileSave` triggers from editor Cmd-S, `presentation.panel` terminal routing (shared/dedicated/new), editor context variables (`${file}`, `${selectedText}`, `${lineNumber}`), Problems pane (`ProblemsPane.tsx`), singleton task guards, trigger result toasts, diagnostics clear-on-rerun/workspace-switch |
+| 4.0e Workspace runtime boundary | ✅ Complete | Phase 1 runtime ownership landed on top of the Phase 0 contracts. `WorkspaceRuntime` now owns the per-workspace task runner, built-in agent manager, CLI agent manager, conversation store, native session watcher, and runtime workload snapshot state. `WorkspaceRuntimeRegistry` now supervises foreground/background transitions and enumerates runtime snapshots, and the renderer can subscribe to `WORKSPACE_RUNTIME_SNAPSHOTS_CHANGED` for truthful runtime visibility in the workspace ribbon. |
 | 4.1 Workspace creation flow | ✅ Complete | `workspaceRegistry.ts`, `useWorkspaces` hook, ribbon tabs, context menu, Cmd+1-9/Cmd+Shift+[/] switching |
 | 4.2 Workspace switching + state persistence | ✅ Complete | `stateSerializer.ts`, `workspaceStateSerializer.ts`, `workspaceSwitcher.ts`, 30s auto-save, atomic writes, worktree sync fix |
 | 4.3 Agent status in ribbon | ⬜ Not started | |
@@ -1295,6 +1296,136 @@ Track milestone completion here. Update as you go.
 | 6.4 Plugin system foundation | ⬜ Not started | |
 
 **Status key:** ⬜ Not started · 🟡 In progress · ✅ Complete · ⏸ Blocked
+
+---
+
+## Workspace Runtime Boundary
+
+### Why this boundary exists
+
+`packages/main/src/index.ts` still contains two different kinds of state:
+
+- app-wide ownership: `store`, `workspaceRegistry`, `mainWindow`, `contentView`, `browserPaneManager`
+- active-workspace ownership: `taskRunner`, `agentManager`, `cliAgentManager`, `conversationStore`, `nativeSessionWatcher`, `nativeSessionCache`, and activation sequencing state
+
+The runtime boundary freezes that distinction before the service migration begins. The first pass is intentionally additive: the runtime registry and shell exist now, but the existing singleton implementations still live in `index.ts`.
+
+### Phase 0 contracts
+
+Canonical runtime files:
+
+- `packages/main/src/workspace/runtimeTypes.ts`
+- `packages/main/src/workspace/WorkspaceRuntime.ts`
+- `packages/main/src/workspace/WorkspaceRuntimeRegistry.ts`
+
+Canonical state machine vocabulary:
+
+- `WorkspaceId`: stable runtime key, sourced from `WorkspaceEntry['id']`
+- `RuntimeState`: `idle | activating | focused | background | disposed`
+- `RuntimeLifecycle`: activation sequencing + focus/blur/dispose timestamps
+
+The first `WorkspaceRuntime` is a composition root, not a service container implementation. It owns identity, lifecycle state, and empty service slots so later migrations can move services into it without redefining the boundary each time.
+
+### Service ownership inventory
+
+| Service / global | Current owner | Future owner | Migration phase |
+|---|---|---|---|
+| `store` | app-global in `index.ts` | app-global | stays app-wide |
+| `workspaceRegistry` | app-global in `index.ts` | app-global registry backing store | stays app-wide |
+| `mainWindow` | app-global in `index.ts` | app-global | stays app-wide |
+| `contentView` | app-global in `index.ts` | app-global | stays app-wide |
+| `browserPaneManager` | app-global in `index.ts` | app-global | stays app-wide |
+| `taskRunner` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `agentManager` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `cliAgentManager` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `conversationStore` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `nativeSessionWatcher` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `nativeSessionCache` | active-workspace cache in `index.ts` | `WorkspaceRuntime` | later service migration |
+| file watcher internals | hidden module singleton | runtime-scoped instance/registry | later service migration |
+| git polling internals | hidden module singleton | runtime-scoped instance/registry | later service migration |
+| worktree polling internals | hidden module singleton | runtime-scoped instance/registry | later service migration |
+| activation sequence / workspace-open scheduling | process-global in `index.ts` | `WorkspaceRuntime` lifecycle state | moved in boundary phase |
+
+### IPC inventory for later `workspaceId` migration
+
+Already workspace-aware enough for the boundary phase:
+
+- `WORKSPACE_*`
+- `CLI_AGENT_START`
+- `CLI_AGENT_GET_SESSION`
+- `CONVERSATION_CREATE`
+- `BROWSER_CREATE`
+- `BROWSER_DESTROY_WORKSPACE`
+- root-path based helpers such as `STATE_*`, `SEARCH_START`, `FS_LIST_ALL_FILES`, `GIT_DIFF_ORIGINAL`, `OPEN_IN_VSCODE`
+
+Likely needs `workspaceId` added later because the handler still relies on the focused runtime or global active workspace state:
+
+- `WORKSPACE_ROOT_GET`
+- `AIDE_INIT`
+- `AIDE_GET_RESOLVED_SETTINGS`
+- `SETTINGS_GET_WORKSPACE`
+- `SETTINGS_SET_WORKSPACE`
+- `GITIGNORE_AUDIT`
+- `GITIGNORE_APPEND`
+- `GITIGNORE_DISMISS`
+- `GIT_STATUS`
+- `WORKTREE_LIST`
+- `WORKTREE_CREATE`
+- `WORKTREE_REMOVE`
+- `WORKTREE_SET_ACTIVE`
+- `WORKTREE_GET_ACTIVE`
+- `WORKTREE_LIST_BRANCHES`
+- `TASK_LIST`
+- `TASK_RUN`
+- `TASK_RELOAD`
+- `TASK_GENERATE`
+- `TASK_FILE_SAVED`
+- `CHAT_SEND_MESSAGE`
+- `CHAT_SET_MODE`
+- `CHAT_SET_WORKING_SET`
+- `CHAT_TOOL_APPROVE`
+- `CHAT_TOOL_REJECT`
+- `CHAT_STOP`
+- `CLI_AGENT_SEND`
+- `CLI_AGENT_STOP`
+- `CONVERSATION_DELETE`
+- `CONVERSATION_RENAME`
+- `CONVERSATION_GET`
+
+Broadcast payloads that likely need `workspaceId` when multiplexing multiple runtimes:
+
+- `GIT_STATUS_CHANGED`
+- `GIT_BRANCH_CHANGED`
+- `WORKTREE_LIST_CHANGED`
+- `TASK_STATUS_CHANGED`
+- `TASK_REQUEST_INPUT`
+- `TASK_DIAGNOSTICS`
+- `TASK_TRIGGER_RESULT`
+- `TASK_AUTO_DETECT`
+- `GITIGNORE_AUDIT_RESULT`
+- `SETTINGS_CHANGED`
+- `SEARCH_RESULTS`
+- `SEARCH_COMPLETE`
+- `PTY_DATA_OUT`
+- `PTY_EXIT`
+- `CHAT_STREAM_CHUNK`
+- `CHAT_STREAM_END`
+- `CHAT_TOOL_CALL`
+- `CLI_AGENT_STREAM_DELTA`
+- `CLI_AGENT_MESSAGE`
+- `CLI_AGENT_STATUS`
+- `CLI_AGENT_RESULT`
+
+### Phase 1 implementation rule
+
+Phase 1 is additive only:
+
+- `index.ts` activates workspaces by resolving `runtimeRegistry.getOrCreate(entry)` and then focusing that runtime
+- visible behavior remains unchanged
+- no IPC schema changes land yet
+- no service implementation has moved out of `index.ts` yet
+
+That keeps the partial-migration window explicit: ownership is now modeled, but the actual per-service migration can happen incrementally and be tracked service-by-service instead of ad hoc.
 
 ---
 

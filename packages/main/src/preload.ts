@@ -253,6 +253,13 @@ const api: WindowApi = {
     ipcRenderer.on(IpcChannels.WORKSPACE_REGISTRY_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.WORKSPACE_REGISTRY_CHANGED, handler)
   },
+  getWorkspaceRuntimeSnapshots: () =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_RUNTIME_SNAPSHOTS_GET),
+  onWorkspaceRuntimeSnapshotsChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshots: import('@aide/shared').WorkspaceRuntimeSnapshot[]) => callback(snapshots)
+    ipcRenderer.on(IpcChannels.WORKSPACE_RUNTIME_SNAPSHOTS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.WORKSPACE_RUNTIME_SNAPSHOTS_CHANGED, handler)
+  },
 
   // State persistence
   saveWorkspaceState: (rootPath: string, state: AideLocalState): Promise<void> =>

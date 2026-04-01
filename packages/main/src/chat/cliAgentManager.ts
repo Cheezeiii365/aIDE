@@ -348,6 +348,14 @@ export class CliAgentManager {
     this.codexPath = codexPath
   }
 
+  getRunningSessionCount(): number {
+    let count = 0
+    for (const session of this.sessions.values()) {
+      if (session.process) count += 1
+    }
+    return count
+  }
+
   async destroy(): Promise<void> {
     for (const session of this.sessions.values()) {
       if (session.process) {

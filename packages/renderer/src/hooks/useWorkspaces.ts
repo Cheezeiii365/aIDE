@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { WorkspaceEntry } from '@aide/shared'
+import type { WorkspaceEntry, WorkspaceRuntimeSnapshot } from '@aide/shared'
 
 export interface WorkspacesState {
   workspaces: WorkspaceEntry[]
+  runtimeSnapshots: Record<string, WorkspaceRuntimeSnapshot>
   activeWorkspaceId: string | null
   activeWorkspace: WorkspaceEntry | null
   switchWorkspace: (id: string) => Promise<void>
@@ -24,6 +25,7 @@ export interface WorkspacesState {
  */
 export function useWorkspaces(): WorkspacesState {
   const [workspaces, setWorkspaces] = useState<WorkspaceEntry[]>([])
+  const [runtimeSnapshots, setRuntimeSnapshots] = useState<Record<string, WorkspaceRuntimeSnapshot>>({})
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
 
   // Load on mount
@@ -31,9 +33,11 @@ export function useWorkspaces(): WorkspacesState {
     Promise.all([
       window.api.listWorkspaces(),
       window.api.getActiveWorkspaceId(),
-    ]).then(([ws, activeId]) => {
+      window.api.getWorkspaceRuntimeSnapshots(),
+    ]).then(([ws, activeId, snapshots]) => {
       setWorkspaces(ws)
       setActiveWorkspaceId(activeId)
+      setRuntimeSnapshots(Object.fromEntries(snapshots.map((snapshot) => [snapshot.workspaceId, snapshot])))
     })
   }, [])
 
@@ -45,6 +49,12 @@ export function useWorkspaces(): WorkspacesState {
       window.api.getActiveWorkspaceId().then(setActiveWorkspaceId)
     })
     return unsub
+  }, [])
+
+  useEffect(() => {
+    return window.api.onWorkspaceRuntimeSnapshotsChanged((snapshots) => {
+      setRuntimeSnapshots(Object.fromEntries(snapshots.map((snapshot) => [snapshot.workspaceId, snapshot])))
+    })
   }, [])
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null
@@ -89,6 +99,7 @@ export function useWorkspaces(): WorkspacesState {
 
   return {
     workspaces,
+    runtimeSnapshots,
     activeWorkspaceId,
     activeWorkspace,
     switchWorkspace,

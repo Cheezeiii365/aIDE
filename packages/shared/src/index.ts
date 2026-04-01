@@ -170,6 +170,8 @@ export const IpcChannels = {
   WORKSPACE_GET_ACTIVE: 'workspace:get-active',
   WORKSPACE_CREATE_BLANK: 'workspace:create-blank',
   WORKSPACE_SET_ROOT: 'workspace:set-root',
+  WORKSPACE_RUNTIME_SNAPSHOTS_GET: 'workspace-runtime:snapshots-get',
+  WORKSPACE_RUNTIME_SNAPSHOTS_CHANGED: 'workspace-runtime:snapshots-changed',
 
   // State persistence
   STATE_SAVE: 'state:save',
@@ -452,6 +454,43 @@ export interface AppWorkspaceRegistry {
   workspaceOrder: string[]
   activeWorkspaceId: string | null
   lastSessionWorkspaces: string[]
+}
+
+export type WorkspaceRuntimeState =
+  | 'foreground'
+  | 'backgrounded'
+  | 'asleep'
+  | 'blocked'
+
+export type WorkspaceRuntimeStatus =
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'error'
+
+export interface WorkspaceRuntimeWorkloadFlags {
+  agentsRunning: boolean
+  tasksRunning: boolean
+  pendingApproval: boolean
+  pendingUserInput: boolean
+}
+
+export interface WorkspaceRuntimeSnapshot {
+  workspaceId: string
+  rootPath: string | null
+  name: string
+  icon?: string
+  color?: string
+  status: WorkspaceRuntimeStatus
+  state: WorkspaceRuntimeState
+  initialized: boolean
+  servicesAttached: boolean
+  workload: WorkspaceRuntimeWorkloadFlags
+  activationSeq: number
+  lastForegroundedAt: number | null
+  lastBackgroundedAt: number | null
+  lastStoppedAt: number | null
 }
 
 // ─── State Persistence ───────────────────────────
@@ -790,6 +829,8 @@ export interface WindowApi {
   setWorkspaceRoot: (id: string, rootPath: string) => Promise<void>
   getActiveWorkspaceId: () => Promise<string | null>
   onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => () => void
+  getWorkspaceRuntimeSnapshots: () => Promise<WorkspaceRuntimeSnapshot[]>
+  onWorkspaceRuntimeSnapshotsChanged: (callback: (snapshots: WorkspaceRuntimeSnapshot[]) => void) => () => void
 
   // State persistence
   saveWorkspaceState: (rootPath: string, state: AideLocalState) => Promise<void>
