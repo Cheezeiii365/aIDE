@@ -17,7 +17,12 @@ export function collectTaskCommands(getCtx: GetCommandContext): CommandSpec[] {
       def: { id: 'task.run', label: 'Run Task...', category: 'Task' },
       handler: () => {
         void (async () => {
-          const { tasks, compounds } = await window.api.listTasks()
+          const wid = getCtx().getActiveWorkspaceId()
+          if (!wid) {
+            showToast('No active workspace')
+            return
+          }
+          const { tasks, compounds } = await window.api.listTasks(wid)
           const allItems = [
             ...tasks.map((t) => ({ id: t.id, label: t.label, group: t.group })),
             ...compounds.map((c) => ({ id: c.id, label: c.label, group: undefined as string | undefined })),

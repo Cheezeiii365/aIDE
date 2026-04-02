@@ -64,12 +64,14 @@ export function useConversationHistory(workspaceId: string | undefined): UseConv
   }, [workspaceId])
 
   const deleteConversation = useCallback(async (id: string) => {
-    await window.api.conversationDelete(id)
-  }, [])
+    if (!workspaceId) return
+    await window.api.conversationDelete(workspaceId, id)
+  }, [workspaceId])
 
   const renameConversation = useCallback(async (id: string, title: string) => {
-    await window.api.conversationRename(id, title)
-  }, [])
+    if (!workspaceId) return
+    await window.api.conversationRename(workspaceId, id, title)
+  }, [workspaceId])
 
   return {
     conversations,

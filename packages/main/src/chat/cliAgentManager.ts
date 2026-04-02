@@ -328,6 +328,10 @@ export class CliAgentManager {
     return this.toPublicSession(session)
   }
 
+  ownsSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId)
+  }
+
   private toPublicSession(session: CliAgentSessionInternal): CliAgentSession {
     return {
       id: session.id,

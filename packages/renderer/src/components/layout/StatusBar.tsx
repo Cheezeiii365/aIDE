@@ -51,7 +51,7 @@ export function StatusBar({ workspaceId, runningTasks = [] }: StatusBarProps) {
 
   useEffect(() => {
     if (!workspaceId) return undefined
-    window.api.getGitStatus().then((result) => {
+    window.api.getGitStatus(workspaceId).then((result) => {
       if (result) setBranch(result.branch)
     })
     const unsub = window.api.onGitBranchChanged(scopedTo(workspaceId, (payload) => {

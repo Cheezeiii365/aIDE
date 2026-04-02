@@ -252,10 +252,14 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    // Load fresh worktree list for the context menu
-    window.api.listWorktrees().then(setWorktrees)
+    const wid = params?.workspaceId
+    if (wid) {
+      window.api.listWorktrees(wid).then(setWorktrees)
+    } else {
+      setWorktrees([])
+    }
     setContextMenu({ x: e.clientX, y: e.clientY })
-  }, [])
+  }, [params?.workspaceId])
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 

@@ -298,7 +298,9 @@ export function AppShell() {
         {
           label: 'Generate tasks.json',
           onClick: async () => {
-            const result = await window.api.generateTasks()
+            const wid = activeWorkspaceId
+            if (!wid) return
+            const result = await window.api.generateTasks(wid)
             if ('error' in result) {
               showToast(result.error)
             } else {
@@ -809,6 +811,7 @@ export function AppShell() {
             workspaceRoot && worktrees.length > 0 ? (
               <SidebarSection title="Worktrees" defaultExpanded>
                 <WorktreePanel
+                  workspaceId={activeWorkspaceId!}
                   worktrees={worktrees}
                   onSwitch={switchWorktree}
                   onOpenTerminal={(worktreePath) => {

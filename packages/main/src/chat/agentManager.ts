@@ -295,6 +295,11 @@ export class AgentManager {
     return this.activeLoops.size
   }
 
+  /** True if this manager holds an in-memory built-in chat session for the id. */
+  ownsSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId)
+  }
+
   getPendingApprovalCount(): number {
     return this.pendingApprovals.size
   }

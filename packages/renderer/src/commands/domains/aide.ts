@@ -33,7 +33,12 @@ export function collectAideCommands(getCtx: GetCommandContext): CommandSpec[] {
       def: { id: 'aide.generateTasks', label: 'Generate Tasks', category: 'aIDE' },
       handler: () => {
         void (async () => {
-          const result = await window.api.generateTasks()
+          const wid = getCtx().getActiveWorkspaceId()
+          if (!wid) {
+            showToast('No active workspace')
+            return
+          }
+          const result = await window.api.generateTasks(wid)
           if ('error' in result) {
             showToast(result.error)
           } else {

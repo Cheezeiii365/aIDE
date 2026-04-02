@@ -72,7 +72,7 @@ const api: WindowApi = {
   },
 
   // Git
-  getGitStatus: () => ipcRenderer.invoke(IpcChannels.GIT_STATUS),
+  getGitStatus: (workspaceId: string) => ipcRenderer.invoke(IpcChannels.GIT_STATUS, workspaceId),
   onGitStatusChanged: (callback: (payload: GitStatusChangedPayload) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: GitStatusChangedPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.GIT_STATUS_CHANGED, handler)
@@ -111,20 +111,20 @@ const api: WindowApi = {
   },
 
   // Worktrees
-  listWorktrees: () => ipcRenderer.invoke(IpcChannels.WORKTREE_LIST),
-  createWorktree: (opts: WorktreeCreateOpts) =>
-    ipcRenderer.invoke(IpcChannels.WORKTREE_CREATE, opts),
-  removeWorktree: (worktreePath: string) =>
-    ipcRenderer.invoke(IpcChannels.WORKTREE_REMOVE, worktreePath),
-  setActiveWorktree: (worktreePath: string | null) =>
-    ipcRenderer.invoke(IpcChannels.WORKTREE_SET_ACTIVE, worktreePath),
-  getActiveWorktree: () => ipcRenderer.invoke(IpcChannels.WORKTREE_GET_ACTIVE),
+  listWorktrees: (workspaceId: string) => ipcRenderer.invoke(IpcChannels.WORKTREE_LIST, workspaceId),
+  createWorktree: (workspaceId: string, opts: WorktreeCreateOpts) =>
+    ipcRenderer.invoke(IpcChannels.WORKTREE_CREATE, workspaceId, opts),
+  removeWorktree: (workspaceId: string, worktreePath: string) =>
+    ipcRenderer.invoke(IpcChannels.WORKTREE_REMOVE, workspaceId, worktreePath),
+  setActiveWorktree: (workspaceId: string, worktreePath: string | null) =>
+    ipcRenderer.invoke(IpcChannels.WORKTREE_SET_ACTIVE, workspaceId, worktreePath),
+  getActiveWorktree: (workspaceId: string) => ipcRenderer.invoke(IpcChannels.WORKTREE_GET_ACTIVE, workspaceId),
   onWorktreeListChanged: (callback: (payload: WorktreeListChangedPayload) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: WorktreeListChangedPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.WORKTREE_LIST_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.WORKTREE_LIST_CHANGED, handler)
   },
-  listBranches: () => ipcRenderer.invoke(IpcChannels.WORKTREE_LIST_BRANCHES),
+  listBranches: (workspaceId: string) => ipcRenderer.invoke(IpcChannels.WORKTREE_LIST_BRANCHES, workspaceId),
 
   // File listing (quick open)
   listAllFiles: (rootPath: string) => ipcRenderer.invoke(IpcChannels.FS_LIST_ALL_FILES, rootPath),
@@ -196,18 +196,18 @@ const api: WindowApi = {
   },
 
   // Task system
-  listTasks: (): Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }> =>
-    ipcRenderer.invoke(IpcChannels.TASK_LIST),
-  runTask: (taskId: string, context?: TaskRunContext): Promise<{ executionId: string } | { error: string }> =>
-    ipcRenderer.invoke(IpcChannels.TASK_RUN, taskId, context),
-  killTask: (executionId: string) =>
-    ipcRenderer.send(IpcChannels.TASK_KILL, executionId),
-  reloadTasks: (): Promise<void> =>
-    ipcRenderer.invoke(IpcChannels.TASK_RELOAD),
-  generateTasks: (): Promise<{ success: true } | { error: string }> =>
-    ipcRenderer.invoke(IpcChannels.TASK_GENERATE),
-  provideTaskInput: (requestId: string, value: string | null) =>
-    ipcRenderer.send(IpcChannels.TASK_PROVIDE_INPUT, requestId, value),
+  listTasks: (workspaceId: string): Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }> =>
+    ipcRenderer.invoke(IpcChannels.TASK_LIST, workspaceId),
+  runTask: (workspaceId: string, taskId: string, context?: TaskRunContext): Promise<{ executionId: string } | { error: string }> =>
+    ipcRenderer.invoke(IpcChannels.TASK_RUN, workspaceId, taskId, context),
+  killTask: (workspaceId: string, executionId: string) =>
+    ipcRenderer.send(IpcChannels.TASK_KILL, workspaceId, executionId),
+  reloadTasks: (workspaceId: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.TASK_RELOAD, workspaceId),
+  generateTasks: (workspaceId: string): Promise<{ success: true } | { error: string }> =>
+    ipcRenderer.invoke(IpcChannels.TASK_GENERATE, workspaceId),
+  provideTaskInput: (workspaceId: string, requestId: string, value: string | null) =>
+    ipcRenderer.send(IpcChannels.TASK_PROVIDE_INPUT, workspaceId, requestId, value),
   notifyFileSaved: (filePath: string) =>
     ipcRenderer.send(IpcChannels.TASK_FILE_SAVED, filePath),
   onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => {
@@ -422,12 +422,12 @@ const api: WindowApi = {
     ipcRenderer.invoke(IpcChannels.CONVERSATION_LIST, workspaceId),
   conversationCreate: (opts: ConversationCreateOpts): Promise<ConversationMeta> =>
     ipcRenderer.invoke(IpcChannels.CONVERSATION_CREATE, opts),
-  conversationDelete: (conversationId: string): Promise<void> =>
-    ipcRenderer.invoke(IpcChannels.CONVERSATION_DELETE, conversationId),
-  conversationRename: (conversationId: string, title: string): Promise<void> =>
-    ipcRenderer.invoke(IpcChannels.CONVERSATION_RENAME, conversationId, title),
-  conversationGet: (conversationId: string): Promise<ConversationMeta | null> =>
-    ipcRenderer.invoke(IpcChannels.CONVERSATION_GET, conversationId),
+  conversationDelete: (workspaceId: string, conversationId: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_DELETE, workspaceId, conversationId),
+  conversationRename: (workspaceId: string, conversationId: string, title: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_RENAME, workspaceId, conversationId, title),
+  conversationGet: (workspaceId: string, conversationId: string): Promise<ConversationMeta | null> =>
+    ipcRenderer.invoke(IpcChannels.CONVERSATION_GET, workspaceId, conversationId),
   onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: ConversationListChangedPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.CONVERSATION_LIST_CHANGED, handler)

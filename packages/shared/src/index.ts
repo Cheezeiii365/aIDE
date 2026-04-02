@@ -820,7 +820,7 @@ export interface WindowApi {
   onFsWatchEvent: (callback: (events: FsWatchEvent[]) => void) => () => void
 
   // Git
-  getGitStatus: () => Promise<GitStatusResult | null>
+  getGitStatus: (workspaceId: string) => Promise<GitStatusResult | null>
   onGitStatusChanged: (callback: (payload: GitStatusChangedPayload) => void) => () => void
   onGitBranchChanged: (callback: (payload: GitBranchChangedPayload) => void) => () => void
 
@@ -837,13 +837,13 @@ export interface WindowApi {
   onPtyExit: (callback: (payload: PtyExitPayload) => void) => () => void
 
   // Worktrees
-  listWorktrees: () => Promise<WorktreeInfo[]>
-  createWorktree: (opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
-  removeWorktree: (worktreePath: string) => Promise<{ success: true } | { error: string }>
-  setActiveWorktree: (worktreePath: string | null) => Promise<void>
-  getActiveWorktree: () => Promise<string | null>
+  listWorktrees: (workspaceId: string) => Promise<WorktreeInfo[]>
+  createWorktree: (workspaceId: string, opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
+  removeWorktree: (workspaceId: string, worktreePath: string) => Promise<{ success: true } | { error: string }>
+  setActiveWorktree: (workspaceId: string, worktreePath: string | null) => Promise<void>
+  getActiveWorktree: (workspaceId: string) => Promise<string | null>
   onWorktreeListChanged: (callback: (payload: WorktreeListChangedPayload) => void) => () => void
-  listBranches: () => Promise<string[]>
+  listBranches: (workspaceId: string) => Promise<string[]>
 
   // File listing (quick open)
   listAllFiles: (rootPath: string) => Promise<string[]>
@@ -880,12 +880,12 @@ export interface WindowApi {
   onGitignoreAuditResult: (callback: (payload: GitignoreAuditIpcPayload) => void) => () => void
 
   // Task system
-  listTasks: () => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
-  runTask: (taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
-  killTask: (executionId: string) => void
-  reloadTasks: () => Promise<void>
-  generateTasks: () => Promise<{ success: true } | { error: string }>
-  provideTaskInput: (requestId: string, value: string | null) => void
+  listTasks: (workspaceId: string) => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
+  runTask: (workspaceId: string, taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
+  killTask: (workspaceId: string, executionId: string) => void
+  reloadTasks: (workspaceId: string) => Promise<void>
+  generateTasks: (workspaceId: string) => Promise<{ success: true } | { error: string }>
+  provideTaskInput: (workspaceId: string, requestId: string, value: string | null) => void
   notifyFileSaved: (filePath: string) => void
   onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => () => void
   onTaskRequestInput: (callback: (request: TaskInputRequest) => void) => () => void
@@ -968,9 +968,9 @@ export interface WindowApi {
   // ─── Conversation History ────────────────────
   conversationList: (workspaceId: string) => Promise<ConversationMeta[]>
   conversationCreate: (opts: ConversationCreateOpts) => Promise<ConversationMeta>
-  conversationDelete: (conversationId: string) => Promise<void>
-  conversationRename: (conversationId: string, title: string) => Promise<void>
-  conversationGet: (conversationId: string) => Promise<ConversationMeta | null>
+  conversationDelete: (workspaceId: string, conversationId: string) => Promise<void>
+  conversationRename: (workspaceId: string, conversationId: string, title: string) => Promise<void>
+  conversationGet: (workspaceId: string, conversationId: string) => Promise<ConversationMeta | null>
   onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
 
   // VS Code Integration

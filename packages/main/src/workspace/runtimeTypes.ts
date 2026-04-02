@@ -35,11 +35,11 @@ export interface WorkspaceRuntimeServiceSlots {
   conversationStore: unknown | null
   nativeSessionWatcher: unknown | null
   nativeSessionCache: unknown | null
-  /** Populated in Phase 3 — currently a global singleton in fileWatcher.ts */
+  /** Reserved — FS watchers use `fileWatcher.startWatchers(workspaceId)` keyed by runtime id */
   fileWatcher: unknown | null
-  /** Populated in Phase 3 — currently a global singleton in gitStatus.ts */
+  /** Reserved — git polling uses `gitStatus` module map keyed by workspaceId */
   gitStatus: unknown | null
-  /** Populated in Phase 3 — currently a global singleton in worktreeManager.ts */
+  /** Reserved — worktree polling uses `worktreeManager` map keyed by workspaceId */
   worktreeManager: unknown | null
 }
 

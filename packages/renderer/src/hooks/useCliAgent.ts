@@ -101,7 +101,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
       }
     })()
 
-    window.api.conversationGet(conversationId).then(meta => {
+    window.api.conversationGet(workspaceId, conversationId).then(meta => {
       if (!cancelled && meta) setConversationTitle(meta.title)
     }).catch(() => {})
 

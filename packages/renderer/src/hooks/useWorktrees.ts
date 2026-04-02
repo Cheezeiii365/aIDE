@@ -33,8 +33,8 @@ export function useWorktrees(workspaceRoot: string | null, workspaceId: string |
     setWorktrees([])
     setActiveWorktreeState(null)
 
-    window.api.listWorktrees().then(setWorktrees)
-    window.api.getActiveWorktree().then(setActiveWorktreeState)
+    window.api.listWorktrees(workspaceId).then(setWorktrees)
+    window.api.getActiveWorktree(workspaceId).then(setActiveWorktreeState)
 
     // Subscribe to worktree list changes — scoped to this workspace
     const cleanup = window.api.onWorktreeListChanged(scopedTo(workspaceId, (payload) => {
@@ -46,9 +46,10 @@ export function useWorktrees(workspaceRoot: string | null, workspaceId: string |
   }, [workspaceRoot, workspaceId])
 
   const switchWorktree = useCallback(async (worktreePath: string | null) => {
-    await window.api.setActiveWorktree(worktreePath)
+    if (!workspaceId) return
+    await window.api.setActiveWorktree(workspaceId, worktreePath)
     setActiveWorktreeState(worktreePath)
-  }, [])
+  }, [workspaceId])
 
   return { worktrees, activeWorktree, activeRoot, switchWorktree }
 }

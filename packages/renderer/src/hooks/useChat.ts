@@ -59,7 +59,7 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
 
       // Load conversation title from store
       if (session.id) {
-        window.api.conversationGet(session.id).then(meta => {
+        window.api.conversationGet(workspaceId, session.id).then(meta => {
           if (!cancelled && meta) {
             setConversationTitle(meta.title)
           }

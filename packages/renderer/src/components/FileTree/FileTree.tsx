@@ -257,7 +257,7 @@ export function FileTree({ rootPath, workspaceId, onFileOpen, filter = '' }: Pro
 
     if (!rootPath || !workspaceId) return
 
-    window.api.getGitStatus().then((result) => {
+    window.api.getGitStatus(workspaceId).then((result) => {
       if (result) {
         setGitStatus(result.files)
         if (result.ignoredPaths) setIgnoredPaths(new Set(result.ignoredPaths))

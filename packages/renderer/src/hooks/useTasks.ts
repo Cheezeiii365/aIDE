@@ -45,7 +45,7 @@ export function useTasks(workspaceId: string | null): TasksState {
       setDiagnostics([])
       return
     }
-    window.api.listTasks().then(({ tasks: t, compounds: c }) => {
+    window.api.listTasks(workspaceId).then(({ tasks: t, compounds: c }) => {
       setTasks(t)
       setCompounds(c)
     })
@@ -102,19 +102,22 @@ export function useTasks(workspaceId: string | null): TasksState {
       context = { activeFile: filePath, selectedText, lineNumber }
     }
 
-    await window.api.runTask(taskId, context)
-  }, [])
+    if (!workspaceId) return
+    await window.api.runTask(workspaceId, taskId, context)
+  }, [workspaceId])
 
   const killTask = useCallback((executionId: string) => {
-    window.api.killTask(executionId)
-  }, [])
+    if (!workspaceId) return
+    window.api.killTask(workspaceId, executionId)
+  }, [workspaceId])
 
   const reloadTasks = useCallback(async () => {
-    await window.api.reloadTasks()
-    const { tasks: t, compounds: c } = await window.api.listTasks()
+    if (!workspaceId) return
+    await window.api.reloadTasks(workspaceId)
+    const { tasks: t, compounds: c } = await window.api.listTasks(workspaceId)
     setTasks(t)
     setCompounds(c)
-  }, [])
+  }, [workspaceId])
 
   const getLastTaskId = useCallback(() => lastTaskIdRef.current, [])
   const getRunningTasks = useCallback(() => runningTasksRef.current, [])

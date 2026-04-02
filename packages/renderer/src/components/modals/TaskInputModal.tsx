@@ -22,7 +22,7 @@ interface Props {
  * @returns The modal rendered as a React portal into `document.body`.
  */
 export function TaskInputModal({ request, onClose }: Props) {
-  const { input, resolvedDescription, requestId } = request
+  const { input, resolvedDescription, requestId, workspaceId } = request
   const [value, setValue] = useState(input.default ?? '')
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null)
 
@@ -34,25 +34,25 @@ export function TaskInputModal({ request, onClose }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        window.api.provideTaskInput(requestId, null)
+        window.api.provideTaskInput(workspaceId, requestId, null)
         onClose()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [requestId, onClose])
+  }, [workspaceId, requestId, onClose])
 
   const handleSubmit = () => {
     if (input.type === 'confirm') {
-      window.api.provideTaskInput(requestId, 'yes')
+      window.api.provideTaskInput(workspaceId, requestId, 'yes')
     } else {
-      window.api.provideTaskInput(requestId, value)
+      window.api.provideTaskInput(workspaceId, requestId, value)
     }
     onClose()
   }
 
   const handleCancel = () => {
-    window.api.provideTaskInput(requestId, null)
+    window.api.provideTaskInput(workspaceId, requestId, null)
     onClose()
   }
 

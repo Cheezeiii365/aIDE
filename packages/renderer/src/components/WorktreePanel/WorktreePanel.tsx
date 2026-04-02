@@ -5,6 +5,7 @@ import { WorktreeItem } from './WorktreeItem'
 import { CreateWorktreeModal } from './CreateWorktreeModal'
 
 interface Props {
+  workspaceId: string
   worktrees: WorktreeInfo[]
   onSwitch: (worktreePath: string | null) => void
   onOpenTerminal: (worktreePath: string) => void
@@ -27,7 +28,7 @@ interface ContextMenuState {
  * @param onStartAgent - Callback invoked with a worktree path to start an agent chat in that worktree
  * @returns The rendered worktree panel element
  */
-export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal, onStartAgent }: Props) {
+export function WorktreePanel({ workspaceId, worktrees, onSwitch, onOpenTerminal, onStartAgent }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [enteringPaths, setEnteringPaths] = useState<Set<string>>(new Set())
@@ -98,12 +99,12 @@ export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal, onStartAgen
       closeContextMenu()
       return
     }
-    const result = await window.api.removeWorktree(contextMenu.worktree.path)
+    const result = await window.api.removeWorktree(workspaceId, contextMenu.worktree.path)
     if ('error' in result) {
       console.error('Failed to remove worktree:', result.error)
     }
     closeContextMenu()
-  }, [contextMenu, closeContextMenu])
+  }, [contextMenu, closeContextMenu, workspaceId])
 
   const onlyMainWorktree = worktrees.length <= 1
 
@@ -215,7 +216,7 @@ export function WorktreePanel({ worktrees, onSwitch, onOpenTerminal, onStartAgen
       )}
 
       {showCreateModal && (
-        <CreateWorktreeModal onClose={() => setShowCreateModal(false)} />
+        <CreateWorktreeModal workspaceId={workspaceId} onClose={() => setShowCreateModal(false)} />
       )}
     </div>
   )
