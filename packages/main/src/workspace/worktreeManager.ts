@@ -3,7 +3,7 @@ import simpleGit from 'simple-git'
 import { resolve } from 'path'
 import { mkdir } from 'fs/promises'
 import { IpcChannels } from '@aide/shared'
-import type { WorktreeInfo, WorktreeCreateOpts, AppSettings } from '@aide/shared'
+import type { WorktreeInfo, WorktreeCreateOpts, AppSettings, WorktreeListChangedPayload } from '@aide/shared'
 import type Store from 'electron-store'
 import { startGitPolling } from '../git/gitStatus'
 import { startWatchers } from './fileWatcher'
@@ -12,8 +12,13 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let cachedList: WorktreeInfo[] = []
 let lastJson = ''
 let currentRepoRoot: string | null = null
+let currentWorktreeWorkspaceId: string | null = null
 
 type GetWebContents = () => Electron.WebContents | null
+
+function worktreeListPayload(worktrees: WorktreeInfo[]): WorktreeListChangedPayload {
+  return { workspaceId: currentWorktreeWorkspaceId ?? '', worktrees }
+}
 
 /**
  * Produce a filesystem-safe branch name by replacing path separators and removing invalid characters.
@@ -175,7 +180,7 @@ export function registerWorktreeHandlers(
         // Refresh the cached list
         const active = store.get('activeWorktree')
         cachedList = await fetchWorktreeList(currentRepoRoot, active)
-        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
+        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(cachedList))
 
         return { path: targetPath }
       } catch (err: unknown) {
@@ -199,14 +204,15 @@ export function registerWorktreeHandlers(
         if (active === worktreePath) {
           store.set('activeWorktree', null)
           // Restart file watcher and git polling on main repo root
-          await startWatchers('default', [currentRepoRoot])
-          await startGitPolling(currentRepoRoot, getWebContents)
+          const scope = currentWorktreeWorkspaceId ?? 'default'
+          await startWatchers(scope, [currentRepoRoot])
+          await startGitPolling(currentRepoRoot, getWebContents, scope)
         }
 
         // Refresh the cached list
         const newActive = store.get('activeWorktree')
         cachedList = await fetchWorktreeList(currentRepoRoot, newActive)
-        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
+        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(cachedList))
 
         return { success: true }
       } catch (err: unknown) {
@@ -226,18 +232,19 @@ export function registerWorktreeHandlers(
       const roots = worktreePath
         ? [currentRepoRoot, worktreePath]
         : [currentRepoRoot]
-      await startWatchers('default', roots)
+      const scope = currentWorktreeWorkspaceId ?? 'default'
+      await startWatchers(scope, roots)
 
       // Git polling uses the effective root for status
       const effectiveRoot = worktreePath || currentRepoRoot
       if (effectiveRoot) {
-        await startGitPolling(effectiveRoot, getWebContents)
+        await startGitPolling(effectiveRoot, getWebContents, scope)
       }
 
       // Update isCurrent flags and notify renderer
       if (currentRepoRoot) {
         cachedList = await fetchWorktreeList(currentRepoRoot, worktreePath)
-        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
+        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(cachedList))
       }
     },
   )
@@ -271,21 +278,24 @@ export function registerWorktreeHandlers(
  * @param repoRoot - Filesystem path of the repository to poll
  * @param getWebContents - Function that returns the current Electron WebContents used to send IPC updates
  * @param store - Application settings store (used to read the current `activeWorktree`)
+ * @param workspaceId - Workspace runtime that owns this repository context
  */
 export async function startWorktreePolling(
   repoRoot: string,
   getWebContents: GetWebContents,
   store: Store<AppSettings>,
+  workspaceId: string,
 ): Promise<void> {
   stopWorktreePolling()
   currentRepoRoot = repoRoot
+  currentWorktreeWorkspaceId = workspaceId
   lastJson = ''
 
   // Initial fetch — broadcast immediately so the renderer has fresh data
   const active = store.get('activeWorktree')
   cachedList = await fetchWorktreeList(repoRoot, active)
   lastJson = JSON.stringify(cachedList)
-  getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
+  getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(cachedList))
 
   pollTimer = setInterval(async () => {
     const currentActive = store.get('activeWorktree')
@@ -295,7 +305,7 @@ export async function startWorktreePolling(
     if (json !== lastJson) {
       lastJson = json
       cachedList = list
-      getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, list)
+      getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(list))
     }
   }, 5000)
 }
@@ -311,6 +321,7 @@ export function stopWorktreePolling(): void {
     pollTimer = null
   }
   currentRepoRoot = null
+  currentWorktreeWorkspaceId = null
   lastJson = ''
   cachedList = []
 }

@@ -1,6 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
-import type { ThemeName, FsWatchEvent, GitStatusResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts, SearchFileResult, ReplaceOpts, ResolvedSettings, AideProjectSettings, AideInitResult, GitignoreAuditResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskDiagnostic, TaskRunContext, TaskTriggerResult, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode, BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload, BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload } from '@aide/shared'
+import type {
+  ThemeName, FsWatchEvent, GitStatusResult, GitignoreAuditResult, WorktreeInfo, WorktreeCreateOpts, SearchOpts,
+  ReplaceOpts, ResolvedSettings,
+  AideProjectSettings, AideInitResult, AideTask, CompoundTask, TaskExecution, TaskInputRequest, TaskRunContext,
+  TaskTriggerResult, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode,
+  BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload,
+  BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd,
+  ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession,
+  CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload, ConversationMeta, ConversationCreateOpts,
+  ConversationListChangedPayload, GitStatusChangedPayload, GitBranchChangedPayload, WorktreeListChangedPayload,
+  SearchResultsPayload, SearchCompletePayload, GitignoreAuditIpcPayload, TaskDiagnosticsPayload, TaskAutoDetectPayload,
+  PtyDataOutPayload, PtyExitPayload,
+} from '@aide/shared'
 
 const api: WindowApi = {
   // Window controls (frameless window needs these)
@@ -61,13 +73,13 @@ const api: WindowApi = {
 
   // Git
   getGitStatus: () => ipcRenderer.invoke(IpcChannels.GIT_STATUS),
-  onGitStatusChanged: (callback: (status: GitStatusResult) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, status: GitStatusResult) => callback(status)
+  onGitStatusChanged: (callback: (payload: GitStatusChangedPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: GitStatusChangedPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.GIT_STATUS_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.GIT_STATUS_CHANGED, handler)
   },
-  onGitBranchChanged: (callback: (branch: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, branch: string) => callback(branch)
+  onGitBranchChanged: (callback: (payload: GitBranchChangedPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: GitBranchChangedPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.GIT_BRANCH_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.GIT_BRANCH_CHANGED, handler)
   },
@@ -87,15 +99,13 @@ const api: WindowApi = {
     ipcRenderer.send(IpcChannels.PTY_KILL, id),
   ptyKillWorkspace: (workspaceId: string) =>
     ipcRenderer.send(IpcChannels.PTY_KILL_WORKSPACE, workspaceId),
-  onPtyData: (callback: (id: string, data: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, id: string, data: string) =>
-      callback(id, data)
+  onPtyData: (callback: (payload: PtyDataOutPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: PtyDataOutPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.PTY_DATA_OUT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.PTY_DATA_OUT, handler)
   },
-  onPtyExit: (callback: (id: string, exitCode: number) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, id: string, exitCode: number) =>
-      callback(id, exitCode)
+  onPtyExit: (callback: (payload: PtyExitPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: PtyExitPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.PTY_EXIT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.PTY_EXIT, handler)
   },
@@ -109,9 +119,8 @@ const api: WindowApi = {
   setActiveWorktree: (worktreePath: string | null) =>
     ipcRenderer.invoke(IpcChannels.WORKTREE_SET_ACTIVE, worktreePath),
   getActiveWorktree: () => ipcRenderer.invoke(IpcChannels.WORKTREE_GET_ACTIVE),
-  onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, worktrees: WorktreeInfo[]) =>
-      callback(worktrees)
+  onWorktreeListChanged: (callback: (payload: WorktreeListChangedPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: WorktreeListChangedPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.WORKTREE_LIST_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.WORKTREE_LIST_CHANGED, handler)
   },
@@ -122,13 +131,13 @@ const api: WindowApi = {
 
   // Search (find in files)
   searchStart: (opts: SearchOpts) => ipcRenderer.invoke(IpcChannels.SEARCH_START, opts),
-  onSearchResults: (callback: (results: SearchFileResult[]) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, results: SearchFileResult[]) => callback(results)
+  onSearchResults: (callback: (payload: SearchResultsPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: SearchResultsPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.SEARCH_RESULTS, handler)
     return () => ipcRenderer.removeListener(IpcChannels.SEARCH_RESULTS, handler)
   },
-  onSearchComplete: (callback: (summary: { totalMatches: number; totalFiles: number }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, summary: { totalMatches: number; totalFiles: number }) => callback(summary)
+  onSearchComplete: (callback: (payload: SearchCompletePayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: SearchCompletePayload) => callback(payload)
     ipcRenderer.on(IpcChannels.SEARCH_COMPLETE, handler)
     return () => ipcRenderer.removeListener(IpcChannels.SEARCH_COMPLETE, handler)
   },
@@ -180,8 +189,8 @@ const api: WindowApi = {
     ipcRenderer.invoke(IpcChannels.GITIGNORE_APPEND, patterns),
   dismissGitignoreAudit: (): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.GITIGNORE_DISMISS),
-  onGitignoreAuditResult: (callback: (result: GitignoreAuditResult) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, result: GitignoreAuditResult) => callback(result)
+  onGitignoreAuditResult: (callback: (payload: GitignoreAuditIpcPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: GitignoreAuditIpcPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.GITIGNORE_AUDIT_RESULT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.GITIGNORE_AUDIT_RESULT, handler)
   },
@@ -211,13 +220,13 @@ const api: WindowApi = {
     ipcRenderer.on(IpcChannels.TASK_REQUEST_INPUT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.TASK_REQUEST_INPUT, handler)
   },
-  onTaskDiagnostics: (callback: (diagnostics: TaskDiagnostic[]) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, diagnostics: TaskDiagnostic[]) => callback(diagnostics)
+  onTaskDiagnostics: (callback: (payload: TaskDiagnosticsPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: TaskDiagnosticsPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.TASK_DIAGNOSTICS, handler)
     return () => ipcRenderer.removeListener(IpcChannels.TASK_DIAGNOSTICS, handler)
   },
-  onTaskAutoDetect: (callback: (tasks: AideTask[]) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, tasks: AideTask[]) => callback(tasks)
+  onTaskAutoDetect: (callback: (payload: TaskAutoDetectPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: TaskAutoDetectPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.TASK_AUTO_DETECT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.TASK_AUTO_DETECT, handler)
   },
@@ -392,8 +401,8 @@ const api: WindowApi = {
     ipcRenderer.on(IpcChannels.CLI_AGENT_STREAM_DELTA, handler)
     return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_STREAM_DELTA, handler)
   },
-  onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, msg: CliAgentMessage & { sessionId: string }) => callback(msg)
+  onCliAgentMessage: (callback: (msg: CliAgentMessagePayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, msg: CliAgentMessagePayload) => callback(msg)
     ipcRenderer.on(IpcChannels.CLI_AGENT_MESSAGE, handler)
     return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_MESSAGE, handler)
   },

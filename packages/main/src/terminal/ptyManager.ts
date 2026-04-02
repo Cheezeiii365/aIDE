@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import * as os from 'os'
 import * as fs from 'fs'
 import { IpcChannels } from '@aide/shared'
+import type { PtyDataOutPayload, PtyExitPayload } from '@aide/shared'
 import type Store from 'electron-store'
 import type { AppSettings } from '@aide/shared'
 
@@ -87,11 +88,21 @@ export function registerPtyHandlers(
 
     pty.onData((data) => {
       session.scrollback = appendScrollback(session.scrollback, data)
-      getWebContents()?.send(IpcChannels.PTY_DATA_OUT, id, data)
+      const payload: PtyDataOutPayload = {
+        workspaceId: session.workspaceId,
+        ptyId: id,
+        data,
+      }
+      getWebContents()?.send(IpcChannels.PTY_DATA_OUT, payload)
     })
 
     pty.onExit(({ exitCode }) => {
-      getWebContents()?.send(IpcChannels.PTY_EXIT, id, exitCode)
+      const payload: PtyExitPayload = {
+        workspaceId: session.workspaceId,
+        ptyId: id,
+        exitCode,
+      }
+      getWebContents()?.send(IpcChannels.PTY_EXIT, payload)
       ptys.delete(id)
     })
 

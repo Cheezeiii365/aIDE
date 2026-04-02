@@ -384,6 +384,7 @@ export class AgentManager {
 
       if (!signal.aborted && turnCount >= this.config.maxTurns) {
         this.send(IpcChannels.CHAT_STREAM_END, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           messageId: currentMessageId,
           stopReason: 'error',
@@ -395,6 +396,7 @@ export class AgentManager {
       if (!signal.aborted) {
         const error = err instanceof Error ? err.message : 'Unknown error'
         this.send(IpcChannels.CHAT_STREAM_END, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           messageId: currentMessageId,
           stopReason: 'error',
@@ -446,6 +448,7 @@ export class AgentManager {
           case 'text_delta':
             textBuffer += event.text
             this.send(IpcChannels.CHAT_STREAM_CHUNK, {
+              workspaceId: session.workspaceId,
               sessionId: session.id,
               messageId,
               delta: event.text,
@@ -514,6 +517,7 @@ export class AgentManager {
 
     // Send stream end
     this.send(IpcChannels.CHAT_STREAM_END, {
+      workspaceId: session.workspaceId,
       sessionId: session.id,
       messageId,
       stopReason: stopReason as ChatStreamEnd['stopReason'],
@@ -553,6 +557,7 @@ export class AgentManager {
         tc.autoApproved = true
         session.status = 'tool_running'
         this.send(IpcChannels.CHAT_TOOL_CALL, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           toolCall: tc,
         } satisfies ChatToolCallPayload)
@@ -560,6 +565,7 @@ export class AgentManager {
         // Needs manual approval
         session.status = 'awaiting_approval'
         this.send(IpcChannels.CHAT_TOOL_CALL, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           toolCall: tc,
         } satisfies ChatToolCallPayload)

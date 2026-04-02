@@ -45,7 +45,10 @@ export function collectViewCommands(getCtx: GetCommandContext): CommandSpec[] {
           id: 'findInFiles',
           component: 'findInFiles',
           title: 'Find in Files',
-          params: { workspaceRoot: ctx.getActiveWorktreeRoot() },
+          params: {
+            workspaceRoot: ctx.getActiveWorktreeRoot() ?? '',
+            workspaceId: ctx.getActiveWorkspaceId() ?? '',
+          },
           position: terminalPanel ? { referencePanel: terminalPanel } : undefined,
         })
       },

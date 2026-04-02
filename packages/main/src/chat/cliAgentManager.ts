@@ -22,7 +22,7 @@ import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
   AgentBackend, CliAgentProcessStatus, CliAgentMessage,
   CliAgentSession, CliAgentStreamDelta,
-  CliAgentStatusPayload, CliAgentResultPayload,
+  CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
   ConversationListChangedPayload,
 } from '@aide/shared'
 import { StructuredOutputParser, type ParsedEvent } from '../terminal/structuredOutputParser'
@@ -631,6 +631,7 @@ export class CliAgentManager {
         const text = (delta.text as string) ?? ''
         if (text) {
           const streamDelta: CliAgentStreamDelta = {
+            workspaceId: session.workspaceId,
             sessionId: session.id,
             messageId: (event.uuid as string) ?? session.id,
             delta: text,
@@ -689,6 +690,7 @@ export class CliAgentManager {
     this.emitMessage(session, msg)
 
     const resultPayload: CliAgentResultPayload = {
+      workspaceId: session.workspaceId,
       sessionId: session.id,
       durationMs,
       totalCostUsd: session.totalCostUsd,
@@ -710,6 +712,7 @@ export class CliAgentManager {
 
   private emitStatus(session: CliAgentSessionInternal): void {
     const payload: CliAgentStatusPayload = {
+      workspaceId: session.workspaceId,
       sessionId: session.id,
       processStatus: session.processStatus,
       error: session.lastError,
@@ -718,7 +721,8 @@ export class CliAgentManager {
   }
 
   private emitMessage(session: CliAgentSessionInternal, msg: CliAgentMessage): void {
-    this.getWebContents()?.send(IpcChannels.CLI_AGENT_MESSAGE, { ...msg, sessionId: session.id })
+    const ipcMsg: CliAgentMessagePayload = { ...msg, workspaceId: session.workspaceId, sessionId: session.id }
+    this.getWebContents()?.send(IpcChannels.CLI_AGENT_MESSAGE, ipcMsg)
 
     if (session.processStatus === 'rate_limited' && msg.type !== 'status') {
       this.setStatus(session, 'running')

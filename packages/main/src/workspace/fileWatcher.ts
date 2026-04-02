@@ -99,7 +99,7 @@ function createFsEventHandler(rootPath: string, scopeId: string) {
     setTimeout(() => pendingPaths.delete(fullPath), 50)
 
     const { type, isDirectory } = await resolveEvent(fullPath)
-    eventBuffer.push({ type, path: fullPath, isDirectory, scopeId })
+    eventBuffer.push({ type, path: fullPath, isDirectory, scopeId, workspaceId: scopeId })
     scheduleFlush()
   }
 }

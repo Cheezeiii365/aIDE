@@ -1,10 +1,11 @@
 import { ipcMain } from 'electron'
 import simpleGit from 'simple-git'
 import { IpcChannels } from '@aide/shared'
-import type { GitFileStatus, GitStatusResult } from '@aide/shared'
+import type { GitBranchChangedPayload, GitFileStatus, GitStatusChangedPayload, GitStatusResult } from '@aide/shared'
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let currentRoot: string | null = null
+let pollingWorkspaceId: string | null = null
 let lastJson = ''
 let lastBranch = ''
 let lastIgnoredJson = ''
@@ -88,9 +89,11 @@ export function registerGitStatusHandlers(): void {
 export async function startGitPolling(
   rootPath: string,
   getWebContents: GetWebContents,
+  workspaceId: string,
 ): Promise<void> {
   stopGitPolling()
   currentRoot = rootPath
+  pollingWorkspaceId = workspaceId
   lastJson = ''
   lastBranch = ''
   lastIgnoredJson = ''
@@ -103,8 +106,10 @@ export async function startGitPolling(
     lastIgnoredJson = JSON.stringify(initial.ignoredPaths)
     const wc = getWebContents()
     if (wc) {
-      wc.send(IpcChannels.GIT_STATUS_CHANGED, initial)
-      wc.send(IpcChannels.GIT_BRANCH_CHANGED, initial.branch)
+      const statusPayload: GitStatusChangedPayload = { workspaceId, status: initial }
+      wc.send(IpcChannels.GIT_STATUS_CHANGED, statusPayload)
+      const branchPayload: GitBranchChangedPayload = { workspaceId, branch: initial.branch }
+      wc.send(IpcChannels.GIT_BRANCH_CHANGED, branchPayload)
     }
   }
 
@@ -115,17 +120,20 @@ export async function startGitPolling(
     const wc = getWebContents()
     if (!wc) return
 
+    const wid = pollingWorkspaceId ?? workspaceId
     const json = JSON.stringify(result.files)
     const ignoredJson = JSON.stringify(result.ignoredPaths)
     if (json !== lastJson || ignoredJson !== lastIgnoredJson) {
       lastJson = json
       lastIgnoredJson = ignoredJson
-      wc.send(IpcChannels.GIT_STATUS_CHANGED, result)
+      const statusPayload: GitStatusChangedPayload = { workspaceId: wid, status: result }
+      wc.send(IpcChannels.GIT_STATUS_CHANGED, statusPayload)
     }
 
     if (result.branch !== lastBranch) {
       lastBranch = result.branch
-      wc.send(IpcChannels.GIT_BRANCH_CHANGED, result.branch)
+      const branchPayload: GitBranchChangedPayload = { workspaceId: wid, branch: result.branch }
+      wc.send(IpcChannels.GIT_BRANCH_CHANGED, branchPayload)
     }
   }, 3000)
 }
@@ -142,6 +150,7 @@ export function stopGitPolling(): void {
     pollTimer = null
   }
   currentRoot = null
+  pollingWorkspaceId = null
   lastJson = ''
   lastBranch = ''
   lastIgnoredJson = ''

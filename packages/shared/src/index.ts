@@ -16,7 +16,7 @@ export type {
 export type {
   AgentBackend, CliAgentProcessStatus,
   CliAgentMessage, CliAgentStreamDelta, CliAgentSession,
-  CliAgentStatusPayload, CliAgentResultPayload,
+  CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
 } from './cliAgentTypes'
 export type {
   ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
@@ -35,7 +35,7 @@ import type {
 } from './agentTypes'
 import type {
   AgentBackend, CliAgentStreamDelta, CliAgentMessage,
-  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload,
+  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
 } from './cliAgentTypes'
 import type {
   ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
@@ -269,7 +269,10 @@ export interface FsWatchEvent {
   type: FsEventType
   path: string
   isDirectory: boolean
+  /** Watcher scope key (same as `workspaceId` when watching a workspace root). */
   scopeId: string
+  /** Workspace that owns this watch scope; equals `scopeId` for per-workspace watchers. */
+  workspaceId: string
 }
 
 export type GitFileStatus = 'M' | 'A' | '?' | 'D' | 'C'
@@ -280,12 +283,30 @@ export interface GitStatusResult {
   ignoredPaths?: string[]
 }
 
+/** Main → renderer: file status / ignored paths changed for a repository. */
+export interface GitStatusChangedPayload {
+  workspaceId: string
+  status: GitStatusResult
+}
+
+/** Main → renderer: current branch changed for a repository. */
+export interface GitBranchChangedPayload {
+  workspaceId: string
+  branch: string
+}
+
 export interface WorktreeInfo {
   path: string
   branch: string
   isMain: boolean
   isDirty: boolean
   isCurrent: boolean
+}
+
+/** Main → renderer: worktree list updated for one workspace runtime. */
+export interface WorktreeListChangedPayload {
+  workspaceId: string
+  worktrees: WorktreeInfo[]
 }
 
 export interface WorktreeCreateOpts {
@@ -312,6 +333,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 // Search types (find in files)
 export interface SearchOpts {
+  /** Workspace that initiated the search (included on result batches). */
+  workspaceId: string
   query: string
   rootPath: string
   isRegex: boolean
@@ -330,6 +353,19 @@ export interface SearchMatch {
 export interface SearchFileResult {
   filePath: string
   matches: SearchMatch[]
+}
+
+/** Main → renderer: incremental search hits. */
+export interface SearchResultsPayload {
+  workspaceId: string
+  results: SearchFileResult[]
+}
+
+/** Main → renderer: search finished. */
+export interface SearchCompletePayload {
+  workspaceId: string
+  totalMatches: number
+  totalFiles: number
 }
 
 export interface ReplaceOpts {
@@ -436,6 +472,12 @@ export interface AideInitResult {
 export interface GitignoreAuditResult {
   missing: { pattern: string; category: string }[]
   total: number
+}
+
+/** Main → renderer: gitignore audit for a workspace folder. */
+export interface GitignoreAuditIpcPayload {
+  workspaceId: string
+  result: GitignoreAuditResult
 }
 
 // ─── Workspace Registry ──────────────────────────
@@ -549,27 +591,32 @@ export interface BrowserHostUpdate {
 
 export interface BrowserDidNavigatePayload {
   paneId: string
+  workspaceId: string
   url: string
 }
 
 export interface BrowserPageTitlePayload {
   paneId: string
+  workspaceId: string
   title: string
 }
 
 export interface BrowserLoadingPayload {
   paneId: string
+  workspaceId: string
   loading: boolean
 }
 
 export interface BrowserCanNavigatePayload {
   paneId: string
+  workspaceId: string
   canGoBack: boolean
   canGoForward: boolean
 }
 
 export interface BrowserFocusPayload {
   paneId: string
+  workspaceId: string
   focused: boolean
 }
 
@@ -656,9 +703,16 @@ export interface AideTasksFile {
   }
 }
 
+/** Main → renderer: task auto-detect suggested tasks for a workspace. */
+export interface TaskAutoDetectPayload {
+  workspaceId: string
+  tasks: AideTask[]
+}
+
 export type TaskExecutionStatus = 'running' | 'succeeded' | 'failed' | 'killed'
 
 export interface TaskExecution {
+  workspaceId: string
   executionId: string
   taskId: string
   taskLabel: string
@@ -671,6 +725,7 @@ export interface TaskExecution {
 }
 
 export interface TaskInputRequest {
+  workspaceId: string
   requestId: string
   input: TaskInput
   resolvedDescription: string
@@ -685,6 +740,12 @@ export interface TaskDiagnostic {
   source: string
 }
 
+/** Main → renderer: batched problem matcher output for a workspace. */
+export interface TaskDiagnosticsPayload {
+  workspaceId: string
+  diagnostics: TaskDiagnostic[]
+}
+
 export interface TaskRunContext {
   activeFile?: string
   selectedText?: string
@@ -694,11 +755,26 @@ export interface TaskRunContext {
 export type TaskTriggerSource = 'workspaceOpen' | 'fileSave' | 'manual'
 
 export interface TaskTriggerResult {
+  workspaceId: string
   taskId: string
   taskLabel: string
   source: TaskTriggerSource
   outcome: 'started' | 'skipped' | 'failed'
   message?: string
+}
+
+/** Main → renderer: PTY output (user or task terminal). */
+export interface PtyDataOutPayload {
+  workspaceId: string | null
+  ptyId: string
+  data: string
+}
+
+/** Main → renderer: PTY process exited. */
+export interface PtyExitPayload {
+  workspaceId: string | null
+  ptyId: string
+  exitCode: number
 }
 
 /** Single source of truth for the preload bridge API shape. */
@@ -745,8 +821,8 @@ export interface WindowApi {
 
   // Git
   getGitStatus: () => Promise<GitStatusResult | null>
-  onGitStatusChanged: (callback: (status: GitStatusResult) => void) => () => void
-  onGitBranchChanged: (callback: (branch: string) => void) => () => void
+  onGitStatusChanged: (callback: (payload: GitStatusChangedPayload) => void) => () => void
+  onGitBranchChanged: (callback: (payload: GitBranchChangedPayload) => void) => () => void
 
   // Git diff
   getGitFileOriginal: (rootPath: string | null, filePath: string) => Promise<{ content: string | null }>
@@ -757,8 +833,8 @@ export interface WindowApi {
   ptyResize: (id: string, cols: number, rows: number) => void
   ptyKill: (id: string) => void
   ptyKillWorkspace: (workspaceId: string) => void
-  onPtyData: (callback: (id: string, data: string) => void) => () => void
-  onPtyExit: (callback: (id: string, exitCode: number) => void) => () => void
+  onPtyData: (callback: (payload: PtyDataOutPayload) => void) => () => void
+  onPtyExit: (callback: (payload: PtyExitPayload) => void) => () => void
 
   // Worktrees
   listWorktrees: () => Promise<WorktreeInfo[]>
@@ -766,7 +842,7 @@ export interface WindowApi {
   removeWorktree: (worktreePath: string) => Promise<{ success: true } | { error: string }>
   setActiveWorktree: (worktreePath: string | null) => Promise<void>
   getActiveWorktree: () => Promise<string | null>
-  onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => () => void
+  onWorktreeListChanged: (callback: (payload: WorktreeListChangedPayload) => void) => () => void
   listBranches: () => Promise<string[]>
 
   // File listing (quick open)
@@ -774,8 +850,8 @@ export interface WindowApi {
 
   // Search (find in files)
   searchStart: (opts: SearchOpts) => Promise<void>
-  onSearchResults: (callback: (results: SearchFileResult[]) => void) => () => void
-  onSearchComplete: (callback: (summary: { totalMatches: number; totalFiles: number }) => void) => () => void
+  onSearchResults: (callback: (payload: SearchResultsPayload) => void) => () => void
+  onSearchComplete: (callback: (payload: SearchCompletePayload) => void) => () => void
   searchCancel: () => void
   searchReplace: (opts: ReplaceOpts) => Promise<{ success: true; skipped: number } | { error: string }>
 
@@ -801,7 +877,7 @@ export interface WindowApi {
   auditGitignore: () => Promise<GitignoreAuditResult>
   appendToGitignore: (patterns: string[]) => Promise<void>
   dismissGitignoreAudit: () => Promise<void>
-  onGitignoreAuditResult: (callback: (result: GitignoreAuditResult) => void) => () => void
+  onGitignoreAuditResult: (callback: (payload: GitignoreAuditIpcPayload) => void) => () => void
 
   // Task system
   listTasks: () => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
@@ -813,8 +889,8 @@ export interface WindowApi {
   notifyFileSaved: (filePath: string) => void
   onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => () => void
   onTaskRequestInput: (callback: (request: TaskInputRequest) => void) => () => void
-  onTaskDiagnostics: (callback: (diagnostics: TaskDiagnostic[]) => void) => () => void
-  onTaskAutoDetect: (callback: (tasks: AideTask[]) => void) => () => void
+  onTaskDiagnostics: (callback: (payload: TaskDiagnosticsPayload) => void) => () => void
+  onTaskAutoDetect: (callback: (payload: TaskAutoDetectPayload) => void) => () => void
   onTaskTriggerResult: (callback: (result: TaskTriggerResult) => void) => () => void
 
   // Workspace registry
@@ -885,7 +961,7 @@ export interface WindowApi {
   cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
   cliAgentLoadMessages: (workspaceId: string, conversationId: string) => Promise<CliAgentMessage[]>
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
-  onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
+  onCliAgentMessage: (callback: (msg: CliAgentMessagePayload) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void
   onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => () => void
 

@@ -1,7 +1,7 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** April 1, 2026
-> **Status:** Active development (Phase 2 in progress)
+> **Last updated:** April 2, 2026
+> **Status:** Active development
 
 ---
 
@@ -1264,6 +1264,7 @@ Track milestone completion here. Update as you go.
 | 4.0c Task system | ✅ Complete | `taskRunner.ts`, `taskVariableResolver.ts`, `problemMatcher.ts`, `taskAutoDetect.ts`, `useTasks` hook, `TaskInputModal`, status bar indicator, command palette commands |
 | 4.0d Task runner parity (Phase 1) | ✅ Complete | `runOn.workspaceOpen` auto-triggers, `runOn.fileSave` triggers from editor Cmd-S, `presentation.panel` terminal routing (shared/dedicated/new), editor context variables (`${file}`, `${selectedText}`, `${lineNumber}`), Problems pane (`ProblemsPane.tsx`), singleton task guards, trigger result toasts, diagnostics clear-on-rerun/workspace-switch |
 | 4.0e Workspace runtime boundary | ✅ Complete | Phase 1 runtime ownership landed on top of the Phase 0 contracts. `WorkspaceRuntime` now owns the per-workspace task runner, built-in agent manager, CLI agent manager, conversation store, native session watcher, and runtime workload snapshot state. `WorkspaceRuntimeRegistry` now supervises foreground/background transitions and enumerates runtime snapshots, and the renderer can subscribe to `WORKSPACE_RUNTIME_SNAPSHOTS_CHANGED` for truthful runtime visibility in the workspace ribbon. Phase 1 verified 2026-04-01: test mocks and lint fixed. File watcher, git polling, and worktree polling remain global singletons until Phase 3 service migration (per additive-only rule). |
+| 4.0f Workspace-scoped main→renderer IPC (multi-work Phase 2) | ✅ Complete | Runtime broadcasts are workspace-addressable: shared payloads carry `workspaceId` (or envelopes) for chat/CLI streams, tasks, git status/branch, worktree list, FS watch, search batches/completion, gitignore audit, PTY data/exit (`PtyDataOutPayload` / `PtyExitPayload` single-object IPC), and related `WindowApi` / preload wiring. Renderer hooks and panes filter or route by `workspaceId` so background workspaces do not corrupt the focused shell’s state. See `docs/multiwork.md` Phase 2. Verified 2026-04-02: `pnpm exec tsc` clean on shared/main/renderer. |
 | 4.1 Workspace creation flow | ✅ Complete | `workspaceRegistry.ts`, `useWorkspaces` hook, ribbon tabs, context menu, Cmd+1-9/Cmd+Shift+[/] switching |
 | 4.2 Workspace switching + state persistence | ✅ Complete | `stateSerializer.ts`, `workspaceStateSerializer.ts`, `workspaceSwitcher.ts`, 30s auto-save, atomic writes, worktree sync fix |
 | 4.3 Agent status in ribbon | ⬜ Not started | |
@@ -1415,6 +1416,8 @@ Broadcast payloads that likely need `workspaceId` when multiplexing multiple run
 - `CLI_AGENT_MESSAGE`
 - `CLI_AGENT_STATUS`
 - `CLI_AGENT_RESULT`
+
+**Phase 2 (2026-04-02):** The broadcast channels in the list above now use typed payloads that include `workspaceId` (or an envelope with `workspaceId`) wherever main can emit from a specific workspace runtime; renderer subscribers treat focus and delivery as orthogonal. Global channels (theme, zoom, workspace registry list, lifecycle) stay unscoped. Phase 3 service migration can re-home git/worktree/file-watch polling per runtime without another IPC shape break for these events.
 
 ### Phase 1 implementation rule
 

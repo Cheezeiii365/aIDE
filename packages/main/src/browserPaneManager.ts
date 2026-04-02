@@ -147,6 +147,7 @@ export class BrowserPaneManager {
       event.preventDefault()
       this.sendToRenderer(IpcChannels.BROWSER_PAGE_TITLE_UPDATED, {
         paneId,
+        workspaceId: managed.workspaceId,
         title,
       } satisfies BrowserPageTitlePayload)
     })
@@ -156,6 +157,7 @@ export class BrowserPaneManager {
       managed.hasLoadedOnce = true
       this.sendToRenderer(IpcChannels.BROWSER_DID_NAVIGATE, {
         paneId,
+        workspaceId: managed.workspaceId,
         url,
       } satisfies BrowserDidNavigatePayload)
       this.emitCanNavigateState(paneId, managed)
@@ -165,6 +167,7 @@ export class BrowserPaneManager {
       managed.currentUrl = url
       this.sendToRenderer(IpcChannels.BROWSER_DID_NAVIGATE, {
         paneId,
+        workspaceId: managed.workspaceId,
         url,
       } satisfies BrowserDidNavigatePayload)
       this.emitCanNavigateState(paneId, managed)
@@ -173,6 +176,7 @@ export class BrowserPaneManager {
     view.webContents.on('did-start-loading', () => {
       this.sendToRenderer(IpcChannels.BROWSER_LOADING_CHANGED, {
         paneId,
+        workspaceId: managed.workspaceId,
         loading: true,
       } satisfies BrowserLoadingPayload)
     })
@@ -180,6 +184,7 @@ export class BrowserPaneManager {
     view.webContents.on('did-stop-loading', () => {
       this.sendToRenderer(IpcChannels.BROWSER_LOADING_CHANGED, {
         paneId,
+        workspaceId: managed.workspaceId,
         loading: false,
       } satisfies BrowserLoadingPayload)
       this.emitCanNavigateState(paneId, managed)
@@ -188,6 +193,7 @@ export class BrowserPaneManager {
     view.webContents.on('focus', () => {
       this.sendToRenderer(IpcChannels.BROWSER_FOCUS_CHANGED, {
         paneId,
+        workspaceId: managed.workspaceId,
         focused: true,
       } satisfies BrowserFocusPayload)
     })
@@ -195,6 +201,7 @@ export class BrowserPaneManager {
     view.webContents.on('blur', () => {
       this.sendToRenderer(IpcChannels.BROWSER_FOCUS_CHANGED, {
         paneId,
+        workspaceId: managed.workspaceId,
         focused: false,
       } satisfies BrowserFocusPayload)
     })
@@ -378,6 +385,7 @@ export class BrowserPaneManager {
   private emitCanNavigateState(paneId: string, managed: ManagedBrowserPane): void {
     this.sendToRenderer(IpcChannels.BROWSER_CAN_NAVIGATE_CHANGED, {
       paneId,
+      workspaceId: managed.workspaceId,
       canGoBack: managed.view.webContents.canGoBack(),
       canGoForward: managed.view.webContents.canGoForward(),
     } satisfies BrowserCanNavigatePayload)

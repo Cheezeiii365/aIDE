@@ -22,6 +22,7 @@ import '../../styles/inline-diff.css'
 interface EditorPaneParams {
   filePath: string
   workspaceRoot?: string | null
+  workspaceId?: string
   jumpToLine?: number
   jumpToColumn?: number
   zoomFactor?: number
@@ -287,8 +288,14 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     const unsub = window.api.onFsWatchEvent(async (events) => {
       const view = viewRef.current
       if (!view) return
+      const wid = paramsRef.current.workspaceId
 
-      const relevant = events.filter((e) => e.path === filePath && !e.isDirectory)
+      const relevant = events.filter(
+        (e) =>
+          (!wid || e.workspaceId === wid)
+          && e.path === filePath
+          && !e.isDirectory,
+      )
       if (relevant.length === 0) return
 
       const hasDelete = relevant.some((e) => e.type === 'delete')

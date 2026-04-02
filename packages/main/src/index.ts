@@ -5,7 +5,20 @@ import { execFile, execSync } from 'child_process'
 import { readdir, readFile, writeFile as fsWriteFile, stat, mkdir, rm, rename } from 'fs/promises'
 import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
-import type { AppSettings, ThemeName, DirEntry, SearchOpts, ReplaceOpts, TaskRunContext, TaskTriggerResult } from '@aide/shared'
+import type {
+  AppSettings,
+  ThemeName,
+  DirEntry,
+  SearchOpts,
+  ReplaceOpts,
+  TaskRunContext,
+  TaskTriggerResult,
+  TaskDiagnosticsPayload,
+  GitignoreAuditIpcPayload,
+  TaskAutoDetectPayload,
+  PtyDataOutPayload,
+  PtyExitPayload,
+} from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './terminal/ptyManager'
 import { registerFileWatcherHandlers, startWatchers, stopWatcher } from './workspace/fileWatcher'
 import { registerGitStatusHandlers, startGitPolling, stopGitPolling } from './git/gitStatus'
@@ -26,7 +39,16 @@ import { AgentManager } from './chat/agentManager'
 import { CliAgentManager } from './chat/cliAgentManager'
 import { ConversationStore } from './chat/conversationStore'
 import { ClaudeNativeSessionWatcher } from './chat/claudeNativeSessionWatcher'
-import type { ChatMode, LlmProviderConfig, PermissionTier, ToolPermissionConfig, AgentBackend, ConversationCreateOpts, ConversationMeta, CliAgentMessage } from '@aide/shared'
+import type {
+  ChatMode,
+  LlmProviderConfig,
+  PermissionTier,
+  ToolPermissionConfig,
+  AgentBackend,
+  ConversationCreateOpts,
+  ConversationMeta,
+  CliAgentMessage,
+} from '@aide/shared'
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
@@ -304,10 +326,10 @@ async function activateWorkspace(id: string): Promise<void> {
   await runtime.start()
   runtimeRegistry.focus(id)
   if (entry.rootPath) {
-    await startWatchers('default', [entry.rootPath])
+    await startWatchers(entry.id, [entry.rootPath])
     const getWc = () => contentView?.webContents ?? null
-    await startGitPolling(entry.rootPath, getWc)
-    await startWorktreePolling(entry.rootPath, getWc, store)
+    await startGitPolling(entry.rootPath, getWc, entry.id)
+    await startWorktreePolling(entry.rootPath, getWc, store, entry.id)
   } else {
     await stopWatcher()
     stopGitPolling()
@@ -427,9 +449,11 @@ ipcMain.handle(IpcChannels.WORKSPACE_CREATE, async (_event, rootPath: string) =>
 
   // Auto-detect tasks (non-blocking)
   if (!hasTasksFile(rootPath)) {
+    const wid = entry.id
     detectTasks(rootPath).then((tasks) => {
       if (tasks.length > 0) {
-        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, tasks)
+        const payload: TaskAutoDetectPayload = { workspaceId: wid, tasks }
+        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, payload)
       }
     })
   }
@@ -439,7 +463,8 @@ ipcMain.handle(IpcChannels.WORKSPACE_CREATE, async (_event, rootPath: string) =>
     if (dismissed) return
     const auditResult = await auditGitignore(rootPath)
     if (auditResult.missing.length > 0) {
-      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
+      const payload: GitignoreAuditIpcPayload = { workspaceId: entry.id, result: auditResult }
+      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, payload)
     }
   })
 
@@ -459,7 +484,8 @@ ipcMain.handle(IpcChannels.WORKSPACE_SET_ROOT, async (_event, id: string, rootPa
   if (!hasTasksFile(rootPath)) {
     detectTasks(rootPath).then((tasks) => {
       if (tasks.length > 0) {
-        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, tasks)
+        const payload: TaskAutoDetectPayload = { workspaceId: id, tasks }
+        contentView?.webContents.send(IpcChannels.TASK_AUTO_DETECT, payload)
       }
     })
   }
@@ -468,7 +494,8 @@ ipcMain.handle(IpcChannels.WORKSPACE_SET_ROOT, async (_event, id: string, rootPa
     if (dismissed) return
     const auditResult = await auditGitignore(rootPath)
     if (auditResult.missing.length > 0) {
-      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
+      const payload: GitignoreAuditIpcPayload = { workspaceId: id, result: auditResult }
+      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, payload)
     }
   })
 })
@@ -812,7 +839,9 @@ ipcMain.handle(IpcChannels.AIDE_INIT, async () => {
   if (!dismissed) {
     const auditResult = await auditGitignore(rootPath)
     if (auditResult.missing.length > 0) {
-      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, auditResult)
+      const wid = workspaceRegistry.getActiveId() ?? ''
+      const payload: GitignoreAuditIpcPayload = { workspaceId: wid, result: auditResult }
+      contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, payload)
     }
   }
 
@@ -975,7 +1004,8 @@ ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async () => {
 async function initTaskRunner(runtime: WorkspaceRuntime, rootPath: string): Promise<void> {
   const getWc = () => contentView?.webContents ?? null
   runtime.resetWorkspaceOpenScheduled()
-  const taskRunner = new TaskRunner(rootPath, {
+  const wid = runtime.workspaceId
+  const taskRunner = new TaskRunner(rootPath, wid, {
     onStatusChanged: (execution) => {
       getWc()?.send(IpcChannels.TASK_STATUS_CHANGED, execution)
       runtime.refreshWorkload()
@@ -984,9 +1014,18 @@ async function initTaskRunner(runtime: WorkspaceRuntime, rootPath: string): Prom
       getWc()?.send(IpcChannels.TASK_REQUEST_INPUT, request)
       runtime.refreshWorkload()
     },
-    onDiagnostics: (diagnostics) => getWc()?.send(IpcChannels.TASK_DIAGNOSTICS, diagnostics),
-    onPtyData: (ptyId, data) => getWc()?.send(IpcChannels.PTY_DATA_OUT, ptyId, data),
-    onPtyExit: (ptyId, exitCode) => getWc()?.send(IpcChannels.PTY_EXIT, ptyId, exitCode),
+    onDiagnostics: (diagnostics) => {
+      const payload: TaskDiagnosticsPayload = { workspaceId: wid, diagnostics }
+      getWc()?.send(IpcChannels.TASK_DIAGNOSTICS, payload)
+    },
+    onPtyData: (ptyId, data) => {
+      const payload: PtyDataOutPayload = { workspaceId: wid, ptyId, data }
+      getWc()?.send(IpcChannels.PTY_DATA_OUT, payload)
+    },
+    onPtyExit: (ptyId, exitCode) => {
+      const payload: PtyExitPayload = { workspaceId: wid, ptyId, exitCode }
+      getWc()?.send(IpcChannels.PTY_EXIT, payload)
+    },
   })
   runtime.setServices({ taskRunner })
   const loaded = await taskRunner.loadTasks()
@@ -1020,6 +1059,7 @@ function scheduleWorkspaceOpenTasks(
   for (const task of tasks) {
     if (taskRunner.isTaskRunning(task.id)) {
       const result: TaskTriggerResult = {
+        workspaceId: runtime.workspaceId,
         taskId: task.id,
         taskLabel: task.label,
         source: 'workspaceOpen',
@@ -1037,6 +1077,7 @@ function scheduleWorkspaceOpenTasks(
       taskRunner.run(task.id, ctx).then((execResult) => {
         runtime.refreshWorkload()
         const result: TaskTriggerResult = {
+          workspaceId: runtime.workspaceId,
           taskId: task.id,
           taskLabel: task.label,
           source: 'workspaceOpen',
@@ -1135,6 +1176,7 @@ ipcMain.on(IpcChannels.TASK_FILE_SAVED, (_event, filePath: string) => {
       taskRunner.run(task.id, ctx).then((result) => {
         runtime.refreshWorkload()
         const triggerResult: TaskTriggerResult = {
+          workspaceId: runtime.workspaceId,
           taskId: task.id,
           taskLabel: task.label,
           source: 'fileSave',
@@ -1361,8 +1403,8 @@ ipcMain.handle(IpcChannels.SEARCH_START, async (_event, opts: SearchOpts) => {
 
   startSearch(
     opts,
-    (results) => contentView?.webContents.send(IpcChannels.SEARCH_RESULTS, results),
-    (summary) => contentView?.webContents.send(IpcChannels.SEARCH_COMPLETE, summary),
+    (payload) => contentView?.webContents.send(IpcChannels.SEARCH_RESULTS, payload),
+    (payload) => contentView?.webContents.send(IpcChannels.SEARCH_COMPLETE, payload),
     excludeGlobs,
   )
 })

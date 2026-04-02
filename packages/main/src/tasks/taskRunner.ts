@@ -45,11 +45,13 @@ export class TaskRunner {
   private completedExitCodes = new Map<string, number>()
   private lastTaskId: string | null = null
   private rootPath: string
+  private readonly workspaceId: string
   private callbacks: TaskRunnerCallbacks
   private pendingInputResolvers = new Map<string, (value: string | null) => void>()
 
-  constructor(rootPath: string, callbacks: TaskRunnerCallbacks) {
+  constructor(rootPath: string, workspaceId: string, callbacks: TaskRunnerCallbacks) {
     this.rootPath = rootPath
+    this.workspaceId = workspaceId
     this.callbacks = callbacks
   }
 
@@ -159,6 +161,7 @@ export class TaskRunner {
     return new Promise<string | null>((resolve) => {
       this.pendingInputResolvers.set(requestId, resolve)
       this.callbacks.onRequestInput({
+        workspaceId: this.workspaceId,
         requestId,
         input,
         resolvedDescription,
@@ -232,6 +235,7 @@ export class TaskRunner {
         if (value === null) {
           // User cancelled
           const execution: TaskExecution = {
+            workspaceId: this.workspaceId,
             executionId: randomUUID(),
             taskId: task.id,
             taskLabel: task.label,
@@ -258,6 +262,7 @@ export class TaskRunner {
       const confirmed = await this.requestInput(confirmInput, ctx)
       if (confirmed !== 'yes') {
         const execution: TaskExecution = {
+          workspaceId: this.workspaceId,
           executionId: randomUUID(),
           taskId: task.id,
           taskLabel: task.label,
@@ -329,6 +334,7 @@ export class TaskRunner {
     })
 
     const execution: TaskExecution = {
+      workspaceId: this.workspaceId,
       executionId: randomUUID(),
       taskId: task.id,
       taskLabel: task.label,

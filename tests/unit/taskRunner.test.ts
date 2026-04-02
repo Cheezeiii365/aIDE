@@ -54,6 +54,7 @@ describe('Task system types', () => {
 
   it('TaskExecution includes panelPolicy and closeOnExit', () => {
     const exec: TaskExecution = {
+      workspaceId: 'ws-1',
       executionId: 'exec-1',
       taskId: 'build',
       taskLabel: 'Build',
@@ -69,6 +70,7 @@ describe('Task system types', () => {
 
   it('TaskExecution panelPolicy and closeOnExit are optional', () => {
     const exec: TaskExecution = {
+      workspaceId: 'ws-1',
       executionId: 'exec-2',
       taskId: 'test',
       taskLabel: 'Test',

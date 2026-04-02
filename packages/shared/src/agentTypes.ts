@@ -50,12 +50,14 @@ export interface ChatSession {
 // ─── Streaming Payloads ─────────────────────────────────────────────
 
 export interface ChatStreamChunk {
+  workspaceId: string
   sessionId: string
   messageId: string
   delta: string
 }
 
 export interface ChatStreamEnd {
+  workspaceId: string
   sessionId: string
   messageId: string
   stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop' | 'error'
@@ -63,6 +65,7 @@ export interface ChatStreamEnd {
 }
 
 export interface ChatToolCallPayload {
+  workspaceId: string
   sessionId: string
   toolCall: ToolCall
 }
