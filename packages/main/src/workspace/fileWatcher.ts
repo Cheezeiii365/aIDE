@@ -193,8 +193,8 @@ export async function startWatchers(scopeId: string, roots: string[]): Promise<v
 }
 
 /**
- * Convenience wrapper — watch a single root under the 'default' scope.
- * Replaces the old single-root startWatcher API.
+ * Legacy single-root helper using scope id `default`.
+ * Prefer {@link startWatchers} with a workspace id as scope for multi-workspace runs.
  */
 export async function startWatcher(rootPath: string): Promise<void> {
   await startWatchers('default', [rootPath])
@@ -237,18 +237,15 @@ export async function stopWatchers(scopeId?: string): Promise<void> {
 }
 
 /**
- * Stop all watchers (backward-compatible alias).
+ * Stop every watcher scope. Prefer {@link stopWatchers} with a workspace scope id when tearing down one runtime.
  */
 export async function stopWatcher(): Promise<void> {
   await stopWatchers()
 }
 
 /**
- * Registers IPC handlers for starting and stopping filesystem watchers and stores a function to access renderer WebContents.
- *
- * The handler for 'fs:watch-start' accepts a root path and initiates watching that path. The handler for 'fs:watch-stop' stops active watchers.
- *
- * @param webContentsFn - A function that returns the current WebContents instance (or null) used to send filesystem events to the renderer
+ * Legacy `fs:watch-start` / `fs:watch-stop` IPC using the `default` scope only.
+ * Workspace file watching uses {@link startWatchers}(workspaceId, roots) from the main runtime path; these handlers remain for external/tests.
  */
 export function registerFileWatcherHandlers(
   webContentsFn: () => WebContents | null,
@@ -256,11 +253,13 @@ export function registerFileWatcherHandlers(
   getWebContents = webContentsFn
 
   ipcMain.handle('fs:watch-start', async (_event, rootPath: string) => {
+    console.warn('[fileWatcher] fs:watch-start is legacy; prefer workspace-scoped watchers')
     await startWatcher(rootPath)
   })
 
   ipcMain.handle('fs:watch-stop', async () => {
-    await stopWatcher()
+    console.warn('[fileWatcher] fs:watch-stop is legacy; stops all scopes')
+    await stopWatchers()
   })
 }
 

@@ -146,9 +146,9 @@ const api: WindowApi = {
   searchReplace: (opts: ReplaceOpts) => ipcRenderer.invoke(IpcChannels.SEARCH_REPLACE, opts),
 
   // .aide project folder
-  aideInit: () => ipcRenderer.invoke(IpcChannels.AIDE_INIT),
-  getResolvedSettings: (): Promise<ResolvedSettings> =>
-    ipcRenderer.invoke(IpcChannels.AIDE_GET_RESOLVED_SETTINGS),
+  aideInit: (workspaceId?: string | null) => ipcRenderer.invoke(IpcChannels.AIDE_INIT, workspaceId),
+  getResolvedSettings: (workspaceId?: string | null): Promise<ResolvedSettings> =>
+    ipcRenderer.invoke(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, workspaceId),
   onAideInitResult: (callback: (result: AideInitResult) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, result: AideInitResult) => callback(result)
     ipcRenderer.on(IpcChannels.AIDE_INIT_RESULT, handler)
@@ -160,10 +160,10 @@ const api: WindowApi = {
     ipcRenderer.invoke(IpcChannels.SETTINGS_GET_USER),
   setUserSetting: (key: string, value: unknown | undefined): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.SETTINGS_SET_USER, key, value),
-  getWorkspaceSettings: (): Promise<AideProjectSettings> =>
-    ipcRenderer.invoke(IpcChannels.SETTINGS_GET_WORKSPACE),
-  setWorkspaceSetting: (key: string, value: unknown | undefined): Promise<void> =>
-    ipcRenderer.invoke(IpcChannels.SETTINGS_SET_WORKSPACE, key, value),
+  getWorkspaceSettings: (workspaceId?: string | null): Promise<AideProjectSettings> =>
+    ipcRenderer.invoke(IpcChannels.SETTINGS_GET_WORKSPACE, workspaceId),
+  setWorkspaceSetting: (key: string, value: unknown | undefined, workspaceId?: string | null): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.SETTINGS_SET_WORKSPACE, key, value, workspaceId),
   getBuiltInDefaults: (): Promise<ResolvedSettings> =>
     ipcRenderer.invoke(IpcChannels.SETTINGS_GET_DEFAULTS),
   onSettingsChanged: (callback: (resolved: ResolvedSettings) => void) => {
@@ -184,12 +184,12 @@ const api: WindowApi = {
   },
 
   // Gitignore security audit
-  auditGitignore: (): Promise<GitignoreAuditResult> =>
-    ipcRenderer.invoke(IpcChannels.GITIGNORE_AUDIT),
-  appendToGitignore: (patterns: string[]): Promise<void> =>
-    ipcRenderer.invoke(IpcChannels.GITIGNORE_APPEND, patterns),
-  dismissGitignoreAudit: (): Promise<void> =>
-    ipcRenderer.invoke(IpcChannels.GITIGNORE_DISMISS),
+  auditGitignore: (workspaceId?: string | null): Promise<GitignoreAuditResult> =>
+    ipcRenderer.invoke(IpcChannels.GITIGNORE_AUDIT, workspaceId),
+  appendToGitignore: (patterns: string[], workspaceId?: string | null): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.GITIGNORE_APPEND, patterns, workspaceId),
+  dismissGitignoreAudit: (workspaceId?: string | null): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.GITIGNORE_DISMISS, workspaceId),
   onGitignoreAuditResult: (callback: (payload: GitignoreAuditIpcPayload) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: GitignoreAuditIpcPayload) => callback(payload)
     ipcRenderer.on(IpcChannels.GITIGNORE_AUDIT_RESULT, handler)

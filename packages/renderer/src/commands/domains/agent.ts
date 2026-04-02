@@ -73,7 +73,7 @@ export function collectAgentCommands(getCtx: GetCommandContext): CommandSpec[] {
           (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
         )
 
-        void window.api.getResolvedSettings().then((resolved) => {
+        void window.api.getResolvedSettings(workspaceId).then((resolved) => {
           const backend = resolved['agent.backend'] ?? 'built-in'
           if (backend === 'claude-code' || backend === 'codex') {
             api.addPanel({

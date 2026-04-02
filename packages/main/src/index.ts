@@ -21,7 +21,7 @@ import type {
   PendingToolApprovalInfo,
 } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './terminal/ptyManager'
-import { registerFileWatcherHandlers, startWatchers, stopWatcher, stopWatchers } from './workspace/fileWatcher'
+import { registerFileWatcherHandlers, startWatchers, stopWatchers } from './workspace/fileWatcher'
 import {
   registerGitStatusHandlers,
   startGitPollingForWorkspace,
@@ -46,6 +46,11 @@ import { WorkspaceRegistry } from './workspace/workspaceRegistry'
 import { WorkspaceRuntime } from './workspace/WorkspaceRuntime'
 import { WorkspaceRuntimeRegistry } from './workspace/WorkspaceRuntimeRegistry'
 import { getEffectiveWorkspaceRoot } from './workspace/effectiveWorkspaceRoot'
+import {
+  resolveEffectiveRootForWorkspace,
+  resolveRepoRootForWorkspace,
+  resolveWorkspaceIdForIpc,
+} from './workspace/workspaceRootResolution'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './workspace/stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './git/gitDiff'
@@ -282,13 +287,7 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
 })
 
 ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, (_event, workspaceId?: string) => {
-  const wid = workspaceId ?? workspaceRegistry.getActiveId()
-  if (wid) {
-    const entry = workspaceRegistry.get(wid)
-    const root = entry?.rootPath ?? null
-    if (root) return getEffectiveWorkspaceRoot(wid, root)
-  }
-  return store.get('workspaceRoot')
+  return resolveEffectiveRootForWorkspace(workspaceRegistry, workspaceId)
 })
 
 /**
@@ -355,7 +354,6 @@ async function activateWorkspace(id: string): Promise<void> {
   const runtime = runtimeRegistry.getOrCreate(entry)
 
   workspaceRegistry.setActive(id)
-  store.set('workspaceRoot', entry.rootPath)
   await runtime.start()
   runtimeRegistry.focus(id)
   broadcastWorkspaceRegistry()
@@ -560,12 +558,10 @@ ipcMain.handle(IpcChannels.WORKSPACE_REMOVE, async (_event, id: string) => {
     if (nextId) {
       await activateWorkspace(nextId)
     } else {
-      await stopWatcher()
+      await stopWatchers()
       stopAllGitPolling()
       stopAllWorktreePolling()
       runtimeRegistry.clearFocus()
-      store.set('workspaceRoot', null)
-      store.set('activeWorktree', null)
       broadcastWorkspaceRegistry()
       broadcastRuntimeSnapshots()
     }
@@ -587,12 +583,10 @@ ipcMain.handle(IpcChannels.WORKSPACE_CLOSE, async (_event, id: string) => {
     if (nextId) {
       await activateWorkspace(nextId)
     } else {
-      await stopWatcher()
+      await stopWatchers()
       stopAllGitPolling()
       stopAllWorktreePolling()
       runtimeRegistry.clearFocus()
-      store.set('workspaceRoot', null)
-      store.set('activeWorktree', null)
       broadcastWorkspaceRegistry()
       broadcastRuntimeSnapshots()
     }
@@ -890,10 +884,11 @@ ipcMain.on(IpcChannels.BROWSER_UNSUPPRESS_OVERLAYS, () => {
 })
 
 // Full .aide initialization (on-demand from command palette)
-ipcMain.handle(IpcChannels.AIDE_INIT, async () => {
-  const rootPath = store.get('workspaceRoot')
+ipcMain.handle(IpcChannels.AIDE_INIT, async (_event, workspaceId?: string | null) => {
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
   if (!rootPath) return { error: 'No workspace folder open' }
 
+  const wid = resolveWorkspaceIdForIpc(workspaceRegistry, workspaceId)
   const initResult = await ensureAideFolder(rootPath)
 
   // Generate tasks if none exist
@@ -908,8 +903,7 @@ ipcMain.handle(IpcChannels.AIDE_INIT, async () => {
   const dismissed = await isAuditDismissed(rootPath)
   if (!dismissed) {
     const auditResult = await auditGitignore(rootPath)
-    if (auditResult.missing.length > 0) {
-      const wid = workspaceRegistry.getActiveId() ?? ''
+    if (auditResult.missing.length > 0 && wid) {
       const payload: GitignoreAuditIpcPayload = { workspaceId: wid, result: auditResult }
       contentView?.webContents.send(IpcChannels.GITIGNORE_AUDIT_RESULT, payload)
     }
@@ -919,8 +913,8 @@ ipcMain.handle(IpcChannels.AIDE_INIT, async () => {
 })
 
 // .aide settings IPC handler
-ipcMain.handle(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, async () => {
-  const rootPath = store.get('workspaceRoot')
+ipcMain.handle(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, async (_event, workspaceId?: string | null) => {
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
   if (!rootPath) return resolveAppDefaults(store)
   return resolveSettings(rootPath, store)
 })
@@ -962,16 +956,16 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
     }
   }
 
-  // Broadcast resolved settings
-  const rootPath = store.get('workspaceRoot')
+  // Broadcast resolved settings for the UI-active workspace (project layer), if any
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, undefined)
   const resolved = rootPath
     ? await resolveSettings(rootPath, store)
     : resolveAppDefaults(store)
   contentView?.webContents.send(IpcChannels.SETTINGS_CHANGED, resolved)
 })
 
-ipcMain.handle(IpcChannels.SETTINGS_GET_WORKSPACE, async () => {
-  const rootPath = store.get('workspaceRoot')
+ipcMain.handle(IpcChannels.SETTINGS_GET_WORKSPACE, async (_event, workspaceId?: string | null) => {
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
   if (!rootPath) return {}
   const settingsPath = join(rootPath, '.aide', 'settings.json')
   if (!existsSync(settingsPath)) return {}
@@ -983,11 +977,11 @@ ipcMain.handle(IpcChannels.SETTINGS_GET_WORKSPACE, async () => {
   }
 })
 
-ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, value: unknown) => {
+ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, value: unknown, workspaceId?: string | null) => {
   // Block sensitive agent keys from being written to project-level settings
   if (SENSITIVE_AGENT_KEYS.has(key)) return
 
-  const rootPath = store.get('workspaceRoot')
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
   if (!rootPath) return
 
   const settingsPath = join(rootPath, '.aide', 'settings.json')
@@ -1044,20 +1038,20 @@ ipcMain.handle(IpcChannels.KEYBINDINGS_SET, async (_event, rules: { key: string;
 })
 
 // Gitignore security audit IPC handlers
-ipcMain.handle(IpcChannels.GITIGNORE_AUDIT, async () => {
-  const rootPath = store.get('workspaceRoot')
+ipcMain.handle(IpcChannels.GITIGNORE_AUDIT, async (_event, workspaceId?: string | null) => {
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
   if (!rootPath) return { missing: [], total: 0 }
   return auditGitignore(rootPath)
 })
 
-ipcMain.handle(IpcChannels.GITIGNORE_APPEND, async (_event, patterns: string[]) => {
-  const rootPath = store.get('workspaceRoot')
+ipcMain.handle(IpcChannels.GITIGNORE_APPEND, async (_event, patterns: string[], workspaceId?: string | null) => {
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
   if (!rootPath) return
   await appendToGitignore(rootPath, patterns)
 })
 
-ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async () => {
-  const rootPath = store.get('workspaceRoot')
+ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async (_event, workspaceId?: string | null) => {
+  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
   if (!rootPath) return
   await dismissAudit(rootPath)
 })
@@ -1533,8 +1527,6 @@ app.whenReady().then(async () => {
     console.log('[startup] --clean flag detected, clearing session')
     workspaceRegistry.setSessionWorkspaces([])
     runtimeRegistry.clearFocus()
-    store.set('workspaceRoot', null)
-    store.set('activeWorktree', null)
   }
 
   // Detect crash from previous session
@@ -1584,12 +1576,10 @@ app.whenReady().then(async () => {
     await activateWorkspace(validSessionIds[0])
   } else {
     // No workspaces — renderer shows welcome tab (default Dockview layout)
-    await stopWatcher()
+    await stopWatchers()
     stopAllGitPolling()
     stopAllWorktreePolling()
     runtimeRegistry.clearFocus()
-    store.set('workspaceRoot', null)
-    store.set('activeWorktree', null)
   }
 })
 
@@ -1636,7 +1626,8 @@ async function finishQuit(): Promise<void> {
   killAllPtys()
   stopAllGitPolling()
   stopAllWorktreePolling()
-  await stopWatcher()
+  // Ensure no stray watcher scopes remain (per-workspace scopes are also cleared in disposeAll)
+  await stopWatchers()
   await runtimeRegistry.disposeAll()
 
   app.quit()

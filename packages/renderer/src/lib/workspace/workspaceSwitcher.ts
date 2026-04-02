@@ -217,7 +217,7 @@ async function createDefaultLayout(
   }
 
   // Choose agent pane based on backend setting
-  const resolvedSettings = await window.api.getResolvedSettings().catch(() => null)
+  const resolvedSettings = await window.api.getResolvedSettings(workspaceId).catch(() => null)
   if (!isCurrent()) return
 
   const backend: AgentBackend = resolvedSettings?.['agent.backend'] ?? 'built-in'

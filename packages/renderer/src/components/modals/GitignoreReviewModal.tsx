@@ -4,6 +4,8 @@ import type { GitignoreAuditResult } from '@aide/shared'
 
 interface Props {
   auditResult: GitignoreAuditResult
+  /** Repository root for `.gitignore` updates; required when confirming or dismissing. */
+  workspaceId: string
   onClose: () => void
 }
 
@@ -11,14 +13,14 @@ interface Props {
  * Render a modal that lets the user review missing `.gitignore` security patterns and choose which to add.
  *
  * The modal groups patterns by category, supports individual toggles and a "Select all" checkbox (with indeterminate state),
- * calls `window.api.appendToGitignore` with selected patterns when confirming, and calls `window.api.dismissGitignoreAudit` when dismissing.
+ * calls `window.api.appendToGitignore` with selected patterns when confirming, and calls `window.api.dismissGitignoreAudit` when dismissing (both scoped by `workspaceId`).
  * The modal closes when the overlay is clicked, when the Escape key is pressed, or after add/dismiss actions.
  *
  * @param auditResult - Object containing `missing` pattern entries to display (each entry has `pattern` and `category`).
  * @param onClose - Callback invoked when the modal should be closed.
  * @returns The portal-mounted modal element rendered into `document.body`.
  */
-export function GitignoreReviewModal({ auditResult, onClose }: Props) {
+export function GitignoreReviewModal({ auditResult, workspaceId, onClose }: Props) {
   const [checked, setChecked] = useState<Set<string>>(
     () => new Set(auditResult.missing.map((m) => m.pattern)),
   )
@@ -59,17 +61,17 @@ export function GitignoreReviewModal({ auditResult, onClose }: Props) {
     if (patterns.length === 0) return
     setSubmitting(true)
     try {
-      await window.api.appendToGitignore(patterns)
+      await window.api.appendToGitignore(patterns, workspaceId)
       onClose()
     } catch {
       setSubmitting(false)
     }
-  }, [checked, onClose])
+  }, [checked, onClose, workspaceId])
 
   const handleDismiss = useCallback(async () => {
-    await window.api.dismissGitignoreAudit()
+    await window.api.dismissGitignoreAudit(workspaceId)
     onClose()
-  }, [onClose])
+  }, [onClose, workspaceId])
 
   // Group missing patterns by category
   const grouped = new Map<string, { pattern: string; category: string }[]>()

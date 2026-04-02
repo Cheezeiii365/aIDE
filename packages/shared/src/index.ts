@@ -320,8 +320,6 @@ export interface WorktreeCreateOpts {
 export interface AppSettings {
   theme: ThemeName
   sidebarWidth: number
-  workspaceRoot: string | null
-  activeWorktree: string | null
   editorDefaults?: Partial<AideProjectSettings>
   cleanShutdown?: boolean
 }
@@ -329,8 +327,6 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'one-dark',
   sidebarWidth: 220,
-  workspaceRoot: null,
-  activeWorktree: null,
 }
 
 // Search types (find in files)
@@ -812,7 +808,7 @@ export interface WindowApi {
 
   // Workspace
   openWorkspaceDialog: () => Promise<string | null>
-  /** When `workspaceId` is set, returns effective root (active worktree or repo). Without it, uses the active workspace, then legacy session store. */
+  /** Effective root (active worktree or repo) for `workspaceId`, or the UI-active workspace when omitted. */
   getWorkspaceRoot: (workspaceId?: string) => Promise<string | null>
 
   // Filesystem
@@ -865,15 +861,15 @@ export interface WindowApi {
   searchReplace: (opts: ReplaceOpts) => Promise<{ success: true; skipped: number } | { error: string }>
 
   // .aide project folder
-  aideInit: () => Promise<AideInitResult | { error: string }>
-  getResolvedSettings: () => Promise<ResolvedSettings>
+  aideInit: (workspaceId?: string | null) => Promise<AideInitResult | { error: string }>
+  getResolvedSettings: (workspaceId?: string | null) => Promise<ResolvedSettings>
   onAideInitResult: (callback: (result: AideInitResult) => void) => () => void
 
   // Settings
   getUserSettings: () => Promise<Partial<AideProjectSettings>>
   setUserSetting: (key: string, value: unknown | undefined) => Promise<void>
-  getWorkspaceSettings: () => Promise<AideProjectSettings>
-  setWorkspaceSetting: (key: string, value: unknown | undefined) => Promise<void>
+  getWorkspaceSettings: (workspaceId?: string | null) => Promise<AideProjectSettings>
+  setWorkspaceSetting: (key: string, value: unknown | undefined, workspaceId?: string | null) => Promise<void>
   getBuiltInDefaults: () => Promise<ResolvedSettings>
   onSettingsChanged: (callback: (resolved: ResolvedSettings) => void) => () => void
 
@@ -883,9 +879,9 @@ export interface WindowApi {
   onKeybindingsChanged: (callback: (rules: import('./commands').KeybindingRule[]) => void) => () => void
 
   // Gitignore security audit
-  auditGitignore: () => Promise<GitignoreAuditResult>
-  appendToGitignore: (patterns: string[]) => Promise<void>
-  dismissGitignoreAudit: () => Promise<void>
+  auditGitignore: (workspaceId?: string | null) => Promise<GitignoreAuditResult>
+  appendToGitignore: (patterns: string[], workspaceId?: string | null) => Promise<void>
+  dismissGitignoreAudit: (workspaceId?: string | null) => Promise<void>
   onGitignoreAuditResult: (callback: (payload: GitignoreAuditIpcPayload) => void) => () => void
 
   // Task system

@@ -902,7 +902,7 @@ export function AppShell() {
                       (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
                     )
 
-                    window.api.getResolvedSettings().then((resolved) => {
+                    window.api.getResolvedSettings(activeWorkspaceId).then((resolved) => {
                       const backend = resolved['agent.backend'] ?? 'built-in'
 
                       if (backend === 'claude-code' || backend === 'codex') {
@@ -1039,9 +1039,10 @@ export function AppShell() {
           workspaceRoot={activeRoot}
         />
       )}
-      {gitignoreModalOpen && gitignoreAudit && (
+      {gitignoreModalOpen && gitignoreAudit && activeWorkspaceId && (
         <GitignoreReviewModal
           auditResult={gitignoreAudit}
+          workspaceId={activeWorkspaceId}
           onClose={() => {
             setGitignoreModalOpen(false)
             setGitignoreAudit(null)

@@ -16,7 +16,10 @@ export interface UseSettingsReturn {
   getScopeValue: (key: string) => unknown
 }
 
-export function useSettings(): UseSettingsReturn {
+/**
+ * @param workspaceId - Workspace whose `.aide/settings.json` layer is read/written; when `null`, project settings are empty and resolved settings match user + built-in defaults only.
+ */
+export function useSettings(workspaceId: string | null): UseSettingsReturn {
   const [builtInDefaults, setBuiltInDefaults] = useState<ResolvedSettings | null>(null)
   const [userSettings, setUserSettings] = useState<Partial<AideProjectSettings> | null>(null)
   const [workspaceSettings, setWorkspaceSettings] = useState<AideProjectSettings | null>(null)
@@ -24,7 +27,6 @@ export function useSettings(): UseSettingsReturn {
   const [loading, setLoading] = useState(true)
   const [scope, setScope] = useState<SettingsScope>('user')
 
-  // Fetch all three layers on mount
   useEffect(() => {
     let cancelled = false
 
@@ -32,8 +34,8 @@ export function useSettings(): UseSettingsReturn {
       const [defaults, user, workspace, res] = await Promise.all([
         window.api.getBuiltInDefaults(),
         window.api.getUserSettings(),
-        window.api.getWorkspaceSettings(),
-        window.api.getResolvedSettings(),
+        workspaceId ? window.api.getWorkspaceSettings(workspaceId) : Promise.resolve({} as AideProjectSettings),
+        workspaceId ? window.api.getResolvedSettings(workspaceId) : window.api.getResolvedSettings(null),
       ])
 
       if (cancelled) return
@@ -44,31 +46,34 @@ export function useSettings(): UseSettingsReturn {
       setLoading(false)
     }
 
-    load()
+    void load()
     return () => { cancelled = true }
-  }, [])
+  }, [workspaceId])
 
-  // Subscribe to live settings changes
   useEffect(() => {
-    const unsub = window.api.onSettingsChanged((newResolved) => {
-      setResolved(newResolved)
-      // Refetch layer values since we don't know which layer changed
+    const unsub = window.api.onSettingsChanged(() => {
       window.api.getUserSettings().then(setUserSettings)
-      window.api.getWorkspaceSettings().then(setWorkspaceSettings)
+      if (workspaceId) {
+        window.api.getWorkspaceSettings(workspaceId).then(setWorkspaceSettings)
+        window.api.getResolvedSettings(workspaceId).then(setResolved)
+      } else {
+        setWorkspaceSettings({})
+        window.api.getResolvedSettings(null).then(setResolved)
+      }
     })
     return unsub
-  }, [])
+  }, [workspaceId])
 
   const setValue = useCallback(async (key: string, value: unknown) => {
     if (scope === 'user') {
-      // Optimistic update
       setUserSettings((prev) => prev ? { ...prev, [key]: value } : { [key]: value })
       await window.api.setUserSetting(key, value)
     } else {
+      if (!workspaceId) return
       setWorkspaceSettings((prev) => prev ? { ...prev, [key]: value } : { [key]: value })
-      await window.api.setWorkspaceSetting(key, value)
+      await window.api.setWorkspaceSetting(key, value, workspaceId)
     }
-  }, [scope])
+  }, [scope, workspaceId])
 
   const resetToDefault = useCallback(async (key: string) => {
     if (scope === 'user') {
@@ -81,6 +86,7 @@ export function useSettings(): UseSettingsReturn {
       })
       await window.api.setUserSetting(key, undefined)
     } else {
+      if (!workspaceId) return
       setWorkspaceSettings((prev) => {
         if (!prev) return prev
         const next = Object.fromEntries(
@@ -88,9 +94,9 @@ export function useSettings(): UseSettingsReturn {
         )
         return next
       })
-      await window.api.setWorkspaceSetting(key, undefined)
+      await window.api.setWorkspaceSetting(key, undefined, workspaceId)
     }
-  }, [scope])
+  }, [scope, workspaceId])
 
   const isModified = useCallback((key: string): boolean => {
     if (!builtInDefaults) return false
@@ -109,7 +115,6 @@ export function useSettings(): UseSettingsReturn {
     if (!layerValues) return undefined
     const val = (layerValues as Record<string, unknown>)[key]
     if (val !== undefined) return val
-    // Fall back to resolved (effective) value for display
     if (!resolved) return undefined
     return resolved[key as keyof ResolvedSettings]
   }, [scope, userSettings, workspaceSettings, resolved])
