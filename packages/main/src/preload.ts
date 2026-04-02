@@ -7,7 +7,7 @@ import type {
   TaskTriggerResult, WorkspaceEntry, AideLocalState, AideLocalTerminals, WindowApi, BrowserSessionMode,
   BrowserHostUpdate, BrowserDidNavigatePayload, BrowserPageTitlePayload, BrowserLoadingPayload, BrowserCanNavigatePayload,
   BrowserFocusPayload, ZoomCommandPayload, KeybindingRule, ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd,
-  ChatToolCallPayload, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession,
+  ChatToolCallPayload, PendingToolApprovalInfo, McpServerStatus, ToolDefinition, AgentBackend, CliAgentStreamDelta, CliAgentMessage, CliAgentSession,
   CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload, ConversationMeta, ConversationCreateOpts,
   ConversationListChangedPayload, GitStatusChangedPayload, GitBranchChangedPayload, WorktreeListChangedPayload,
   SearchResultsPayload, SearchCompletePayload, GitignoreAuditIpcPayload, TaskDiagnosticsPayload, TaskAutoDetectPayload,
@@ -52,7 +52,8 @@ const api: WindowApi = {
 
   // Workspace
   openWorkspaceDialog: () => ipcRenderer.invoke(IpcChannels.FS_OPEN_WORKSPACE),
-  getWorkspaceRoot: () => ipcRenderer.invoke(IpcChannels.WORKSPACE_ROOT_GET),
+  getWorkspaceRoot: (workspaceId?: string) =>
+    ipcRenderer.invoke(IpcChannels.WORKSPACE_ROOT_GET, workspaceId),
 
   // Filesystem
   readDir: (dirPath: string) => ipcRenderer.invoke(IpcChannels.FS_READ_DIR, dirPath),
@@ -371,6 +372,8 @@ const api: WindowApi = {
     ipcRenderer.on(IpcChannels.CHAT_TOOL_CALL, handler)
     return () => ipcRenderer.removeListener(IpcChannels.CHAT_TOOL_CALL, handler)
   },
+  chatListPendingToolApprovals: (): Promise<PendingToolApprovalInfo[]> =>
+    ipcRenderer.invoke(IpcChannels.CHAT_PENDING_TOOL_APPROVALS_LIST),
 
   // ─── MCP ──────────────────────────────────────
   mcpListServers: (): Promise<McpServerStatus[]> =>

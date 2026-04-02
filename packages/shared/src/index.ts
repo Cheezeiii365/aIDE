@@ -7,7 +7,7 @@ export type { CommandDefinition, KeybindingRule } from './commands'
 export type {
   ChatMode, ChatSessionStatus, ToolCallStatus,
   ToolCall, ToolResult, ChatMessage, ChatSession,
-  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
   ToolDefinition,
   McpServerConfig, McpServerConnectionStatus, McpServerStatus,
   PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
@@ -29,7 +29,7 @@ export type {
   OpenAiRequest, OpenAiMessage, OpenAiToolCall, OpenAiTool, OpenAiStreamChunk, OpenAiStreamToolCall,
 } from './llmTypes'
 import type {
-  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
   McpServerStatus, ToolDefinition,
   PermissionTier, ToolPermissionConfig,
 } from './agentTypes'
@@ -225,6 +225,7 @@ export const IpcChannels = {
   CHAT_SET_MODE: 'chat:set-mode',
   CHAT_SET_WORKING_SET: 'chat:set-working-set',
   CHAT_GET_HISTORY: 'chat:get-history',
+  CHAT_PENDING_TOOL_APPROVALS_LIST: 'chat:pending-tool-approvals-list',
 
   // ─── MCP ──────────────────────────────────────
   MCP_LIST_SERVERS: 'mcp:list-servers',
@@ -544,6 +545,10 @@ export interface TabState {
   foldedRanges: [number, number][]
   isDirty: boolean
   dirtyContent?: string
+  /** Last known on-disk content when the tab was dirty (for restore without re-read). */
+  cleanBaseline?: string
+  selection?: { anchor: number; head: number }
+  diskChangedWhileDirty?: boolean
 }
 
 export interface AideLocalState {
@@ -554,6 +559,8 @@ export interface AideLocalState {
   sidebarCollapsed: boolean
   sidebarSections: Record<string, boolean>
   browserPanes?: BrowserPaneState[]
+  /** Persisted active git worktree path for this workspace, or null for main tree. Omitted in older state files. */
+  activeWorktreePath?: string | null
 }
 
 export interface TerminalState {
@@ -804,7 +811,8 @@ export interface WindowApi {
 
   // Workspace
   openWorkspaceDialog: () => Promise<string | null>
-  getWorkspaceRoot: () => Promise<string | null>
+  /** When `workspaceId` is set, returns effective root (active worktree or repo). Without it, uses the active workspace, then legacy session store. */
+  getWorkspaceRoot: (workspaceId?: string) => Promise<string | null>
 
   // Filesystem
   readDir: (dirPath: string) => Promise<DirEntry[]>
@@ -947,6 +955,7 @@ export interface WindowApi {
   onChatStreamChunk: (callback: (chunk: ChatStreamChunk) => void) => () => void
   onChatStreamEnd: (callback: (end: ChatStreamEnd) => void) => () => void
   onChatToolCall: (callback: (payload: ChatToolCallPayload) => void) => () => void
+  chatListPendingToolApprovals: () => Promise<PendingToolApprovalInfo[]>
 
   // ─── MCP ���───────────────────────────────���─────
   mcpListServers: () => Promise<McpServerStatus[]>

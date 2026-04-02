@@ -18,6 +18,7 @@ import type {
   TaskAutoDetectPayload,
   PtyDataOutPayload,
   PtyExitPayload,
+  PendingToolApprovalInfo,
 } from '@aide/shared'
 import { registerPtyHandlers, killAllPtys } from './terminal/ptyManager'
 import { registerFileWatcherHandlers, startWatchers, stopWatcher, stopWatchers } from './workspace/fileWatcher'
@@ -33,6 +34,7 @@ import {
   stopAllWorktreePolling,
   clearWorktreeStateForWorkspace,
   getActiveWorktreeForWorkspace,
+  setActiveWorktreeForWorkspace,
 } from './workspace/worktreeManager'
 import { startSearch, cancelSearch } from './search/ripgrepSearch'
 import { ensureAideFolder } from './workspace/aideInit'
@@ -43,6 +45,7 @@ import { detectTasks, generateTasksFile, hasTasksFile } from './tasks/taskAutoDe
 import { WorkspaceRegistry } from './workspace/workspaceRegistry'
 import { WorkspaceRuntime } from './workspace/WorkspaceRuntime'
 import { WorkspaceRuntimeRegistry } from './workspace/WorkspaceRuntimeRegistry'
+import { getEffectiveWorkspaceRoot } from './workspace/effectiveWorkspaceRoot'
 import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './workspace/stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './git/gitDiff'
@@ -278,7 +281,15 @@ ipcMain.handle(IpcChannels.FS_OPEN_WORKSPACE, async () => {
   return result.filePaths[0]
 })
 
-ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, () => store.get('workspaceRoot'))
+ipcMain.handle(IpcChannels.WORKSPACE_ROOT_GET, (_event, workspaceId?: string) => {
+  const wid = workspaceId ?? workspaceRegistry.getActiveId()
+  if (wid) {
+    const entry = workspaceRegistry.get(wid)
+    const root = entry?.rootPath ?? null
+    if (root) return getEffectiveWorkspaceRoot(wid, root)
+  }
+  return store.get('workspaceRoot')
+})
 
 /**
  * Broadcasts the current workspace registry to the renderer process.
@@ -395,6 +406,12 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
   }
 
   await ensureAideFolder(rootPath)
+
+  const persistedLayout = await loadWorkspaceState(rootPath)
+  if (persistedLayout?.activeWorktreePath !== undefined) {
+    setActiveWorktreeForWorkspace(runtime.workspaceId, persistedLayout.activeWorktreePath)
+  }
+
   await initTaskRunner(runtime, rootPath)
 
   const conversationStore = new ConversationStore(rootPath)
@@ -424,6 +441,9 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
     permissionTier: permConfig.permissionTier,
     autoApprove: permConfig.autoApprove,
     conversationStore,
+    onWorkloadChanged: () => {
+      runtime.refreshWorkload()
+    },
   })
   const resolved = resolveAppDefaults(store)
   const cliAgentManager = new CliAgentManager({
@@ -446,7 +466,7 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
   const activeWt = getActiveWorktreeForWorkspace(runtime.workspaceId)
   const watchRoots = activeWt ? [rootPath, activeWt] : [rootPath]
   await startWatchers(runtime.workspaceId, watchRoots)
-  const gitPollRoot = activeWt || rootPath
+  const gitPollRoot = getEffectiveWorkspaceRoot(runtime.workspaceId, rootPath) ?? rootPath
   await startGitPollingForWorkspace(runtime.workspaceId, gitPollRoot, getWc)
   await startWorktreePollingForWorkspace(runtime.workspaceId, rootPath, getWc)
 
@@ -620,6 +640,16 @@ ipcMain.handle(IpcChannels.CHAT_GET_HISTORY, async (_event, workspaceId: string,
   const agentManager = getAgentManager(runtimeRegistry.get(workspaceId))
   if (!agentManager) return null
   return agentManager.getHistory(workspaceId, conversationId)
+})
+
+ipcMain.handle(IpcChannels.CHAT_PENDING_TOOL_APPROVALS_LIST, (): PendingToolApprovalInfo[] => {
+  const out: PendingToolApprovalInfo[] = []
+  for (const rt of runtimeRegistry.list()) {
+    const agentManager = getAgentManager(rt)
+    if (!agentManager) continue
+    out.push(...agentManager.listPendingToolApprovals())
+  }
+  return out
 })
 
 ipcMain.handle(IpcChannels.CHAT_SET_MODE, async (_event, sessionId: string, mode: ChatMode) => {
@@ -1086,9 +1116,10 @@ function scheduleWorkspaceOpenTasks(
   const tasks = taskRunner.getWorkspaceOpenTasks()
   if (tasks.length === 0) return
 
+  const eff = getEffectiveWorkspaceRoot(runtime.workspaceId, rootPath) ?? rootPath
   const ctx = {
-    workspaceRoot: rootPath,
-    workspaceName: rootPath.split('/').pop() ?? rootPath,
+    workspaceRoot: eff,
+    workspaceName: eff.split('/').pop() ?? eff,
   }
 
   for (const task of tasks) {
@@ -1145,9 +1176,10 @@ ipcMain.handle(IpcChannels.TASK_RUN, async (_event, workspaceId: string, taskId:
   const rootPath = runtime?.rootPath ?? null
   if (!rootPath) return { error: 'No workspace open' }
 
+  const eff = getEffectiveWorkspaceRoot(workspaceId, rootPath) ?? rootPath
   const ctx = {
-    workspaceRoot: rootPath,
-    workspaceName: rootPath.split('/').pop() ?? rootPath,
+    workspaceRoot: eff,
+    workspaceName: eff.split('/').pop() ?? eff,
     activeFile: context?.activeFile,
     selectedText: context?.selectedText,
     lineNumber: context?.lineNumber,
@@ -1205,9 +1237,10 @@ ipcMain.on(IpcChannels.TASK_FILE_SAVED, (_event, filePath: string) => {
     const delay = task.runOn?.delay ?? 0
     const run = () => {
       if (!runtime.acceptsActivation(seqAtSchedule) || !taskRunner) return
+      const eff = getEffectiveWorkspaceRoot(runtime.workspaceId, rootPath) ?? rootPath
       const ctx = {
-        workspaceRoot: rootPath,
-        workspaceName: rootPath.split('/').pop() ?? rootPath,
+        workspaceRoot: eff,
+        workspaceName: eff.split('/').pop() ?? eff,
       }
       taskRunner.run(task.id, ctx).then((result) => {
         runtime.refreshWorkload()
@@ -1500,7 +1533,12 @@ app.whenReady().then(async () => {
 
   buildAppMenu()
   createWindow()
-  registerPtyHandlers(() => contentView?.webContents ?? null, store)
+  registerPtyHandlers(() => contentView?.webContents ?? null, (workspaceId) => {
+    const entry = workspaceRegistry.get(workspaceId)
+    const root = entry?.rootPath ?? null
+    if (!root) return null
+    return getEffectiveWorkspaceRoot(workspaceId, root)
+  })
   registerFileWatcherHandlers(() => contentView?.webContents ?? null)
 
   const getWebContents = () => contentView?.webContents ?? null

@@ -70,6 +70,13 @@ export interface ChatToolCallPayload {
   toolCall: ToolCall
 }
 
+/** Built-in agent tool call waiting for user approval (hydration + inbox). */
+export interface PendingToolApprovalInfo {
+  workspaceId: string
+  sessionId: string
+  toolCall: ToolCall
+}
+
 // ─── Tool Definitions ───────────────────────────────────────────────
 
 export interface ToolDefinition {

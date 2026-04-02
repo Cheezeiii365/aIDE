@@ -8,7 +8,7 @@
 import type { DockviewApi } from 'dockview-react'
 import type { AgentBackend, AideLocalState, AideLocalTerminals } from '@aide/shared'
 import { clearCache } from '../editor/editorStateCache'
-import { clearAllDirty } from '../editor/editorDirtyState'
+import { hydrateDocumentStoreFromOpenTabs } from '../editor/documentStore'
 import { createRestoredTerminalPanelParams, createTerminalPanelParams } from '../terminal/terminalState'
 import {
   captureWorkspaceRuntimeSnapshot,
@@ -22,6 +22,8 @@ interface SwitchContext {
   dockviewApi: DockviewApi
   currentWorkspaceId: string | null
   currentRootPath: string | null
+  /** Active worktree path for the workspace being saved (null = main tree). */
+  currentActiveWorktreePath: string | null
   targetWorkspaceId: string
   targetRootPath: string | null
   sidebarWidth: number
@@ -49,6 +51,7 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
       ctx.currentRootPath,
       ctx.sidebarWidth,
       ctx.sidebarCollapsed,
+      ctx.currentActiveWorktreePath,
     ))
     if (snapshot.rootPath) {
       window.api.saveWorkspaceState(snapshot.rootPath, snapshot.state).catch(() => {})
@@ -59,24 +62,7 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
   // Check if superseded
   if (gen !== switchGeneration) return false
 
-  // 2. CLEAR current UI
-  clearCache()
-  clearAllDirty()
-  ctx.onBeforeClearPanels?.()
-
-  // Remove all panels from Dockview
-  const panels = [...ctx.dockviewApi.panels]
-  for (const panel of panels) {
-    try {
-      panel.api.close()
-    } catch {
-      // Panel may already be disposed
-    }
-  }
-
-  if (gen !== switchGeneration) return false
-
-  // 3. LOAD target workspace state
+  // 2. LOAD target workspace state (before tearing down current UI)
   let savedState: AideLocalState | null = null
   let savedTerminals: AideLocalTerminals | null = null
   let activePanelId: string | null = null
@@ -91,6 +77,40 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
       window.api.loadWorkspaceState(ctx.targetRootPath),
       window.api.loadTerminalState(ctx.targetRootPath),
     ])
+  }
+
+  if (gen !== switchGeneration) return false
+
+  hydrateDocumentStoreFromOpenTabs(ctx.targetWorkspaceId, savedState?.openTabs ?? [])
+
+  let activeWtSnapshot: string | null = null
+  if (ctx.targetRootPath) {
+    if (savedState?.activeWorktreePath != null) {
+      // Validate persisted worktree still exists before restoring it
+      const worktrees = await window.api.listWorktrees(ctx.targetWorkspaceId)
+      const stillExists = worktrees.some((wt) => wt.path === savedState.activeWorktreePath)
+      if (stillExists) {
+        await window.api.setActiveWorktree(ctx.targetWorkspaceId, savedState.activeWorktreePath)
+        activeWtSnapshot = savedState.activeWorktreePath
+      } else {
+        await window.api.setActiveWorktree(ctx.targetWorkspaceId, null)
+      }
+    } else {
+      activeWtSnapshot = await window.api.getActiveWorktree(ctx.targetWorkspaceId)
+    }
+  }
+
+  // 3. CLEAR current UI (document truth lives in documentStore + persisted openTabs)
+  clearCache()
+  ctx.onBeforeClearPanels?.()
+
+  const panels = [...ctx.dockviewApi.panels]
+  for (const panel of panels) {
+    try {
+      panel.api.close()
+    } catch {
+      // Panel may already be disposed
+    }
   }
 
   if (gen !== switchGeneration) return false
@@ -139,6 +159,7 @@ export async function switchWorkspace(ctx: SwitchContext): Promise<boolean> {
     ctx.targetRootPath,
     restoredSidebarWidth,
     restoredSidebarCollapsed,
+    activeWtSnapshot,
   ))
 
   return true
@@ -252,6 +273,7 @@ export function autoSave(
   rootPath: string | null,
   sidebarWidth: number,
   sidebarCollapsed: boolean,
+  activeWorktreePath: string | null,
 ): void {
   if (!dockviewApi || !workspaceId) return
 
@@ -261,6 +283,7 @@ export function autoSave(
     rootPath,
     sidebarWidth,
     sidebarCollapsed,
+    activeWorktreePath,
   ))
 
   if (snapshot.rootPath) {

@@ -22,6 +22,7 @@ const snapshots = new Map<string, WorkspaceRuntimeSnapshot>()
  * @param rootPath - Root filesystem path for the workspace, or `null` if none
  * @param sidebarWidth - Current sidebar width in pixels
  * @param sidebarCollapsed - Whether the sidebar is collapsed
+ * @param activeWorktreePath - Persisted active git worktree path, or `null` for the main worktree
  * @returns A `WorkspaceRuntimeSnapshot` containing the workspace ID and root path, serialized workspace `state` and `terminals`, the `activePanelId` (or `null`), and `panelParams` mapping panel IDs to shallow-copied parameter objects
  */
 export function captureWorkspaceRuntimeSnapshot(
@@ -30,6 +31,7 @@ export function captureWorkspaceRuntimeSnapshot(
   rootPath: string | null,
   sidebarWidth: number,
   sidebarCollapsed: boolean,
+  activeWorktreePath: string | null,
 ): WorkspaceRuntimeSnapshot {
   const panelParams: Record<string, Record<string, unknown>> = {}
 
@@ -40,7 +42,7 @@ export function captureWorkspaceRuntimeSnapshot(
   return {
     workspaceId,
     rootPath,
-    state: serializeWorkspaceState(dockviewApi, workspaceId, sidebarWidth, sidebarCollapsed),
+    state: serializeWorkspaceState(dockviewApi, workspaceId, sidebarWidth, sidebarCollapsed, activeWorktreePath),
     terminals: serializeTerminalState(dockviewApi),
     activePanelId: dockviewApi.activePanel?.id ?? null,
     panelParams,

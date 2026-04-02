@@ -23,6 +23,7 @@ import { loadKeybindings } from '../../commands/KeybindingService'
 import { defaultKeybindings } from '../../commands/defaultKeybindings'
 import { useTasks } from '../../hooks/useTasks'
 import { useWorkspaces } from '../../hooks/useWorkspaces'
+import { useRuntimeGlobalNotifications } from '../../hooks/useRuntimeGlobalNotifications'
 import { autoSave, switchWorkspace as doSwitchWorkspace } from '../../lib/workspace/workspaceSwitcher'
 import { createTerminalPanelParams, getTerminalParams } from '../../lib/terminal/terminalState'
 import { createBrowserPanelParams, getBrowserParams } from '../../lib/browserState'
@@ -59,6 +60,8 @@ export function AppShell() {
   const sidebarWidthRef = useRef(220)
   const prevWorkspaceRootRef = useRef<string | null>(null)
   const prevWorkspaceIdRef = useRef<string | null>(null)
+  /** Last known active worktree per workspace id (for saves during workspace switch). */
+  const worktreeByWsRef = useRef(new Map<string, string | null>())
   const preservedTerminalIdsRef = useRef(new Set<string>())
   const destroyedWorkspaceIdsRef = useRef(new Set<string>())
   const isSwitchingWorkspaceRef = useRef(false)
@@ -91,6 +94,8 @@ export function AppShell() {
     reorderWorkspaces,
   } = useWorkspaces()
 
+  useRuntimeGlobalNotifications(workspaces, activeWorkspaceId)
+
   const {
     runningTasks,
     diagnostics: taskDiagnostics,
@@ -104,11 +109,18 @@ export function AppShell() {
 
   // Derive workspaceRoot from active workspace for existing consumers
   const workspaceRoot = activeWorkspace?.rootPath ?? null
-  const { worktrees, activeRoot, switchWorktree } = useWorktrees(workspaceRoot, activeWorkspaceId)
+  const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot, activeWorkspaceId)
+
+  useEffect(() => {
+    if (activeWorkspaceId) {
+      worktreeByWsRef.current.set(activeWorkspaceId, activeWorktree)
+    }
+  }, [activeWorkspaceId, activeWorktree])
 
   const persistWorkspaceRuntime = useCallback((
     workspaceId: string | null = activeWorkspaceId,
     rootPath: string | null = workspaceRoot,
+    activeWt: string | null = activeWorktree,
   ) => {
     const api = dockviewApiRef.current
     if (!api || !workspaceId) return
@@ -119,13 +131,14 @@ export function AppShell() {
       rootPath,
       sidebarWidthRef.current,
       sidebarCollapsed,
+      activeWt,
     ))
 
     if (snapshot.rootPath) {
       window.api.saveWorkspaceState(snapshot.rootPath, snapshot.state).catch(() => {})
       window.api.saveTerminalState(snapshot.rootPath, snapshot.terminals).catch(() => {})
     }
-  }, [activeWorkspaceId, sidebarCollapsed, workspaceRoot])
+  }, [activeWorkspaceId, activeWorktree, sidebarCollapsed, workspaceRoot])
 
   const handleOpenFolder = useCallback(async () => {
     // If in a blank workspace (no rootPath), set root instead of creating new
@@ -189,7 +202,14 @@ export function AppShell() {
 
     if (!activeWorkspaceId) {
       if (prevWorkspaceId && !wasDestroyed) {
-        autoSave(api, prevWorkspaceId, prevRoot, sidebarWidthRef.current, sidebarCollapsed)
+        autoSave(
+          api,
+          prevWorkspaceId,
+          prevRoot,
+          sidebarWidthRef.current,
+          sidebarCollapsed,
+          worktreeByWsRef.current.get(prevWorkspaceId) ?? null,
+        )
       }
       showWelcomeLayout(api)
       if (prevWorkspaceId) destroyedWorkspaceIdsRef.current.delete(prevWorkspaceId)
@@ -206,6 +226,7 @@ export function AppShell() {
           dockviewApi: api,
           currentWorkspaceId: null,
           currentRootPath: null,
+          currentActiveWorktreePath: null,
           targetWorkspaceId: activeWorkspaceId,
           targetRootPath: workspaceRoot,
           sidebarWidth: sidebarWidthRef.current,
@@ -237,6 +258,9 @@ export function AppShell() {
       dockviewApi: api,
       currentWorkspaceId: prevWorkspaceId,
       currentRootPath: prevRoot,
+      currentActiveWorktreePath: prevWorkspaceId
+        ? worktreeByWsRef.current.get(prevWorkspaceId) ?? null
+        : null,
       targetWorkspaceId: activeWorkspaceId ?? '',
       targetRootPath: workspaceRoot,
       sidebarWidth: sidebarWidthRef.current,
@@ -521,10 +545,11 @@ export function AppShell() {
         workspaceRoot,
         sidebarWidthRef.current,
         sidebarCollapsed,
+        activeWorktree,
       )
     }, 30_000)
     return () => clearInterval(interval)
-  }, [activeWorkspaceId, workspaceRoot, sidebarCollapsed])
+  }, [activeWorkspaceId, workspaceRoot, sidebarCollapsed, activeWorktree])
 
   // Handle quit save request from main process
   useEffect(() => {
@@ -535,11 +560,12 @@ export function AppShell() {
         workspaceRoot,
         sidebarWidthRef.current,
         sidebarCollapsed,
+        activeWorktree,
       )
       window.api.lifecycleSaveComplete()
     })
     return unsub
-  }, [activeWorkspaceId, sidebarCollapsed, workspaceRoot])
+  }, [activeWorkspaceId, activeWorktree, sidebarCollapsed, workspaceRoot])
 
   // Handle crash recovery notification
   useEffect(() => {

@@ -1,6 +1,11 @@
 import type { WorkspaceEntry } from '@aide/shared'
 import { WorkspaceRuntime } from './WorkspaceRuntime'
-import type { RuntimeSnapshot, WorkspaceId } from './runtimeTypes'
+import type { RuntimeSnapshot, RuntimeState, WorkspaceId } from './runtimeTypes'
+
+function backgroundStateFor(runtime: WorkspaceRuntime): RuntimeState {
+  const w = runtime.getSnapshot().workload
+  return w.pendingApproval || w.pendingUserInput ? 'blocked' : 'backgrounded'
+}
 
 interface WorkspaceRuntimeRegistryOpts {
   createRuntime: (entry: WorkspaceEntry) => WorkspaceRuntime
@@ -36,7 +41,8 @@ export class WorkspaceRuntimeRegistry {
     if (!runtime) return null
 
     if (this.focusedWorkspaceId && this.focusedWorkspaceId !== id) {
-      this.runtimes.get(this.focusedWorkspaceId)?.enterBackground()
+      const prev = this.runtimes.get(this.focusedWorkspaceId)
+      if (prev) prev.enterBackground(backgroundStateFor(prev))
     }
 
     this.focusedWorkspaceId = id
@@ -46,7 +52,7 @@ export class WorkspaceRuntimeRegistry {
 
   background(id: WorkspaceId): WorkspaceRuntime | null {
     const runtime = this.runtimes.get(id) ?? null
-    runtime?.enterBackground()
+    if (runtime) runtime.enterBackground(backgroundStateFor(runtime))
     if (this.focusedWorkspaceId === id) {
       this.focusedWorkspaceId = null
     }
@@ -64,7 +70,8 @@ export class WorkspaceRuntimeRegistry {
 
   clearFocus(): void {
     if (!this.focusedWorkspaceId) return
-    this.runtimes.get(this.focusedWorkspaceId)?.enterBackground()
+    const prev = this.runtimes.get(this.focusedWorkspaceId)
+    if (prev) prev.enterBackground(backgroundStateFor(prev))
     this.focusedWorkspaceId = null
   }
 
@@ -77,14 +84,21 @@ export class WorkspaceRuntimeRegistry {
   }
 
   findByFilePath(filePath: string): WorkspaceRuntime | null {
+    const normalizedFile = filePath.replace(/\\/g, '/')
     let bestMatch: WorkspaceRuntime | null = null
     let bestLength = -1
     for (const runtime of this.runtimes.values()) {
       if (!runtime.rootPath) continue
-      if (filePath === runtime.rootPath || filePath.startsWith(runtime.rootPath + '/')) {
-        if (runtime.rootPath.length > bestLength) {
+      const bases = new Set<string>([runtime.rootPath])
+      const eff = runtime.getEffectiveRoot()
+      if (eff && eff !== runtime.rootPath) bases.add(eff)
+      for (const base of bases) {
+        const r = base.replace(/\\/g, '/').replace(/\/+$/, '')
+        const under =
+          normalizedFile === r || normalizedFile.startsWith(`${r}/`)
+        if (under && r.length > bestLength) {
           bestMatch = runtime
-          bestLength = runtime.rootPath.length
+          bestLength = r.length
         }
       }
     }

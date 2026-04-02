@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ThemeToggle } from './ThemeToggle'
+import { RuntimeInboxBell } from './RuntimeInboxBell'
 import { AgentStatusDot } from '../shared/AgentStatusDot'
 import type { WorkspaceEntry, WorkspaceRuntimeSnapshot } from '@aide/shared'
 
@@ -90,17 +91,22 @@ export function WorkspaceRibbon({
     }
   }, [onCloseWorkspace])
 
-  const getRuntimeDotStatus = useCallback((workspaceId: string): 'idle' | 'running' | 'error' => {
+  const getRuntimeDotStatus = useCallback((workspaceId: string): 'idle' | 'running' | 'blocked' | 'error' => {
     const snapshot = runtimeSnapshots[workspaceId]
     if (!snapshot) return 'idle'
     if (snapshot.status === 'error') return 'error'
     if (
+      snapshot.state === 'blocked' ||
+      snapshot.workload.pendingApproval ||
+      snapshot.workload.pendingUserInput
+    ) {
+      return 'blocked'
+    }
+    if (
       snapshot.state === 'foreground' ||
       snapshot.state === 'backgrounded' ||
       snapshot.workload.agentsRunning ||
-      snapshot.workload.tasksRunning ||
-      snapshot.workload.pendingApproval ||
-      snapshot.workload.pendingUserInput
+      snapshot.workload.tasksRunning
     ) {
       return 'running'
     }
@@ -127,7 +133,11 @@ export function WorkspaceRibbon({
             onDragEnd={handleDragEnd}
             title={
               runtimeSnapshots[ws.id]
-                ? `${ws.rootPath ?? ws.name} • ${runtimeSnapshots[ws.id].state} • ${runtimeSnapshots[ws.id].status}`
+                ? `${ws.rootPath ?? ws.name} • ${runtimeSnapshots[ws.id].state} • ${runtimeSnapshots[ws.id].status}${
+                  runtimeSnapshots[ws.id].workload.pendingApproval || runtimeSnapshots[ws.id].workload.pendingUserInput
+                    ? ' • needs input'
+                    : ''
+                }`
                 : (ws.rootPath ?? ws.name)
             }
           >
@@ -170,6 +180,7 @@ export function WorkspaceRibbon({
         </button>
       </div>
       <div className="workspace-ribbon__actions">
+        <RuntimeInboxBell workspaces={workspaces} onSwitchWorkspace={onSwitch} />
         <span className="workspace-ribbon__cost">$0.00</span>
         <div className="workspace-ribbon__separator" />
         <ThemeToggle />

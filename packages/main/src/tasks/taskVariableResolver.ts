@@ -8,6 +8,7 @@
 import { execFileSync } from 'child_process'
 
 export interface TaskVariableContext {
+  /** Default task cwd and ${workspaceRoot}: active git worktree when set, else repo root. */
   workspaceRoot: string
   workspaceName: string
   activeFile?: string

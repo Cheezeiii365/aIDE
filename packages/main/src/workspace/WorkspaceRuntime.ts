@@ -10,6 +10,7 @@ import type {
   WorkspaceId,
   WorkspaceRuntimeServiceSlots,
 } from './runtimeTypes'
+import { getEffectiveWorkspaceRoot } from './effectiveWorkspaceRoot'
 
 interface WorkspaceRuntimeHooks {
   startServices: (runtime: WorkspaceRuntime) => Promise<void>
@@ -166,6 +167,11 @@ export class WorkspaceRuntime {
 
   getLifecycle(): RuntimeLifecycle {
     return { ...this.lifecycle }
+  }
+
+  /** Working tree: active git worktree if set, else workspace repo root. */
+  getEffectiveRoot(): string | null {
+    return getEffectiveWorkspaceRoot(this.workspaceId, this.rootPath)
   }
 
   getSnapshot(): RuntimeSnapshot {

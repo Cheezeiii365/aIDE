@@ -10,6 +10,7 @@ import type {
   ConversationListChangedPayload,
 } from '@aide/shared'
 import { scopedTo } from '../lib/workspace/workspaceScopedListener'
+import { approvalInboxRemove } from '../lib/workspace/approvalInboxStore'
 
 export interface UseChatReturn {
   sessionId: string | null
@@ -212,16 +213,20 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
 
   const approveToolCall = useCallback((toolCallId: string) => {
     const sid = sessionIdRef.current
-    if (!sid) return
-    window.api.chatToolApprove(sid, toolCallId)
+    const wid = workspaceId
+    if (!sid || !wid) return
+    void window.api.chatToolApprove(sid, toolCallId)
+    approvalInboxRemove(wid, sid, toolCallId)
     setStatus('tool_running')
-  }, [])
+  }, [workspaceId])
 
   const rejectToolCall = useCallback((toolCallId: string) => {
     const sid = sessionIdRef.current
-    if (!sid) return
-    window.api.chatToolReject(sid, toolCallId)
-  }, [])
+    const wid = workspaceId
+    if (!sid || !wid) return
+    void window.api.chatToolReject(sid, toolCallId)
+    approvalInboxRemove(wid, sid, toolCallId)
+  }, [workspaceId])
 
   const stop = useCallback(() => {
     const sid = sessionIdRef.current

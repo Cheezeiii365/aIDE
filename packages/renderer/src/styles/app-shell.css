@@ -178,6 +178,173 @@
   height: 14px;
 }
 
+/* ─── Runtime inbox (global approvals / activity) ─ */
+.runtime-inbox {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.runtime-inbox__bell {
+  position: relative;
+}
+
+.runtime-inbox__badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent, #d97706);
+  color: var(--bg-elevated, #1e1e1e);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.runtime-inbox__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 340px;
+  max-height: min(70vh, 420px);
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 10000;
+  padding: 8px 0;
+}
+
+.runtime-inbox__section {
+  padding: 0 10px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.runtime-inbox__section:last-child {
+  border-bottom: none;
+}
+
+.runtime-inbox__section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.runtime-inbox__empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.runtime-inbox__approval {
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-hover);
+}
+
+.runtime-inbox__approval-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.runtime-inbox__ws {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.runtime-inbox__tool {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.runtime-inbox__args {
+  font-size: 10px;
+  margin: 0 0 8px;
+  padding: 6px;
+  background: var(--bg-base);
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  max-height: 88px;
+}
+
+.runtime-inbox__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.runtime-inbox__btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  border: 1px solid var(--border-base);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.runtime-inbox__btn:hover {
+  background: var(--bg-hover);
+}
+
+.runtime-inbox__btn--approve {
+  background: color-mix(in srgb, var(--text-success) 18%, transparent);
+  border-color: color-mix(in srgb, var(--text-success) 40%, var(--border-base));
+}
+
+.runtime-inbox__btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.runtime-inbox__activity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  font-size: 11px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.runtime-inbox__activity-row:last-child {
+  border-bottom: none;
+}
+
+.runtime-inbox__activity-ws {
+  font-weight: 600;
+  color: var(--text-secondary);
+  grid-column: 1 / -1;
+}
+
+.runtime-inbox__activity-kind {
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.runtime-inbox__activity-text {
+  color: var(--text-primary);
+  grid-column: 1 / -1;
+}
+
 /* ─── Middle Area ──────────────────────────────── */
 .app-middle {
   display: flex;

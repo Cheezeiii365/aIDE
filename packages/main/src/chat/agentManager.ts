@@ -49,6 +49,8 @@ interface AgentManagerOpts {
   permissionTier?: PermissionTier
   autoApprove?: Record<string, boolean | ToolPermissionConfig>
   conversationStore?: ConversationStore
+  /** Called when pending tool approvals or related workload change (for runtime snapshot refresh). */
+  onWorkloadChanged?: () => void
 }
 
 interface PendingApproval {
@@ -68,6 +70,7 @@ export class AgentManager {
   private permissionTier: PermissionTier
   private autoApprove: Record<string, boolean | ToolPermissionConfig>
   private conversationStore: ConversationStore | null
+  private onWorkloadChanged?: () => void
 
   // Per-session loop state
   private activeLoops = new Map<string, AbortController>()
@@ -82,6 +85,7 @@ export class AgentManager {
     this.permissionTier = opts.permissionTier ?? 'confirm'
     this.autoApprove = opts.autoApprove ?? {}
     this.conversationStore = opts.conversationStore ?? null
+    this.onWorkloadChanged = opts.onWorkloadChanged
 
     this.llmClient = new LlmClient(opts.config)
     this.toolRegistry = new ToolRegistry({
@@ -240,6 +244,7 @@ export class AgentManager {
     if (pending) {
       this.pendingApprovals.delete(toolCallId)
       pending.resolve(true)
+      this.notifyWorkloadChanged()
     }
   }
 
@@ -248,6 +253,7 @@ export class AgentManager {
     if (pending) {
       this.pendingApprovals.delete(toolCallId)
       pending.resolve(false)
+      this.notifyWorkloadChanged()
     }
   }
 
@@ -267,12 +273,15 @@ export class AgentManager {
     }
 
     // Reject all pending approvals for this session
+    let clearedPending = false
     for (const [toolCallId, pending] of this.pendingApprovals) {
       if (pending.sessionId === sessionId) {
         pending.resolve(false)
         this.pendingApprovals.delete(toolCallId)
+        clearedPending = true
       }
     }
+    if (clearedPending) this.notifyWorkloadChanged()
 
     // Reset session status
     const session = this.sessions.get(sessionId)
@@ -302,6 +311,39 @@ export class AgentManager {
 
   getPendingApprovalCount(): number {
     return this.pendingApprovals.size
+  }
+
+  /**
+   * Pending built-in tool calls waiting for user approval (for global inbox hydration).
+   */
+  listPendingToolApprovals(): Array<{ workspaceId: string; sessionId: string; toolCall: ToolCall }> {
+    const out: Array<{ workspaceId: string; sessionId: string; toolCall: ToolCall }> = []
+    for (const [toolCallId, pending] of this.pendingApprovals) {
+      const session = this.sessions.get(pending.sessionId)
+      if (!session) continue
+      const toolCall = this.findToolCallInSession(session, toolCallId)
+      if (toolCall) {
+        out.push({
+          workspaceId: session.workspaceId,
+          sessionId: pending.sessionId,
+          toolCall: { ...toolCall },
+        })
+      }
+    }
+    return out
+  }
+
+  private findToolCallInSession(session: ChatSession, toolCallId: string): ToolCall | null {
+    for (const msg of session.messages) {
+      if (msg.role !== 'assistant' || !msg.toolCalls?.length) continue
+      const found = msg.toolCalls.find((t) => t.id === toolCallId)
+      if (found) return found
+    }
+    return null
+  }
+
+  private notifyWorkloadChanged(): void {
+    this.onWorkloadChanged?.()
   }
 
   async destroy(): Promise<void> {
@@ -612,6 +654,7 @@ export class AgentManager {
   private waitForApproval(sessionId: string, toolCall: ToolCall): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       this.pendingApprovals.set(toolCall.id, { sessionId, resolve })
+      this.notifyWorkloadChanged()
     })
   }
 
