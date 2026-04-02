@@ -4,6 +4,7 @@ import type {
   ConversationListChangedPayload,
   AgentBackend,
 } from '@aide/shared'
+import { scopedTo } from '../lib/workspace/workspaceScopedListener'
 
 export interface UseConversationHistoryReturn {
   conversations: ConversationMeta[]
@@ -40,11 +41,11 @@ export function useConversationHistory(workspaceId: string | undefined): UseConv
 
   // Subscribe to live updates
   useEffect(() => {
-    const unsub = window.api.onConversationListChanged((payload: ConversationListChangedPayload) => {
-      if (payload.workspaceId === workspaceId) {
+    const unsub = window.api.onConversationListChanged(
+      scopedTo<ConversationListChangedPayload>(workspaceId, (payload) => {
         setConversations(payload.conversations)
-      }
-    })
+      }),
+    )
     return unsub
   }, [workspaceId])
 

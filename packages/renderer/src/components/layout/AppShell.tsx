@@ -33,7 +33,16 @@ import {
   clearWorkspaceRuntimeSnapshot,
   saveWorkspaceRuntimeSnapshot,
 } from '../../lib/workspace/workspaceRuntimeSnapshots'
-import type { AideTask, BrowserSessionMode, GitignoreAuditResult, TaskExecution, TaskInputRequest, TaskTriggerResult } from '@aide/shared'
+import type {
+  AideTask,
+  BrowserSessionMode,
+  GitignoreAuditResult,
+  GitignoreAuditIpcPayload,
+  TaskExecution,
+  TaskInputRequest,
+  TaskTriggerResult,
+} from '@aide/shared'
+import { scopedTo } from '../../lib/workspace/workspaceScopedListener'
 import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
 
 /**
@@ -66,16 +75,6 @@ export function AppShell() {
   const [activeBrowserPaneId, setActiveBrowserPaneId] = useState<string | null>(null)
   const [activePanelId, setActivePanelId] = useState<string | null>(null)
   const commandContextRef = useRef<CommandContext | null>(null)
-  const {
-    runningTasks,
-    diagnostics: taskDiagnostics,
-    runTask,
-    killTask,
-    reloadTasks,
-    getLastTaskId,
-    getRunningTasks,
-    clearDiagnostics: clearAllDiagnostics,
-  } = useTasks()
   const taskTerminalMapRef = useRef(new Map<string, string>())
 
   // Workspace registry
@@ -92,9 +91,20 @@ export function AppShell() {
     reorderWorkspaces,
   } = useWorkspaces()
 
+  const {
+    runningTasks,
+    diagnostics: taskDiagnostics,
+    runTask,
+    killTask,
+    reloadTasks,
+    getLastTaskId,
+    getRunningTasks,
+    clearDiagnostics: clearAllDiagnostics,
+  } = useTasks(activeWorkspaceId)
+
   // Derive workspaceRoot from active workspace for existing consumers
   const workspaceRoot = activeWorkspace?.rootPath ?? null
-  const { worktrees, activeRoot, switchWorktree } = useWorktrees(workspaceRoot)
+  const { worktrees, activeRoot, switchWorktree } = useWorktrees(workspaceRoot, activeWorkspaceId)
 
   const persistWorkspaceRuntime = useCallback((
     workspaceId: string | null = activeWorkspaceId,
@@ -262,22 +272,27 @@ export function AppShell() {
     )
   }, [])
 
+  const onGitignoreAuditFromMain = useCallback(scopedTo<GitignoreAuditIpcPayload>(activeWorkspaceId, (payload) => {
+    presentGitignoreAudit(payload.result)
+  }), [activeWorkspaceId, presentGitignoreAudit])
+
   useEffect(() => {
-    const unsub = window.api.onGitignoreAuditResult(presentGitignoreAudit)
+    const unsub = window.api.onGitignoreAuditResult(onGitignoreAuditFromMain)
     return unsub
-  }, [presentGitignoreAudit])
+  }, [onGitignoreAuditFromMain])
 
   // Listen for task input requests
   useEffect(() => {
-    const unsub = window.api.onTaskRequestInput((request: TaskInputRequest) => {
+    const unsub = window.api.onTaskRequestInput(scopedTo<TaskInputRequest>(activeWorkspaceId, (request) => {
       setTaskInputRequest(request)
-    })
+    }))
     return unsub
-  }, [])
+  }, [activeWorkspaceId])
 
   // Listen for task auto-detect results (offer to generate tasks.json)
   useEffect(() => {
-    const unsub = window.api.onTaskAutoDetect((tasks: AideTask[]) => {
+    const unsub = window.api.onTaskAutoDetect(scopedTo(activeWorkspaceId, (payload) => {
+      const { tasks } = payload
       showToast(
         `Detected ${tasks.length} task${tasks.length !== 1 ? 's' : ''} from project config`,
         {
@@ -292,13 +307,13 @@ export function AppShell() {
           },
         },
       )
-    })
+    }))
     return unsub
-  }, [])
+  }, [activeWorkspaceId])
 
   // Terminal routing for task executions
   useEffect(() => {
-    const unsub = window.api.onTaskStatusChanged((execution) => {
+    const unsub = window.api.onTaskStatusChanged(scopedTo<TaskExecution>(activeWorkspaceId, (execution) => {
       const api = dockviewApiRef.current
       if (!api) return
 
@@ -339,7 +354,7 @@ export function AppShell() {
             title: `Task: ${execution.taskLabel}`,
             params: {
               terminalId: panelId,
-              workspaceId: activeWorkspaceId ?? undefined,
+              workspaceId: execution.workspaceId,
               taskPtyId: execution.ptyId,
               taskExecutionId: execution.executionId,
               taskId: execution.taskId,
@@ -366,22 +381,22 @@ export function AppShell() {
         }
         taskTerminalMapRef.current.delete(execution.executionId)
       }
-    })
+    }))
     return unsub
   }, [activeWorkspaceId])
 
   // Listen for task trigger results (auto-run outcomes) and show toasts
   useEffect(() => {
-    const unsub = window.api.onTaskTriggerResult((result: TaskTriggerResult) => {
+    const unsub = window.api.onTaskTriggerResult(scopedTo<TaskTriggerResult>(activeWorkspaceId, (result) => {
       if (result.outcome === 'failed') {
         showToast(`Task "${result.taskLabel}" failed to start: ${result.message ?? 'unknown error'}`)
       } else if (result.outcome === 'skipped') {
         // Silently skip - no toast needed for already-running tasks
       }
       // 'started' is normal, no toast needed
-    })
+    }))
     return unsub
-  }, [])
+  }, [activeWorkspaceId])
 
   // Update Problems panel diagnostics when they change
   useEffect(() => {
@@ -441,7 +456,7 @@ export function AppShell() {
   ])
 
   useEffect(() => {
-    const unsub = window.api.onBrowserFocusChanged(({ paneId, focused }) => {
+    const unsub = window.api.onBrowserFocusChanged(scopedTo(activeWorkspaceId, ({ paneId, focused }) => {
       if (focused) {
         setActiveBrowserPaneId(paneId)
         setContext('browserFocused', true)
@@ -452,9 +467,9 @@ export function AppShell() {
           return next
         })
       }
-    })
+    }))
     return unsub
-  }, [])
+  }, [activeWorkspaceId])
 
   const updateActivePanelZoom = useCallback(async (nextZoom: number) => {
     const api = dockviewApiRef.current
@@ -725,7 +740,13 @@ export function AppShell() {
       component: 'editorPane',
       tabComponent: 'editorTab',
       title: name,
-      params: { filePath, workspaceRoot, jumpToLine: opts?.line, jumpToColumn: opts?.column },
+      params: {
+        filePath,
+        workspaceRoot,
+        workspaceId: activeWorkspaceId ?? undefined,
+        jumpToLine: opts?.line,
+        jumpToColumn: opts?.column,
+      },
       position,
     })
 
@@ -736,7 +757,7 @@ export function AppShell() {
         onClick: () => openMarkdownPreview(filePath),
       })
     }
-  }, [openMarkdownPreview, workspaceRoot])
+  }, [activeWorkspaceId, openMarkdownPreview, workspaceRoot])
 
   // Register app-wide action dispatch layer — re-register when onFileOpen changes
   // so workspace root stays current after workspace switches.
@@ -782,6 +803,7 @@ export function AppShell() {
           onFileOpen={onFileOpen}
           collapsed={sidebarCollapsed}
           activeRoot={activeRoot}
+          workspaceId={activeWorkspaceId}
           onOpenFolder={handleOpenFolder}
           worktreeSection={
             workspaceRoot && worktrees.length > 0 ? (
@@ -949,7 +971,7 @@ export function AppShell() {
           <DockviewContainer onApiReady={onApiReady} />
         </div>
       </div>
-      <StatusBar runningTasks={runningTasks} />
+      <StatusBar workspaceId={activeWorkspaceId} runningTasks={runningTasks} />
       <ToastContainer />
       {commandPaletteOpen && (
         <CommandPalette onClose={() => setCommandPaletteOpen(false)} />

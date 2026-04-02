@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
 import { showToast } from '../shared/Toast'
 import type { BrowserCanNavigatePayload, BrowserDidNavigatePayload, BrowserLoadingPayload, BrowserPageTitlePayload } from '@aide/shared'
+import { scopedTo } from '../../lib/workspace/workspaceScopedListener'
 import type { BrowserPanelParams } from '../../lib/browserState'
 import { adjustZoomFactor, resetZoomFactor, zoomFactorToPercent } from '@aide/shared'
 import '../../styles/browser-pane.css'
@@ -182,28 +183,28 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
   }, [paneId, params?.zoomFactor])
 
   useEffect(() => {
-    const unsubNavigate = window.api.onBrowserDidNavigate((payload: BrowserDidNavigatePayload) => {
+    const unsubNavigate = window.api.onBrowserDidNavigate(scopedTo<BrowserDidNavigatePayload>(workspaceId, (payload) => {
       if (payload.paneId !== paneId) return
       setCurrentUrl(payload.url)
       setUrlInput(payload.url)
       syncPanelParams(payload.url)
-    })
+    }))
 
-    const unsubTitle = window.api.onBrowserTitleUpdated((payload: BrowserPageTitlePayload) => {
+    const unsubTitle = window.api.onBrowserTitleUpdated(scopedTo<BrowserPageTitlePayload>(workspaceId, (payload) => {
       if (payload.paneId !== paneId) return
       setPageTitle(payload.title)
-    })
+    }))
 
-    const unsubLoading = window.api.onBrowserLoadingChanged((payload: BrowserLoadingPayload) => {
+    const unsubLoading = window.api.onBrowserLoadingChanged(scopedTo<BrowserLoadingPayload>(workspaceId, (payload) => {
       if (payload.paneId !== paneId) return
       setLoading(payload.loading)
-    })
+    }))
 
-    const unsubCanNavigate = window.api.onBrowserCanNavigateChanged((payload: BrowserCanNavigatePayload) => {
+    const unsubCanNavigate = window.api.onBrowserCanNavigateChanged(scopedTo<BrowserCanNavigatePayload>(workspaceId, (payload) => {
       if (payload.paneId !== paneId) return
       setCanGoBack(payload.canGoBack)
       setCanGoForward(payload.canGoForward)
-    })
+    }))
 
     return () => {
       unsubNavigate()
@@ -211,7 +212,7 @@ export function BrowserPane({ api, containerApi, params }: IDockviewPanelProps<B
       unsubLoading()
       unsubCanNavigate()
     }
-  }, [paneId, syncPanelParams])
+  }, [paneId, syncPanelParams, workspaceId])
 
   useEffect(() => {
     api.setTitle(pageTitle || titleForUrl(currentUrl))

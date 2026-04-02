@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { WorktreeInfo } from '@aide/shared'
+import { scopedTo } from '../lib/workspace/workspaceScopedListener'
 
 /**
  * Manage and expose the repository worktrees and the currently selected worktree.
  *
  * @param workspaceRoot - The workspace root path used as the effective root when no worktree is active; pass `null` to clear worktree state.
+ * @param workspaceId - Active workspace id used to filter IPC list updates from other runtimes.
  * @returns An object with:
  *  - `worktrees`: the list of known `WorktreeInfo` entries,
  *  - `activeWorktree`: the path of the currently active worktree or `null`,
  *  - `activeRoot`: `activeWorktree` if set, otherwise `workspaceRoot`,
  *  - `switchWorktree`: a function that sets the active worktree to the given path (use `null` to clear the active worktree).
  */
-export function useWorktrees(workspaceRoot: string | null) {
+export function useWorktrees(workspaceRoot: string | null, workspaceId: string | null) {
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
   const [activeWorktree, setActiveWorktreeState] = useState<string | null>(null)
 
@@ -21,7 +23,7 @@ export function useWorktrees(workspaceRoot: string | null) {
   // Load initial state and subscribe to changes — re-run when workspaceRoot changes
   // to avoid stale worktree data from a previous workspace
   useEffect(() => {
-    if (!workspaceRoot) {
+    if (!workspaceRoot || !workspaceId) {
       setWorktrees([])
       setActiveWorktreeState(null)
       return
@@ -35,13 +37,13 @@ export function useWorktrees(workspaceRoot: string | null) {
     window.api.getActiveWorktree().then(setActiveWorktreeState)
 
     // Subscribe to worktree list changes — scoped to this workspace
-    const cleanup = window.api.onWorktreeListChanged((list) => {
-      setWorktrees(list)
-      const current = list.find((w) => w.isCurrent)
+    const cleanup = window.api.onWorktreeListChanged(scopedTo(workspaceId, (payload) => {
+      setWorktrees(payload.worktrees)
+      const current = payload.worktrees.find((w) => w.isCurrent)
       setActiveWorktreeState(current?.path ?? null)
-    })
+    }))
     return cleanup
-  }, [workspaceRoot])
+  }, [workspaceRoot, workspaceId])
 
   const switchWorktree = useCallback(async (worktreePath: string | null) => {
     await window.api.setActiveWorktree(worktreePath)
