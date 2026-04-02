@@ -114,7 +114,8 @@ export function AppShell() {
     clearDiagnostics: clearAllDiagnostics,
   } = useTasks(activeWorkspaceId)
 
-  // Derive workspaceRoot from active workspace for existing consumers
+  // Single-window shell: file tree, worktrees, and task runner UI follow the focused workspace.
+  // Multi-workspace backend state uses workspace ids elsewhere (snapshots, document store, inbox).
   const workspaceRoot = activeWorkspace?.rootPath ?? null
   const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot, activeWorkspaceId)
 

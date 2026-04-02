@@ -18,6 +18,11 @@ interface WorkspaceRuntimeHooks {
   onSnapshotChanged?: (runtime: WorkspaceRuntime) => void
 }
 
+/**
+ * Per-workspace backend instance. Lifecycle and state semantics for `foreground` /
+ * `backgrounded` / `asleep` vs `running` / `stopped` are documented under Phase 8 in
+ * `docs/multiwork.md`.
+ */
 export class WorkspaceRuntime {
   readonly workspaceId: WorkspaceId
   rootPath: string | null

@@ -1,7 +1,13 @@
 import type { WorkspaceRegistry } from './workspaceRegistry'
 import { getEffectiveWorkspaceRoot } from './effectiveWorkspaceRoot'
 
-/** Resolve target workspace id: explicit argument, else UI-active workspace. */
+/**
+ * Workspace id resolution for IPC handlers whose optional `workspaceId` means
+ * “the UI-active workspace.” See `docs/multiwork.md` → Phase 8 policy (implicit active workspace).
+ *
+ * Do not use this for routing when the event or session already identifies a workspace
+ * (e.g. task execution id, agent session id); use that id directly.
+ */
 export function resolveWorkspaceIdForIpc(
   registry: WorkspaceRegistry,
   workspaceId: string | null | undefined,

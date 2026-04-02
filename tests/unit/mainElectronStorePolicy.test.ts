@@ -14,7 +14,8 @@ function walkTsFiles(dir: string, out: string[]): void {
 
 /**
  * Phase 8: workspace folder paths must not be read/written via the app-level electron-store.
- * Use WorkspaceRegistry + {@link ../packages/main/src/workspace/workspaceRootResolution}.
+ * Use WorkspaceRegistry and `packages/main/src/workspace/workspaceRootResolution.ts`.
+ * Pair with `mainIpcWorkspaceFallbackPolicy.test.ts` for implicit-active IPC guardrails.
  */
 describe('main electron-store policy', () => {
   it('does not use deprecated workspaceRoot / activeWorktree store keys', () => {

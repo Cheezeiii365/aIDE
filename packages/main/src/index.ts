@@ -956,7 +956,7 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
     }
   }
 
-  // Broadcast resolved settings for the UI-active workspace (project layer), if any
+  // Phase 8: only allowlisted implicit-active use — merged project settings for the focused workspace
   const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, undefined)
   const resolved = rootPath
     ? await resolveSettings(rootPath, store)
