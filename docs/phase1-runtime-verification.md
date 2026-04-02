@@ -129,3 +129,13 @@ The branch should not be considered cleanly verified while lint is red.
 ## Recommended Next Step
 
 Complete the runtime ownership boundary for watcher, git, and worktree infrastructure before treating Phase 1 as done. After that, update the test mocks and re-run `pnpm test` and `pnpm lint` so the verification record is actually green.
+
+## Resolution (2026-04-01)
+
+**Finding 4 (test mocks):** Fixed — added `getWorkspaceRuntimeSnapshots` and `onWorkspaceRuntimeSnapshotsChanged` to `tests/unit/app.test.tsx` mock.
+
+**Finding 5 (lint):** Fixed — replaced empty `RuntimeSnapshot` interface with type alias in `runtimeTypes.ts`.
+
+**Finding 2 (empty service slots):** Annotated as Phase 3 scope. The slots are intentionally unpopulated per the Phase 1 additive-only rule (`IDE_BUILD_PLAN.md` line 1421) and the service ownership inventory (lines 1344-1346).
+
+**Findings 1 & 3 (watcher/polling ownership):** Deferred to Phase 3. These describe migrating global singletons behind runtime ownership, which is explicitly Phase 3 scope in `multiwork.md` (lines 301-328). Phase 2 (workspace-scoped event model) is prerequisite — concurrent watchers from multiple runtimes require workspace-addressable event routing before they can be enabled.

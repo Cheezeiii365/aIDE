@@ -107,6 +107,8 @@ const mockApi: WindowApi = {
   setWorkspaceRoot: vi.fn().mockResolvedValue(undefined),
   getActiveWorkspaceId: vi.fn().mockResolvedValue(null),
   onWorkspaceRegistryChanged: vi.fn().mockReturnValue(() => {}),
+  getWorkspaceRuntimeSnapshots: vi.fn().mockResolvedValue([]),
+  onWorkspaceRuntimeSnapshotsChanged: vi.fn().mockReturnValue(() => {}),
   saveWorkspaceState: vi.fn().mockResolvedValue(undefined),
   loadWorkspaceState: vi.fn().mockResolvedValue(null),
   saveTerminalState: vi.fn().mockResolvedValue(undefined),

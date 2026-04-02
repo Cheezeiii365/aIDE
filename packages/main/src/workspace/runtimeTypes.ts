@@ -21,7 +21,7 @@ export interface RuntimeLifecycle {
   lastStoppedAt: number | null
 }
 
-export interface RuntimeSnapshot extends WorkspaceRuntimeSnapshot {}
+export type RuntimeSnapshot = WorkspaceRuntimeSnapshot
 
 export interface RuntimeServicePresence {
   initialized: boolean
@@ -35,8 +35,11 @@ export interface WorkspaceRuntimeServiceSlots {
   conversationStore: unknown | null
   nativeSessionWatcher: unknown | null
   nativeSessionCache: unknown | null
+  /** Populated in Phase 3 — currently a global singleton in fileWatcher.ts */
   fileWatcher: unknown | null
+  /** Populated in Phase 3 — currently a global singleton in gitStatus.ts */
   gitStatus: unknown | null
+  /** Populated in Phase 3 — currently a global singleton in worktreeManager.ts */
   worktreeManager: unknown | null
 }
 
