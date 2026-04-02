@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { WorkspaceEntry } from '@aide/shared'
+import type { TaskInputRequest, WorkspaceEntry } from '@aide/shared'
 import { showToast } from '../components/shared/Toast'
 import {
   approvalInboxReplaceAll,
@@ -100,11 +100,25 @@ export function useRuntimeGlobalNotifications(
       }
     })
 
+    const unTaskInput = window.api.onTaskRequestInput((req: TaskInputRequest) => {
+      const active = activeRef.current
+      if (req.workspaceId === active) return
+      const name = workspaceLabel.current(req.workspaceId)
+      const wid = req.workspaceId
+      showToast(`${name}: task needs input`, {
+        label: 'Switch workspace',
+        onClick: () => {
+          void window.api.switchWorkspace(wid)
+        },
+      })
+    })
+
     return () => {
       unChatTool()
       unStreamEnd()
       unCli()
       unTask()
+      unTaskInput()
     }
   }, [])
 }

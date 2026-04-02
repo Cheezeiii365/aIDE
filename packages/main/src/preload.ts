@@ -199,6 +199,8 @@ const api: WindowApi = {
   // Task system
   listTasks: (workspaceId: string): Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }> =>
     ipcRenderer.invoke(IpcChannels.TASK_LIST, workspaceId),
+  listRunningTasks: (workspaceId: string): Promise<TaskExecution[]> =>
+    ipcRenderer.invoke(IpcChannels.TASK_LIST_RUNNING, workspaceId),
   runTask: (workspaceId: string, taskId: string, context?: TaskRunContext): Promise<{ executionId: string } | { error: string }> =>
     ipcRenderer.invoke(IpcChannels.TASK_RUN, workspaceId, taskId, context),
   killTask: (workspaceId: string, executionId: string) =>

@@ -76,6 +76,7 @@ const mockApi: WindowApi = {
   dismissGitignoreAudit: vi.fn().mockResolvedValue(undefined),
   onGitignoreAuditResult: vi.fn().mockReturnValue(() => {}),
   listTasks: vi.fn().mockResolvedValue({ tasks: [], compounds: [] }),
+  listRunningTasks: vi.fn().mockResolvedValue([]),
   runTask: vi.fn().mockResolvedValue({ executionId: 'exec-1' }),
   killTask: vi.fn(),
   reloadTasks: vi.fn().mockResolvedValue(undefined),

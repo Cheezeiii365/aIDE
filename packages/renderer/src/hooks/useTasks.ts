@@ -36,7 +36,7 @@ export function useTasks(workspaceId: string | null): TasksState {
   const runningTasksRef = useRef<TaskExecution[]>([])
   runningTasksRef.current = runningTasks
 
-  // Load tasks when workspace focus changes (main `listTasks` is scoped to focused runtime)
+  // Load task definitions and hydrate running executions when workspace focus changes
   useEffect(() => {
     if (!workspaceId) {
       setTasks([])
@@ -48,6 +48,9 @@ export function useTasks(workspaceId: string | null): TasksState {
     window.api.listTasks(workspaceId).then(({ tasks: t, compounds: c }) => {
       setTasks(t)
       setCompounds(c)
+    })
+    window.api.listRunningTasks(workspaceId).then((running) => {
+      setRunningTasks(running.filter((e) => e.status === 'running'))
     })
   }, [workspaceId])
 
@@ -117,6 +120,8 @@ export function useTasks(workspaceId: string | null): TasksState {
     const { tasks: t, compounds: c } = await window.api.listTasks(workspaceId)
     setTasks(t)
     setCompounds(c)
+    const running = await window.api.listRunningTasks(workspaceId)
+    setRunningTasks(running.filter((e) => e.status === 'running'))
   }, [workspaceId])
 
   const getLastTaskId = useCallback(() => lastTaskIdRef.current, [])

@@ -444,6 +444,11 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
     onWorkloadChanged: () => {
       runtime.refreshWorkload()
     },
+    runWorkspaceTask: async (taskId, ctx) => {
+      const tr = getTaskRunner(runtime)
+      if (!tr) return { error: 'Task runner not available' }
+      return tr.run(taskId, ctx)
+    },
   })
   const resolved = resolveAppDefaults(store)
   const cliAgentManager = new CliAgentManager({
@@ -1167,6 +1172,11 @@ ipcMain.handle(IpcChannels.TASK_LIST, async (_event, workspaceId: string) => {
   if (!taskRunner) return { tasks: [], compounds: [] }
   await taskRunner.loadTasks()
   return { tasks: taskRunner.getTasks(), compounds: taskRunner.getCompounds() }
+})
+
+ipcMain.handle(IpcChannels.TASK_LIST_RUNNING, async (_event, workspaceId: string) => {
+  const taskRunner = getTaskRunner(runtimeRegistry.get(workspaceId))
+  return taskRunner?.getRunning() ?? []
 })
 
 ipcMain.handle(IpcChannels.TASK_RUN, async (_event, workspaceId: string, taskId: string, context?: TaskRunContext) => {

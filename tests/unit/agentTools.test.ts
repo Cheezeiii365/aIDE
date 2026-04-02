@@ -33,8 +33,8 @@ afterAll(() => {
 // ─── Structural Tests ───────────────────────────────────────────────
 
 describe('BUILTIN_TOOLS', () => {
-  it('exports exactly 8 built-in tools', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(8)
+  it('exports exactly 9 built-in tools', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(9)
   })
 
   it('every tool has a unique name', () => {
@@ -87,6 +87,10 @@ describe('mode assignments', () => {
 
   it('terminal_exec is only available in agent', () => {
     expect(findTool('terminal_exec').modes).toEqual(['agent'])
+  })
+
+  it('run_workspace_task is only available in agent', () => {
+    expect(findTool('run_workspace_task').modes).toEqual(['agent'])
   })
 
   it('search_files is available in all modes', () => {

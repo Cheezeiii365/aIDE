@@ -146,6 +146,7 @@ export const IpcChannels = {
 
   // Task system
   TASK_LIST: 'task:list',
+  TASK_LIST_RUNNING: 'task:list-running',
   TASK_RUN: 'task:run',
   TASK_KILL: 'task:kill',
   TASK_STATUS_CHANGED: 'task:status-changed',
@@ -889,6 +890,7 @@ export interface WindowApi {
 
   // Task system
   listTasks: (workspaceId: string) => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
+  listRunningTasks: (workspaceId: string) => Promise<TaskExecution[]>
   runTask: (workspaceId: string, taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
   killTask: (workspaceId: string, executionId: string) => void
   reloadTasks: (workspaceId: string) => Promise<void>

@@ -20,6 +20,7 @@ import {
   type ChatSessionStatus,
   type ToolCall,
   type ToolResult,
+  type TaskExecution,
   type LlmProviderConfig,
   type ChatStreamChunk,
   type ChatStreamEnd,
@@ -33,6 +34,7 @@ import { LlmClient } from './llmClient'
 import { ToolRegistry } from './toolRegistry'
 import type { BrowserPaneManager } from '../browserPaneManager'
 import type { ConversationStore } from './conversationStore'
+import type { TaskVariableContext } from '../tasks/taskVariableResolver'
 
 // ─── Constants ─────────────────────────────────────────────────────
 
@@ -51,6 +53,11 @@ interface AgentManagerOpts {
   conversationStore?: ConversationStore
   /** Called when pending tool approvals or related workload change (for runtime snapshot refresh). */
   onWorkloadChanged?: () => void
+  /** Run a .aide/tasks.json task in this workspace (run_workspace_task builtin). */
+  runWorkspaceTask?: (
+    taskId: string,
+    ctx: TaskVariableContext,
+  ) => Promise<TaskExecution | { error: string }>
 }
 
 interface PendingApproval {
@@ -91,6 +98,7 @@ export class AgentManager {
     this.toolRegistry = new ToolRegistry({
       workspaceRoot: opts.workspaceRoot,
       browserPaneManager: opts.browserPaneManager,
+      runWorkspaceTask: opts.runWorkspaceTask,
     })
     this.toolRegistry.registerBuiltins()
   }

@@ -2,8 +2,9 @@ import { stat, readFile, writeFile, mkdir, readdir } from 'fs/promises'
 import { dirname, join, relative } from 'path'
 import { execFile, spawn } from 'child_process'
 import { rgPath } from '@vscode/ripgrep'
-import type { ToolDefinition, ChatMode } from '@aide/shared'
+import type { TaskExecution, ToolDefinition, ChatMode } from '@aide/shared'
 import { fetchGitStatus } from '../git/gitStatus'
+import type { TaskVariableContext } from '../tasks/taskVariableResolver'
 import type { BrowserPaneManager } from '../browserPaneManager'
 
 // ─── Context & Types ────────────────────────────────────────────────
@@ -15,6 +16,11 @@ export interface ToolContext {
   workspaceId?: string
   workingSet?: string[]
   browserPaneManager?: BrowserPaneManager
+  /** When set, run_workspace_task delegates to the workspace TaskRunner (.aide/tasks.json). */
+  runWorkspaceTask?: (
+    taskId: string,
+    ctx: TaskVariableContext,
+  ) => Promise<TaskExecution | { error: string }>
 }
 
 export interface BuiltinTool {
@@ -377,6 +383,39 @@ const gitDiff: BuiltinTool = {
   },
 }
 
+const runWorkspaceTaskBuiltin: BuiltinTool = {
+  definition: {
+    name: 'run_workspace_task',
+    description:
+      'Run a task from .aide/tasks.json by id (same as the Tasks UI): dependencies, env, cwd, and problem matchers apply. Use for defined build/test/lint workflows. For ad-hoc shell commands use terminal_exec.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'Task id from .aide/tasks.json' },
+      },
+      required: ['taskId'],
+    },
+    source: 'builtin',
+  },
+  modes: ['agent'],
+  async execute(input, context) {
+    const taskId = input.taskId as string
+    const run = context.runWorkspaceTask
+    if (!run) return 'Task runner is not wired for this workspace session.'
+    const root = context.effectiveRoot ?? context.workspaceRoot
+    const ctx: TaskVariableContext = {
+      workspaceRoot: root,
+      workspaceName: root.split(/[/\\]/).pop() ?? root,
+    }
+    const result = await run(taskId, ctx)
+    if ('error' in result) return `Failed to run task: ${result.error}`
+    return (
+      `Task "${result.taskLabel}" started (execution ${result.executionId}, status ${result.status}). ` +
+      'Output goes to the task terminal; use terminal_exec if you need command output in chat.'
+    )
+  },
+}
+
 const browserRead: BuiltinTool = {
   definition: {
     name: 'browser_read',
@@ -410,6 +449,7 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
   fileWrite,
   fileList,
   terminalExec,
+  runWorkspaceTaskBuiltin,
   searchFiles,
   gitStatus,
   gitDiff,

@@ -43,6 +43,12 @@ import type {
   TaskInputRequest,
   TaskTriggerResult,
 } from '@aide/shared'
+import {
+  getFirstPendingTaskInputForWorkspace,
+  subscribeTaskInputInbox,
+  taskInputInboxRemove,
+  taskInputInboxUpsert,
+} from '../../lib/workspace/taskInputInboxStore'
 import { scopedTo } from '../../lib/workspace/workspaceScopedListener'
 import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
 
@@ -79,6 +85,7 @@ export function AppShell() {
   const [activePanelId, setActivePanelId] = useState<string | null>(null)
   const commandContextRef = useRef<CommandContext | null>(null)
   const taskTerminalMapRef = useRef(new Map<string, string>())
+  const taskInputDismissRef = useRef<TaskInputRequest | null>(null)
 
   // Workspace registry
   const {
@@ -305,13 +312,34 @@ export function AppShell() {
     return unsub
   }, [onGitignoreAuditFromMain])
 
-  // Listen for task input requests
+  // Task input: global IPC → inbox; modal shows next pending for the active workspace
   useEffect(() => {
-    const unsub = window.api.onTaskRequestInput(scopedTo<TaskInputRequest>(activeWorkspaceId, (request) => {
-      setTaskInputRequest(request)
-    }))
+    const unsub = window.api.onTaskRequestInput((request) => {
+      taskInputInboxUpsert(request)
+    })
     return unsub
+  }, [])
+
+  useEffect(() => {
+    taskInputDismissRef.current = taskInputRequest
+  }, [taskInputRequest])
+
+  useEffect(() => {
+    const sync = (): void => {
+      if (!activeWorkspaceId) {
+        setTaskInputRequest(null)
+        return
+      }
+      setTaskInputRequest(getFirstPendingTaskInputForWorkspace(activeWorkspaceId))
+    }
+    sync()
+    return subscribeTaskInputInbox(sync)
   }, [activeWorkspaceId])
+
+  const dismissTaskInputModal = useCallback(() => {
+    const cur = taskInputDismissRef.current
+    if (cur) taskInputInboxRemove(cur.workspaceId, cur.requestId)
+  }, [])
 
   // Listen for task auto-detect results (offer to generate tasks.json)
   useEffect(() => {
@@ -1023,7 +1051,7 @@ export function AppShell() {
       {taskInputRequest && (
         <TaskInputModal
           request={taskInputRequest}
-          onClose={() => setTaskInputRequest(null)}
+          onClose={dismissTaskInputModal}
         />
       )}
       {taskPickerItems && (
