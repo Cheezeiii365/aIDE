@@ -133,7 +133,7 @@ export function stopGitPollingForWorkspace(workspaceId: string): void {
 }
 
 export function stopAllGitPolling(): void {
-  for (const id of pollsByWorkspace.keys()) {
+  for (const id of [...pollsByWorkspace.keys()]) {
     stopGitPollingForWorkspace(id)
   }
 }
