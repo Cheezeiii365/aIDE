@@ -24,16 +24,16 @@ describe('main electron-store policy', () => {
     walkTsFiles(root, files)
 
     const forbidden = [
-      `store.get('workspaceRoot')`,
-      `store.set('workspaceRoot'`,
-      `store.get('activeWorktree')`,
-      `store.set('activeWorktree'`,
+      /store\.get\(\s*['"]workspaceRoot['"]\s*\)/,
+      /store\.set\(\s*['"]workspaceRoot['"]\s*,/,
+      /store\.get\(\s*['"]activeWorktree['"]\s*\)/,
+      /store\.set\(\s*['"]activeWorktree['"]\s*,/,
     ]
 
     for (const file of files) {
       const text = readFileSync(file, 'utf8')
-      for (const frag of forbidden) {
-        expect(text, `${file} must not contain ${frag}`).not.toContain(frag)
+      for (const pattern of forbidden) {
+        expect(text, `${file} must not match ${pattern}`).not.toMatch(pattern)
       }
     }
   })
