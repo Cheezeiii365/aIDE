@@ -33,6 +33,11 @@ export function collectViewCommands(getCtx: GetCommandContext): CommandSpec[] {
 
         const existing = api.panels.find((p) => p.id === 'findInFiles')
         if (existing) {
+          existing.api.updateParameters({
+            ...existing.params,
+            workspaceRoot: ctx.getActiveWorktreeRoot() ?? '',
+            workspaceId: ctx.getActiveWorkspaceId() ?? '',
+          })
           existing.api.setActive()
           return
         }
