@@ -240,7 +240,7 @@ export async function stopWatchers(scopeId?: string): Promise<void> {
  * Stop every watcher scope. Prefer {@link stopWatchers} with a workspace scope id when tearing down one runtime.
  */
 export async function stopWatcher(): Promise<void> {
-  await stopWatchers()
+  await stopWatchers('default')
 }
 
 /**
@@ -258,8 +258,8 @@ export function registerFileWatcherHandlers(
   })
 
   ipcMain.handle('fs:watch-stop', async () => {
-    console.warn('[fileWatcher] fs:watch-stop is legacy; stops all scopes')
-    await stopWatchers()
+    console.warn('[fileWatcher] fs:watch-stop is legacy; stops default scope only')
+    await stopWatchers('default')
   })
 }
 
