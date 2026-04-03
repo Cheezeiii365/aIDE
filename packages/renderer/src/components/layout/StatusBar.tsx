@@ -51,13 +51,17 @@ export function StatusBar({ workspaceId, runningTasks = [] }: StatusBarProps) {
 
   useEffect(() => {
     if (!workspaceId) return undefined
+    let disposed = false
     window.api.getGitStatus(workspaceId).then((result) => {
-      if (result) setBranch(result.branch)
+      if (!disposed && result) setBranch(result.branch)
     })
     const unsub = window.api.onGitBranchChanged(scopedTo(workspaceId, (payload) => {
       setBranch(payload.branch)
     }))
-    return unsub
+    return () => {
+      disposed = true
+      unsub()
+    }
   }, [workspaceId])
 
   return (
