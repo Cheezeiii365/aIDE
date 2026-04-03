@@ -26,11 +26,16 @@ export function CreateWorktreeModal({ workspaceId, onClose }: Props) {
 
   // Load branches and focus input on mount
   useEffect(() => {
+    let cancelled = false
     window.api.listBranches(workspaceId).then((branches) => {
+      if (cancelled) return
       setExistingBranches(branches)
       if (branches.length > 0) setBaseBranch(branches[0])
     })
     inputRef.current?.focus()
+    return () => {
+      cancelled = true
+    }
   }, [workspaceId])
 
   // Close on Escape
