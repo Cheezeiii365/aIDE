@@ -22,7 +22,13 @@ export function collectTaskCommands(getCtx: GetCommandContext): CommandSpec[] {
             showToast('No active workspace')
             return
           }
-          const { tasks, compounds } = await window.api.listTasks(wid)
+          let tasks, compounds
+          try {
+            ({ tasks, compounds } = await window.api.listTasks(wid))
+          } catch {
+            showToast('Failed to load tasks')
+            return
+          }
           const allItems = [
             ...tasks.map((t) => ({ id: t.id, label: t.label, group: t.group })),
             ...compounds.map((c) => ({ id: c.id, label: c.label, group: undefined as string | undefined })),
