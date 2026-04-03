@@ -180,6 +180,13 @@ export class TaskRunner {
     }
   }
 
+  private cancelAllPendingInputs(): void {
+    for (const [requestId, resolver] of this.pendingInputResolvers) {
+      this.pendingInputResolvers.delete(requestId)
+      resolver(null)
+    }
+  }
+
   getPendingInputCount(): number {
     return this.pendingInputResolvers.size
   }
@@ -545,6 +552,7 @@ export class TaskRunner {
    * Kill all running tasks.
    */
   killAll(): void {
+    this.cancelAllPendingInputs()
     for (const [id] of this.running) {
       this.kill(id)
     }
