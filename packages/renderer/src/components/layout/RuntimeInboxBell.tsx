@@ -9,6 +9,7 @@ import {
   getRuntimeActivitySnapshot,
   subscribeRuntimeActivity,
 } from '../../lib/workspace/runtimeActivityStore'
+import { showToast } from '../shared/Toast'
 
 interface Props {
   workspaces: WorkspaceEntry[]
@@ -69,13 +70,21 @@ export function RuntimeInboxBell({
   const count = approvals.length
 
   const approve = async (row: PendingToolApprovalInfo) => {
-    await window.api.chatToolApprove(row.sessionId, row.toolCall.id)
-    approvalInboxRemove(row.workspaceId, row.sessionId, row.toolCall.id)
+    try {
+      await window.api.chatToolApprove(row.sessionId, row.toolCall.id)
+      approvalInboxRemove(row.workspaceId, row.sessionId, row.toolCall.id)
+    } catch {
+      showToast('Failed to approve tool call')
+    }
   }
 
   const reject = async (row: PendingToolApprovalInfo) => {
-    await window.api.chatToolReject(row.sessionId, row.toolCall.id)
-    approvalInboxRemove(row.workspaceId, row.sessionId, row.toolCall.id)
+    try {
+      await window.api.chatToolReject(row.sessionId, row.toolCall.id)
+      approvalInboxRemove(row.workspaceId, row.sessionId, row.toolCall.id)
+    } catch {
+      showToast('Failed to reject tool call')
+    }
   }
 
   return (
