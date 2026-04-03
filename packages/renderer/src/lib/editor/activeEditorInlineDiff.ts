@@ -11,7 +11,7 @@ import { toggleInlineDiff } from './editorInlineDiff'
 
 /**
  * Runs `toggleInlineDiff` on whichever editor last reported focus to `activeEditor`.
- * Uses `getWorkspaceRoot()` from preload when resolving git baseline (same idea as `EditorPane`).
+ * Uses `getWorkspaceRoot()` for the active workspace (effective tree for git baseline).
  */
 export async function toggleInlineDiffInActiveEditor(): Promise<void> {
   const active = getActiveEditor()

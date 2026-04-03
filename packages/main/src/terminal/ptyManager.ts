@@ -4,8 +4,9 @@ import { randomUUID } from 'crypto'
 import * as os from 'os'
 import * as fs from 'fs'
 import { IpcChannels } from '@aide/shared'
-import type Store from 'electron-store'
-import type { AppSettings } from '@aide/shared'
+import type { PtyDataOutPayload, PtyExitPayload } from '@aide/shared'
+
+export type GetDefaultPtyCwd = (workspaceId: string) => string | null
 
 interface PtySession {
   id: string
@@ -47,11 +48,11 @@ function detectShell(): string {
  * Register IPC handlers for creating, controlling, and terminating pseudo-terminal (PTY) sessions and for forwarding PTY events to the renderer.
  *
  * @param getWebContents - Function that returns the current renderer WebContents or `null`; used to send PTY events back to the renderer.
- * @param store - Application settings store used to resolve default workspace/root paths and related configuration.
+ * @param getDefaultCwdForWorkspace - Effective working tree for the workspace (repo or active worktree), or null.
  */
 export function registerPtyHandlers(
   getWebContents: () => WebContents | null,
-  store: Store<AppSettings>,
+  getDefaultCwdForWorkspace: GetDefaultPtyCwd,
 ): void {
   ipcMain.handle(IpcChannels.PTY_CREATE, (_event, opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) => {
     const id = opts?.id || randomUUID()
@@ -60,7 +61,8 @@ export function registerPtyHandlers(
       return { id: existing.id, scrollback: existing.scrollback }
     }
 
-    const preferredCwd = opts?.cwd || store.get('workspaceRoot') || os.homedir()
+    const fromWorkspace = opts?.workspaceId ? getDefaultCwdForWorkspace(opts.workspaceId) : null
+    const preferredCwd = opts?.cwd || fromWorkspace || os.homedir()
     const cwd = fs.existsSync(preferredCwd) ? preferredCwd : os.homedir()
     const shell = opts?.shell || detectShell()
 
@@ -87,11 +89,21 @@ export function registerPtyHandlers(
 
     pty.onData((data) => {
       session.scrollback = appendScrollback(session.scrollback, data)
-      getWebContents()?.send(IpcChannels.PTY_DATA_OUT, id, data)
+      const payload: PtyDataOutPayload = {
+        workspaceId: session.workspaceId,
+        ptyId: id,
+        data,
+      }
+      getWebContents()?.send(IpcChannels.PTY_DATA_OUT, payload)
     })
 
     pty.onExit(({ exitCode }) => {
-      getWebContents()?.send(IpcChannels.PTY_EXIT, id, exitCode)
+      const payload: PtyExitPayload = {
+        workspaceId: session.workspaceId,
+        ptyId: id,
+        exitCode,
+      }
+      getWebContents()?.send(IpcChannels.PTY_EXIT, payload)
       ptys.delete(id)
     })
 

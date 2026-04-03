@@ -43,7 +43,7 @@ export function ChatPane({ params, api }: IDockviewPanelProps<ChatPanelParams>) 
             onModeChange={chat.setMode}
             disabled={chat.status !== 'idle'}
           />
-          <PermissionTierBadge />
+          <PermissionTierBadge workspaceId={params?.workspaceId} />
         </div>
         {chat.mode === 'edit' && (
           <WorkingSetPicker

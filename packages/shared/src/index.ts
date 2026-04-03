@@ -7,7 +7,7 @@ export type { CommandDefinition, KeybindingRule } from './commands'
 export type {
   ChatMode, ChatSessionStatus, ToolCallStatus,
   ToolCall, ToolResult, ChatMessage, ChatSession,
-  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
   ToolDefinition,
   McpServerConfig, McpServerConnectionStatus, McpServerStatus,
   PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
@@ -16,7 +16,7 @@ export type {
 export type {
   AgentBackend, CliAgentProcessStatus,
   CliAgentMessage, CliAgentStreamDelta, CliAgentSession,
-  CliAgentStatusPayload, CliAgentResultPayload,
+  CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
 } from './cliAgentTypes'
 export type {
   ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
@@ -29,13 +29,13 @@ export type {
   OpenAiRequest, OpenAiMessage, OpenAiToolCall, OpenAiTool, OpenAiStreamChunk, OpenAiStreamToolCall,
 } from './llmTypes'
 import type {
-  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload,
+  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
   McpServerStatus, ToolDefinition,
   PermissionTier, ToolPermissionConfig,
 } from './agentTypes'
 import type {
   AgentBackend, CliAgentStreamDelta, CliAgentMessage,
-  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload,
+  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
 } from './cliAgentTypes'
 import type {
   ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
@@ -146,6 +146,7 @@ export const IpcChannels = {
 
   // Task system
   TASK_LIST: 'task:list',
+  TASK_LIST_RUNNING: 'task:list-running',
   TASK_RUN: 'task:run',
   TASK_KILL: 'task:kill',
   TASK_STATUS_CHANGED: 'task:status-changed',
@@ -170,6 +171,8 @@ export const IpcChannels = {
   WORKSPACE_GET_ACTIVE: 'workspace:get-active',
   WORKSPACE_CREATE_BLANK: 'workspace:create-blank',
   WORKSPACE_SET_ROOT: 'workspace:set-root',
+  WORKSPACE_RUNTIME_SNAPSHOTS_GET: 'workspace-runtime:snapshots-get',
+  WORKSPACE_RUNTIME_SNAPSHOTS_CHANGED: 'workspace-runtime:snapshots-changed',
 
   // State persistence
   STATE_SAVE: 'state:save',
@@ -223,6 +226,7 @@ export const IpcChannels = {
   CHAT_SET_MODE: 'chat:set-mode',
   CHAT_SET_WORKING_SET: 'chat:set-working-set',
   CHAT_GET_HISTORY: 'chat:get-history',
+  CHAT_PENDING_TOOL_APPROVALS_LIST: 'chat:pending-tool-approvals-list',
 
   // ─── MCP ──────────────────────────────────────
   MCP_LIST_SERVERS: 'mcp:list-servers',
@@ -267,7 +271,10 @@ export interface FsWatchEvent {
   type: FsEventType
   path: string
   isDirectory: boolean
+  /** Watcher scope key (same as `workspaceId` when watching a workspace root). */
   scopeId: string
+  /** Workspace that owns this watch scope; equals `scopeId` for per-workspace watchers. */
+  workspaceId: string
 }
 
 export type GitFileStatus = 'M' | 'A' | '?' | 'D' | 'C'
@@ -278,12 +285,30 @@ export interface GitStatusResult {
   ignoredPaths?: string[]
 }
 
+/** Main → renderer: file status / ignored paths changed for a repository. */
+export interface GitStatusChangedPayload {
+  workspaceId: string
+  status: GitStatusResult
+}
+
+/** Main → renderer: current branch changed for a repository. */
+export interface GitBranchChangedPayload {
+  workspaceId: string
+  branch: string
+}
+
 export interface WorktreeInfo {
   path: string
   branch: string
   isMain: boolean
   isDirty: boolean
   isCurrent: boolean
+}
+
+/** Main → renderer: worktree list updated for one workspace runtime. */
+export interface WorktreeListChangedPayload {
+  workspaceId: string
+  worktrees: WorktreeInfo[]
 }
 
 export interface WorktreeCreateOpts {
@@ -295,8 +320,6 @@ export interface WorktreeCreateOpts {
 export interface AppSettings {
   theme: ThemeName
   sidebarWidth: number
-  workspaceRoot: string | null
-  activeWorktree: string | null
   editorDefaults?: Partial<AideProjectSettings>
   cleanShutdown?: boolean
 }
@@ -304,12 +327,12 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'one-dark',
   sidebarWidth: 220,
-  workspaceRoot: null,
-  activeWorktree: null,
 }
 
 // Search types (find in files)
 export interface SearchOpts {
+  /** Workspace that initiated the search (included on result batches). */
+  workspaceId: string
   query: string
   rootPath: string
   isRegex: boolean
@@ -328,6 +351,19 @@ export interface SearchMatch {
 export interface SearchFileResult {
   filePath: string
   matches: SearchMatch[]
+}
+
+/** Main → renderer: incremental search hits. */
+export interface SearchResultsPayload {
+  workspaceId: string
+  results: SearchFileResult[]
+}
+
+/** Main → renderer: search finished. */
+export interface SearchCompletePayload {
+  workspaceId: string
+  totalMatches: number
+  totalFiles: number
 }
 
 export interface ReplaceOpts {
@@ -436,6 +472,12 @@ export interface GitignoreAuditResult {
   total: number
 }
 
+/** Main → renderer: gitignore audit for a workspace folder. */
+export interface GitignoreAuditIpcPayload {
+  workspaceId: string
+  result: GitignoreAuditResult
+}
+
 // ─── Workspace Registry ──────────────────────────
 export interface WorkspaceEntry {
   id: string
@@ -454,6 +496,43 @@ export interface AppWorkspaceRegistry {
   lastSessionWorkspaces: string[]
 }
 
+export type WorkspaceRuntimeState =
+  | 'foreground'
+  | 'backgrounded'
+  | 'asleep'
+  | 'blocked'
+
+export type WorkspaceRuntimeStatus =
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'error'
+
+export interface WorkspaceRuntimeWorkloadFlags {
+  agentsRunning: boolean
+  tasksRunning: boolean
+  pendingApproval: boolean
+  pendingUserInput: boolean
+}
+
+export interface WorkspaceRuntimeSnapshot {
+  workspaceId: string
+  rootPath: string | null
+  name: string
+  icon?: string
+  color?: string
+  status: WorkspaceRuntimeStatus
+  state: WorkspaceRuntimeState
+  initialized: boolean
+  servicesAttached: boolean
+  workload: WorkspaceRuntimeWorkloadFlags
+  activationSeq: number
+  lastForegroundedAt: number | null
+  lastBackgroundedAt: number | null
+  lastStoppedAt: number | null
+}
+
 // ─── State Persistence ───────────────────────────
 export interface TabState {
   filePath: string
@@ -463,6 +542,10 @@ export interface TabState {
   foldedRanges: [number, number][]
   isDirty: boolean
   dirtyContent?: string
+  /** Last known on-disk content when the tab was dirty (for restore without re-read). */
+  cleanBaseline?: string
+  selection?: { anchor: number; head: number }
+  diskChangedWhileDirty?: boolean
 }
 
 export interface AideLocalState {
@@ -473,6 +556,8 @@ export interface AideLocalState {
   sidebarCollapsed: boolean
   sidebarSections: Record<string, boolean>
   browserPanes?: BrowserPaneState[]
+  /** Persisted active git worktree path for this workspace, or null for main tree. Omitted in older state files. */
+  activeWorktreePath?: string | null
 }
 
 export interface TerminalState {
@@ -510,27 +595,32 @@ export interface BrowserHostUpdate {
 
 export interface BrowserDidNavigatePayload {
   paneId: string
+  workspaceId: string
   url: string
 }
 
 export interface BrowserPageTitlePayload {
   paneId: string
+  workspaceId: string
   title: string
 }
 
 export interface BrowserLoadingPayload {
   paneId: string
+  workspaceId: string
   loading: boolean
 }
 
 export interface BrowserCanNavigatePayload {
   paneId: string
+  workspaceId: string
   canGoBack: boolean
   canGoForward: boolean
 }
 
 export interface BrowserFocusPayload {
   paneId: string
+  workspaceId: string
   focused: boolean
 }
 
@@ -617,9 +707,16 @@ export interface AideTasksFile {
   }
 }
 
+/** Main → renderer: task auto-detect suggested tasks for a workspace. */
+export interface TaskAutoDetectPayload {
+  workspaceId: string
+  tasks: AideTask[]
+}
+
 export type TaskExecutionStatus = 'running' | 'succeeded' | 'failed' | 'killed'
 
 export interface TaskExecution {
+  workspaceId: string
   executionId: string
   taskId: string
   taskLabel: string
@@ -632,6 +729,7 @@ export interface TaskExecution {
 }
 
 export interface TaskInputRequest {
+  workspaceId: string
   requestId: string
   input: TaskInput
   resolvedDescription: string
@@ -646,6 +744,12 @@ export interface TaskDiagnostic {
   source: string
 }
 
+/** Main → renderer: batched problem matcher output for a workspace. */
+export interface TaskDiagnosticsPayload {
+  workspaceId: string
+  diagnostics: TaskDiagnostic[]
+}
+
 export interface TaskRunContext {
   activeFile?: string
   selectedText?: string
@@ -655,11 +759,26 @@ export interface TaskRunContext {
 export type TaskTriggerSource = 'workspaceOpen' | 'fileSave' | 'manual'
 
 export interface TaskTriggerResult {
+  workspaceId: string
   taskId: string
   taskLabel: string
   source: TaskTriggerSource
   outcome: 'started' | 'skipped' | 'failed'
   message?: string
+}
+
+/** Main → renderer: PTY output (user or task terminal). */
+export interface PtyDataOutPayload {
+  workspaceId: string | null
+  ptyId: string
+  data: string
+}
+
+/** Main → renderer: PTY process exited. */
+export interface PtyExitPayload {
+  workspaceId: string | null
+  ptyId: string
+  exitCode: number
 }
 
 /** Single source of truth for the preload bridge API shape. */
@@ -689,7 +808,8 @@ export interface WindowApi {
 
   // Workspace
   openWorkspaceDialog: () => Promise<string | null>
-  getWorkspaceRoot: () => Promise<string | null>
+  /** Effective root (active worktree or repo) for `workspaceId`, or the UI-active workspace when omitted. */
+  getWorkspaceRoot: (workspaceId?: string) => Promise<string | null>
 
   // Filesystem
   readDir: (dirPath: string) => Promise<DirEntry[]>
@@ -705,9 +825,9 @@ export interface WindowApi {
   onFsWatchEvent: (callback: (events: FsWatchEvent[]) => void) => () => void
 
   // Git
-  getGitStatus: () => Promise<GitStatusResult | null>
-  onGitStatusChanged: (callback: (status: GitStatusResult) => void) => () => void
-  onGitBranchChanged: (callback: (branch: string) => void) => () => void
+  getGitStatus: (workspaceId: string) => Promise<GitStatusResult | null>
+  onGitStatusChanged: (callback: (payload: GitStatusChangedPayload) => void) => () => void
+  onGitBranchChanged: (callback: (payload: GitBranchChangedPayload) => void) => () => void
 
   // Git diff
   getGitFileOriginal: (rootPath: string | null, filePath: string) => Promise<{ content: string | null }>
@@ -718,38 +838,38 @@ export interface WindowApi {
   ptyResize: (id: string, cols: number, rows: number) => void
   ptyKill: (id: string) => void
   ptyKillWorkspace: (workspaceId: string) => void
-  onPtyData: (callback: (id: string, data: string) => void) => () => void
-  onPtyExit: (callback: (id: string, exitCode: number) => void) => () => void
+  onPtyData: (callback: (payload: PtyDataOutPayload) => void) => () => void
+  onPtyExit: (callback: (payload: PtyExitPayload) => void) => () => void
 
   // Worktrees
-  listWorktrees: () => Promise<WorktreeInfo[]>
-  createWorktree: (opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
-  removeWorktree: (worktreePath: string) => Promise<{ success: true } | { error: string }>
-  setActiveWorktree: (worktreePath: string | null) => Promise<void>
-  getActiveWorktree: () => Promise<string | null>
-  onWorktreeListChanged: (callback: (worktrees: WorktreeInfo[]) => void) => () => void
-  listBranches: () => Promise<string[]>
+  listWorktrees: (workspaceId: string) => Promise<WorktreeInfo[]>
+  createWorktree: (workspaceId: string, opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
+  removeWorktree: (workspaceId: string, worktreePath: string) => Promise<{ success: true } | { error: string }>
+  setActiveWorktree: (workspaceId: string, worktreePath: string | null) => Promise<void>
+  getActiveWorktree: (workspaceId: string) => Promise<string | null>
+  onWorktreeListChanged: (callback: (payload: WorktreeListChangedPayload) => void) => () => void
+  listBranches: (workspaceId: string) => Promise<string[]>
 
   // File listing (quick open)
   listAllFiles: (rootPath: string) => Promise<string[]>
 
   // Search (find in files)
   searchStart: (opts: SearchOpts) => Promise<void>
-  onSearchResults: (callback: (results: SearchFileResult[]) => void) => () => void
-  onSearchComplete: (callback: (summary: { totalMatches: number; totalFiles: number }) => void) => () => void
+  onSearchResults: (callback: (payload: SearchResultsPayload) => void) => () => void
+  onSearchComplete: (callback: (payload: SearchCompletePayload) => void) => () => void
   searchCancel: () => void
   searchReplace: (opts: ReplaceOpts) => Promise<{ success: true; skipped: number } | { error: string }>
 
   // .aide project folder
-  aideInit: () => Promise<AideInitResult | { error: string }>
-  getResolvedSettings: () => Promise<ResolvedSettings>
+  aideInit: (workspaceId?: string | null) => Promise<AideInitResult | { error: string }>
+  getResolvedSettings: (workspaceId?: string | null) => Promise<ResolvedSettings>
   onAideInitResult: (callback: (result: AideInitResult) => void) => () => void
 
   // Settings
   getUserSettings: () => Promise<Partial<AideProjectSettings>>
   setUserSetting: (key: string, value: unknown | undefined) => Promise<void>
-  getWorkspaceSettings: () => Promise<AideProjectSettings>
-  setWorkspaceSetting: (key: string, value: unknown | undefined) => Promise<void>
+  getWorkspaceSettings: (workspaceId?: string | null) => Promise<AideProjectSettings>
+  setWorkspaceSetting: (key: string, value: unknown | undefined, workspaceId?: string | null) => Promise<void>
   getBuiltInDefaults: () => Promise<ResolvedSettings>
   onSettingsChanged: (callback: (resolved: ResolvedSettings) => void) => () => void
 
@@ -759,23 +879,24 @@ export interface WindowApi {
   onKeybindingsChanged: (callback: (rules: import('./commands').KeybindingRule[]) => void) => () => void
 
   // Gitignore security audit
-  auditGitignore: () => Promise<GitignoreAuditResult>
-  appendToGitignore: (patterns: string[]) => Promise<void>
-  dismissGitignoreAudit: () => Promise<void>
-  onGitignoreAuditResult: (callback: (result: GitignoreAuditResult) => void) => () => void
+  auditGitignore: (workspaceId?: string | null) => Promise<GitignoreAuditResult>
+  appendToGitignore: (patterns: string[], workspaceId?: string | null) => Promise<void>
+  dismissGitignoreAudit: (workspaceId?: string | null) => Promise<void>
+  onGitignoreAuditResult: (callback: (payload: GitignoreAuditIpcPayload) => void) => () => void
 
   // Task system
-  listTasks: () => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
-  runTask: (taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
-  killTask: (executionId: string) => void
-  reloadTasks: () => Promise<void>
-  generateTasks: () => Promise<{ success: true } | { error: string }>
-  provideTaskInput: (requestId: string, value: string | null) => void
+  listTasks: (workspaceId: string) => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
+  listRunningTasks: (workspaceId: string) => Promise<TaskExecution[]>
+  runTask: (workspaceId: string, taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
+  killTask: (workspaceId: string, executionId: string) => void
+  reloadTasks: (workspaceId: string) => Promise<void>
+  generateTasks: (workspaceId: string) => Promise<{ success: true } | { error: string }>
+  provideTaskInput: (workspaceId: string, requestId: string, value: string | null) => void
   notifyFileSaved: (filePath: string) => void
   onTaskStatusChanged: (callback: (execution: TaskExecution) => void) => () => void
   onTaskRequestInput: (callback: (request: TaskInputRequest) => void) => () => void
-  onTaskDiagnostics: (callback: (diagnostics: TaskDiagnostic[]) => void) => () => void
-  onTaskAutoDetect: (callback: (tasks: AideTask[]) => void) => () => void
+  onTaskDiagnostics: (callback: (payload: TaskDiagnosticsPayload) => void) => () => void
+  onTaskAutoDetect: (callback: (payload: TaskAutoDetectPayload) => void) => () => void
   onTaskTriggerResult: (callback: (result: TaskTriggerResult) => void) => () => void
 
   // Workspace registry
@@ -790,6 +911,8 @@ export interface WindowApi {
   setWorkspaceRoot: (id: string, rootPath: string) => Promise<void>
   getActiveWorkspaceId: () => Promise<string | null>
   onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => () => void
+  getWorkspaceRuntimeSnapshots: () => Promise<WorkspaceRuntimeSnapshot[]>
+  onWorkspaceRuntimeSnapshotsChanged: (callback: (snapshots: WorkspaceRuntimeSnapshot[]) => void) => () => void
 
   // State persistence
   saveWorkspaceState: (rootPath: string, state: AideLocalState) => Promise<void>
@@ -830,6 +953,7 @@ export interface WindowApi {
   onChatStreamChunk: (callback: (chunk: ChatStreamChunk) => void) => () => void
   onChatStreamEnd: (callback: (end: ChatStreamEnd) => void) => () => void
   onChatToolCall: (callback: (payload: ChatToolCallPayload) => void) => () => void
+  chatListPendingToolApprovals: () => Promise<PendingToolApprovalInfo[]>
 
   // ─── MCP ���───────────────────────────────���─────
   mcpListServers: () => Promise<McpServerStatus[]>
@@ -844,16 +968,16 @@ export interface WindowApi {
   cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
   cliAgentLoadMessages: (workspaceId: string, conversationId: string) => Promise<CliAgentMessage[]>
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
-  onCliAgentMessage: (callback: (msg: CliAgentMessage & { sessionId: string }) => void) => () => void
+  onCliAgentMessage: (callback: (msg: CliAgentMessagePayload) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void
   onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => () => void
 
   // ─── Conversation History ────────────────────
   conversationList: (workspaceId: string) => Promise<ConversationMeta[]>
   conversationCreate: (opts: ConversationCreateOpts) => Promise<ConversationMeta>
-  conversationDelete: (conversationId: string) => Promise<void>
-  conversationRename: (conversationId: string, title: string) => Promise<void>
-  conversationGet: (conversationId: string) => Promise<ConversationMeta | null>
+  conversationDelete: (workspaceId: string, conversationId: string) => Promise<void>
+  conversationRename: (workspaceId: string, conversationId: string, title: string) => Promise<void>
+  conversationGet: (workspaceId: string, conversationId: string) => Promise<ConversationMeta | null>
   onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
 
   // VS Code Integration

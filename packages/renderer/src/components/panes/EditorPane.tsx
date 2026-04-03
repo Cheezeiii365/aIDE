@@ -7,8 +7,16 @@ import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { getLanguageExtension, getLanguageName } from '../../lib/editor/languageExtension'
 import { themeCompartment, editorMetricsCompartment, getThemeExtension, getEditorMetricsExtension } from '../../lib/editor/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editor/editorWrap'
-import { consumeCachedState, setCachedState } from '../../lib/editor/editorStateCache'
-import { isDirty, setDirty, onDirtyChange } from '../../lib/editor/editorDirtyState'
+import { consumeCachedState } from '../../lib/editor/editorStateCache'
+import {
+  getDocumentSession,
+  putDocumentSession,
+  updateDocumentFromEditor,
+  markSaved,
+  markDiskChangedWhileDirty,
+  removeDocumentSession,
+  onDocumentSessionChanged,
+} from '../../lib/editor/documentStore'
 import { publishContent, clearContent } from '../../lib/editor/editorContentBus'
 import { getPanelZoomFactor } from '../../lib/panelZoom'
 import { clearActiveEditor, setActiveEditor } from '../../lib/editor/activeEditor'
@@ -22,6 +30,7 @@ import '../../styles/inline-diff.css'
 interface EditorPaneParams {
   filePath: string
   workspaceRoot?: string | null
+  workspaceId?: string
   jumpToLine?: number
   jumpToColumn?: number
   zoomFactor?: number
@@ -29,8 +38,13 @@ interface EditorPaneParams {
 
 const EDITOR_BASE_FONT_SIZE = 13
 
-// Tracks the "clean" (last-saved) content per file so we know the baseline
-const cleanContentMap = new Map<string, string>()
+function clampSelectionToDoc(doc: string, anchor: number, head: number) {
+  const len = doc.length
+  return {
+    anchor: Math.max(0, Math.min(anchor, len)),
+    head: Math.max(0, Math.min(head, len)),
+  }
+}
 
 /**
  * Render and manage a CodeMirror editor for the panel's file inside a Dockview panel.
@@ -59,13 +73,18 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
   const filePath = params.filePath
   const workspaceRoot = params.workspaceRoot ?? null
+  const workspaceId = params.workspaceId
+
   const toggleInlineDiffForView = useCallback(async (view: EditorView) => {
-    const diffRoot = workspaceRoot ?? await window.api.getWorkspaceRoot()
+    const diffRoot =
+      (workspaceId ? await window.api.getWorkspaceRoot(workspaceId) : null)
+      ?? workspaceRoot
+      ?? (await window.api.getWorkspaceRoot())
     const enabled = await toggleInlineDiff(view, diffRoot, filePath)
     setDiffActive(enabled)
     showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
     return enabled
-  }, [filePath, workspaceRoot])
+  }, [filePath, workspaceId, workspaceRoot])
 
   useEffect(() => {
     paramsRef.current = params
@@ -79,14 +98,6 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
     let destroyed = false
 
-    /**
-     * Initialize and mount the CodeMirror editor for the current filePath and publish its initial state.
-     *
-     * Reads the file from disk, records the last-known clean baseline, creates a fresh EditorState
-     * (restoring cursor position from cache if available), mounts the EditorView, publishes the
-     * document content to the external bus, clears the loading indicator, and updates the initial
-     * cursor position status. On read failure, sets the component error and clears loading state.
-     */
     async function init() {
       const result = await window.api.readFile(filePath)
 
@@ -98,12 +109,37 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         return
       }
 
-      // Store clean content baseline
-      cleanContentMap.set(filePath, result.content)
+      const disk = result.content
+      const wid = paramsRef.current.workspaceId
+      let session = getDocumentSession(wid, filePath)
 
-      // Restore cursor position from cached state if available, then discard cache
-      const cached = consumeCachedState(filePath)
-      const restoredSelection = cached?.selection
+      let initialDoc = disk
+      let restoredFromCache = consumeCachedState(filePath)
+      let selectionFromEditorState = restoredFromCache?.selection
+
+      if (session?.isDirty) {
+        initialDoc = session.workingCopy
+        if (session.cleanBaseline === '') {
+          putDocumentSession(wid, filePath, {
+            cleanBaseline: disk,
+            workingCopy: session.workingCopy,
+            isDirty: true,
+            selection: session.selection,
+            diskChangedWhileDirty: session.diskChangedWhileDirty,
+          })
+          session = getDocumentSession(wid, filePath)
+        }
+      } else {
+        putDocumentSession(wid, filePath, {
+          cleanBaseline: disk,
+          workingCopy: disk,
+          isDirty: false,
+          selection: session?.selection ?? { anchor: 0, head: 0 },
+          diskChangedWhileDirty: false,
+        })
+        initialDoc = disk
+      }
+
       const languageName = getLanguageName(filePath)
 
       const extensions = [
@@ -125,8 +161,23 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
             })
           }
           if (update.docChanged && !isReloadingRef.current) {
-            setDirty(filePath, true)
+            const sel = update.state.selection.main
+            updateDocumentFromEditor(
+              paramsRef.current.workspaceId,
+              filePath,
+              update.state.doc.toString(),
+              { anchor: sel.anchor, head: sel.head },
+            )
             publishContent(filePath, update.state.doc.toString())
+          }
+          if (update.selectionSet && !update.docChanged) {
+            const sel = update.state.selection.main
+            updateDocumentFromEditor(
+              paramsRef.current.workspaceId,
+              filePath,
+              update.state.doc.toString(),
+              { anchor: sel.anchor, head: sel.head },
+            )
           }
         }),
         diffCompartment.of([]),
@@ -137,8 +188,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
               const content = view.state.doc.toString()
               window.api.writeFile(filePath, content).then((res) => {
                 if ('success' in res) {
-                  cleanContentMap.set(filePath, content)
-                  setDirty(filePath, false)
+                  markSaved(paramsRef.current.workspaceId, filePath, content)
                   window.api.notifyFileSaved(filePath)
                 }
               })
@@ -168,20 +218,25 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       const langExt = getLanguageExtension(filePath)
       if (langExt) extensions.push(langExt)
 
-      // Clamp restored selection to document bounds
-      const docLen = result.content.length
-      const selection = restoredSelection
-        ? EditorState.create({
-            doc: result.content,
-            selection: {
-              anchor: Math.min(restoredSelection.main.anchor, docLen),
-              head: Math.min(restoredSelection.main.head, docLen),
-            },
-          }).selection
-        : undefined
+      const docLen = initialDoc.length
+      let anchor = 0
+      let head = 0
+      if (session?.isDirty && session.selection) {
+        const c = clampSelectionToDoc(initialDoc, session.selection.anchor, session.selection.head)
+        anchor = c.anchor
+        head = c.head
+      } else if (selectionFromEditorState) {
+        anchor = Math.min(selectionFromEditorState.main.anchor, docLen)
+        head = Math.min(selectionFromEditorState.main.head, docLen)
+      }
+
+      const selection = EditorState.create({
+        doc: initialDoc,
+        selection: { anchor, head },
+      }).selection
 
       const state = EditorState.create({
-        doc: result.content,
+        doc: initialDoc,
         extensions,
         selection,
       })
@@ -208,10 +263,16 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       view.dom.addEventListener('focusout', handleFocusOut)
 
       viewRef.current = view
+      const selMain = state.selection.main
+      updateDocumentFromEditor(
+        wid,
+        filePath,
+        state.doc.toString(),
+        { anchor: selMain.anchor, head: selMain.head },
+      )
       publishContent(filePath, state.doc.toString())
       setLoading(false)
 
-      // Push initial cursor position
       const pos = state.selection.main.head
       const line = state.doc.lineAt(pos)
       setStatusRef.current({
@@ -247,23 +308,22 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       cleanupFocus?.()
       if (viewRef.current) {
         clearActiveEditor(viewRef.current)
-        setCachedState(filePath, viewRef.current.state)
+        const st = viewRef.current.state
+        const m = st.selection.main
+        updateDocumentFromEditor(
+          paramsRef.current.workspaceId,
+          filePath,
+          st.doc.toString(),
+          { anchor: m.anchor, head: m.head },
+        )
         viewRef.current.destroy()
         viewRef.current = null
       }
-      setDirty(filePath, false)
+      removeDocumentSession(paramsRef.current.workspaceId, filePath)
       clearContent(filePath)
-      cleanContentMap.delete(filePath)
     }
-  }, [filePath, toggleInlineDiffForView])
+  }, [filePath, workspaceId, toggleInlineDiffForView])
 
-  /**
-   * Replace the editor's document with the file's current disk contents.
-   *
-   * Reads the file at `path` and, if successful and an editor is mounted, replaces the entire document with the disk content, updates the stored clean baseline for `path`, clears the dirty flag for the file, and publishes the new content.
-   *
-   * @param path - Filesystem path of the file to reload; does nothing if no editor is mounted or the read fails
-   */
   async function reloadFromDisk(path: string) {
     const view = viewRef.current
     if (!view) return
@@ -271,52 +331,65 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     if ('error' in result) return
 
     isReloadingRef.current = true
-    cleanContentMap.set(path, result.content)
+    markSaved(paramsRef.current.workspaceId, path, result.content)
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: result.content },
     })
     isReloadingRef.current = false
-    setDirty(path, false)
     publishContent(path, result.content)
   }
 
-  // Subscribe to file watcher events for external change detection
   useEffect(() => {
     if (loading) return
 
     const unsub = window.api.onFsWatchEvent(async (events) => {
       const view = viewRef.current
       if (!view) return
+      const wid = paramsRef.current.workspaceId
 
-      const relevant = events.filter((e) => e.path === filePath && !e.isDirectory)
+      const relevant = events.filter(
+        (e) =>
+          (!wid || e.workspaceId === wid)
+          && e.path === filePath
+          && !e.isDirectory,
+      )
       if (relevant.length === 0) return
 
       const hasDelete = relevant.some((e) => e.type === 'delete')
       const hasUpdate = relevant.some((e) => e.type === 'update' || e.type === 'create')
 
-      if (hasDelete && !hasUpdate) {
+       if (hasDelete && !hasUpdate) {
         showToast('File was deleted externally')
-        setDirty(filePath, true)
+        const st = view.state
+        const text = st.doc.toString()
+        putDocumentSession(wid, filePath, {
+          cleanBaseline: text,
+          workingCopy: text,
+          isDirty: true,
+          selection: { anchor: st.selection.main.anchor, head: st.selection.main.head },
+          diskChangedWhileDirty: true,
+        })
         return
       }
 
       if (!hasUpdate) return
 
-      // Read current disk content
-      const result = await window.api.readFile(filePath)
-      if ('error' in result) return
+      const sess = getDocumentSession(wid, filePath)
+      const baseline = sess?.cleanBaseline
 
-      // Skip if content matches what we already have (e.g., we just saved)
-      if (result.content === cleanContentMap.get(filePath)) return
+      const diskResult = await window.api.readFile(filePath)
+      if ('error' in diskResult) return
 
-      if (isDirty(filePath)) {
-        // File has unsaved changes — prompt user
+      if (baseline !== undefined && diskResult.content === baseline) return
+
+      const dirty = sess?.isDirty ?? false
+      if (dirty) {
+        markDiskChangedWhileDirty(wid, filePath)
         showToast('File changed on disk', {
           label: 'Reload',
           onClick: () => reloadFromDisk(filePath),
         })
       } else {
-        // Clean file — silent reload
         reloadFromDisk(filePath)
       }
     })
@@ -324,7 +397,6 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     return unsub
   }, [filePath, loading])
 
-  // Hot-swap theme when it changes
   useEffect(() => {
     if (!viewRef.current) return
     viewRef.current.dispatch({
@@ -343,7 +415,6 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     view.requestMeasure()
   }, [params])
 
-  // Jump to line/column when requested via params
   useEffect(() => {
     const view = viewRef.current
     if (!view || !params.jumpToLine) return
@@ -358,17 +429,20 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     view.focus()
   }, [params.jumpToLine, params.jumpToColumn])
 
-  // Update Dockview tab title when dirty state changes
   useEffect(() => {
     const name = filePath.split('/').pop() ?? filePath
-    const unsub = onDirtyChange((changedPath, dirty) => {
-      if (changedPath !== filePath) return
-      api.setTitle(dirty ? '• ' + name : name)
+    const wid = (params.workspaceId ?? '') as string
+    const applyTitle = () => {
+      const s = getDocumentSession(params.workspaceId, filePath)
+      api.setTitle(s?.isDirty ? '• ' + name : name)
+    }
+    applyTitle()
+    const unsub = onDocumentSessionChanged((wk, path) => {
+      if (path === filePath && wk === wid) applyTitle()
     })
     return unsub
-  }, [filePath, api])
+  }, [filePath, api, params.workspaceId])
 
-  // Push cursor status when this panel becomes active
   useEffect(() => {
     const disposable = api.onDidActiveChange(({ isActive }) => {
       if (isActive && viewRef.current) {

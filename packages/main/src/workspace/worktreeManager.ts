@@ -3,35 +3,40 @@ import simpleGit from 'simple-git'
 import { resolve } from 'path'
 import { mkdir } from 'fs/promises'
 import { IpcChannels } from '@aide/shared'
-import type { WorktreeInfo, WorktreeCreateOpts, AppSettings } from '@aide/shared'
-import type Store from 'electron-store'
-import { startGitPolling } from '../git/gitStatus'
+import type { WorktreeInfo, WorktreeCreateOpts, WorktreeListChangedPayload } from '@aide/shared'
+import { startGitPollingForWorkspace } from '../git/gitStatus'
 import { startWatchers } from './fileWatcher'
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
-let cachedList: WorktreeInfo[] = []
-let lastJson = ''
-let currentRepoRoot: string | null = null
+/** Per-workspace selected worktree path (not the main repo root). */
+const activeWorktreeByWorkspaceId = new Map<string, string | null>()
 
 type GetWebContents = () => Electron.WebContents | null
+export type GetWorkspaceRepoRoot = (workspaceId: string) => string | null
 
-/**
- * Produce a filesystem-safe branch name by replacing path separators and removing invalid characters.
- *
- * @param branch - The original branch name
- * @returns The sanitized branch name where `/` and `\` are replaced with `-` and only `a-z`, `A-Z`, `0-9`, `.`, `_`, and `-` remain
- */
+interface WorktreePollEntry {
+  pollTimer: ReturnType<typeof setInterval>
+  repoRoot: string
+  lastJson: string
+}
+
+const worktreePollByWorkspaceId = new Map<string, WorktreePollEntry>()
+
+export function getActiveWorktreeForWorkspace(workspaceId: string): string | null {
+  return activeWorktreeByWorkspaceId.get(workspaceId) ?? null
+}
+
+export function setActiveWorktreeForWorkspace(workspaceId: string, path: string | null): void {
+  activeWorktreeByWorkspaceId.set(workspaceId, path)
+}
+
+function worktreeListPayload(workspaceId: string, worktrees: WorktreeInfo[]): WorktreeListChangedPayload {
+  return { workspaceId, worktrees }
+}
+
 function sanitizeBranchName(branch: string): string {
   return branch.replace(/[/\\]/g, '-').replace(/[^a-zA-Z0-9._-]/g, '')
 }
 
-/**
- * Parse the stdout of `git worktree list --porcelain` into an array of worktree descriptors.
- *
- * @param output - Raw `--porcelain` output from `git worktree list`
- * @param activeWorktree - Absolute path of the active worktree to mark as current, or `null`
- * @returns An array of `WorktreeInfo` objects where each entry includes `path`, `branch` (branch name or `'HEAD'`), `isMain` (first non-bare entry), `isDirty` (initialized to `false`), and `isCurrent` (`true` when `path` equals `activeWorktree`)
- */
 function parseWorktreeListPorcelain(output: string, activeWorktree: string | null): WorktreeInfo[] {
   const worktrees: WorktreeInfo[] = []
   const blocks = output.trim().split('\n\n')
@@ -47,28 +52,23 @@ function parseWorktreeListPorcelain(output: string, activeWorktree: string | nul
       if (line.startsWith('worktree ')) {
         path = line.slice('worktree '.length)
       } else if (line.startsWith('branch ')) {
-        // e.g. "branch refs/heads/main" → "main"
         branch = line.slice('branch '.length).replace('refs/heads/', '')
       } else if (line === 'bare') {
-        // Skip bare worktrees
         path = ''
         break
       } else if (line.startsWith('HEAD ') && !branch) {
-        // Detached HEAD — use short SHA
         branch = line.slice('HEAD '.length, 'HEAD '.length + 7)
       }
     }
 
     if (!path) continue
-
-    // First worktree in the list is always the main one
     if (worktrees.length === 0) isMain = true
 
     worktrees.push({
       path,
       branch: branch || 'HEAD',
       isMain,
-      isDirty: false, // filled in later
+      isDirty: false,
       isCurrent: path === activeWorktree,
     })
   }
@@ -76,11 +76,6 @@ function parseWorktreeListPorcelain(output: string, activeWorktree: string | nul
   return worktrees
 }
 
-/**
- * Set each worktree's `isDirty` flag according to its Git working-tree status.
- *
- * @param worktrees - Array of worktree entries whose `isDirty` property will be set to `true` when the worktree has uncommitted changes, or `false` when the worktree is clean or the status check fails
- */
 async function checkDirtyStatus(worktrees: WorktreeInfo[]): Promise<void> {
   for (const wt of worktrees) {
     try {
@@ -93,18 +88,7 @@ async function checkDirtyStatus(worktrees: WorktreeInfo[]): Promise<void> {
   }
 }
 
-/**
- * Retrieve and augment the list of Git worktrees for a repository root.
- *
- * Fetches `git worktree list --porcelain`, parses the output into `WorktreeInfo`
- * entries, marks the entry matching `activeWorktree` as current, and updates each
- * entry's `isDirty` by checking the worktree status.
- *
- * @param repoRoot - Filesystem path to the repository root to query
- * @param activeWorktree - Path of the currently active worktree, or `null` if none
- * @returns An array of `WorktreeInfo` objects for the repository; returns an empty array if `repoRoot` is not a Git repository or if an error occurs
- */
-async function fetchWorktreeList(
+export async function fetchWorktreeList(
   repoRoot: string,
   activeWorktree: string | null,
 ): Promise<WorktreeInfo[]> {
@@ -122,38 +106,32 @@ async function fetchWorktreeList(
   }
 }
 
-/**
- * Compute the directory used to store worktrees for a repository.
- *
- * @param repoRoot - Path to the repository root
- * @returns The path to the worktree storage directory (resolved as `../.aide-worktrees` relative to `repoRoot`)
- */
 function getWorktreeDir(repoRoot: string): string {
   return resolve(repoRoot, '..', '.aide-worktrees')
 }
 
 /**
- * Register IPC handlers that manage Git worktrees and keep the module cache and renderer in sync.
- *
- * Registers handlers for listing, creating, and removing worktrees; getting/setting the active worktree;
- * and listing branches. Handlers update the internal cached worktree list, emit WORKTREE_LIST_CHANGED to
- * the renderer when the list changes, and coordinate watcher and polling lifecycle when the active
- * worktree changes.
+ * Register worktree IPC handlers keyed by `workspaceId`.
  */
 export function registerWorktreeHandlers(
   getWebContents: GetWebContents,
-  store: Store<AppSettings>,
+  getRepoRoot: GetWorkspaceRepoRoot,
 ): void {
-  ipcMain.handle(IpcChannels.WORKTREE_LIST, async () => {
-    if (!currentRepoRoot) return []
-    const active = store.get('activeWorktree')
-    cachedList = await fetchWorktreeList(currentRepoRoot, active)
-    return cachedList
+  ipcMain.handle(IpcChannels.WORKTREE_LIST, async (_event, workspaceId: string) => {
+    const root = getRepoRoot(workspaceId)
+    if (!root) return []
+    const active = getActiveWorktreeForWorkspace(workspaceId)
+    return fetchWorktreeList(root, active)
   })
 
   ipcMain.handle(
     IpcChannels.WORKTREE_CREATE,
-    async (_event, opts: WorktreeCreateOpts): Promise<{ path: string } | { error: string }> => {
+    async (
+      _event,
+      workspaceId: string,
+      opts: WorktreeCreateOpts,
+    ): Promise<{ path: string } | { error: string }> => {
+      const currentRepoRoot = getRepoRoot(workspaceId)
       if (!currentRepoRoot) return { error: 'No workspace open' }
 
       try {
@@ -162,7 +140,6 @@ export function registerWorktreeHandlers(
         const dirName = sanitizeBranchName(opts.branch)
         const targetPath = resolve(worktreeDir, dirName)
 
-        // Ensure parent directory exists
         await mkdir(worktreeDir, { recursive: true })
 
         if (opts.createBranch) {
@@ -172,10 +149,9 @@ export function registerWorktreeHandlers(
           await git.raw(['worktree', 'add', targetPath, opts.branch])
         }
 
-        // Refresh the cached list
-        const active = store.get('activeWorktree')
-        cachedList = await fetchWorktreeList(currentRepoRoot, active)
-        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
+        const active = getActiveWorktreeForWorkspace(workspaceId)
+        const list = await fetchWorktreeList(currentRepoRoot, active)
+        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(workspaceId, list))
 
         return { path: targetPath }
       } catch (err: unknown) {
@@ -187,26 +163,24 @@ export function registerWorktreeHandlers(
 
   ipcMain.handle(
     IpcChannels.WORKTREE_REMOVE,
-    async (_event, worktreePath: string): Promise<{ success: true } | { error: string }> => {
+    async (_event, workspaceId: string, worktreePath: string): Promise<{ success: true } | { error: string }> => {
+      const currentRepoRoot = getRepoRoot(workspaceId)
       if (!currentRepoRoot) return { error: 'No workspace open' }
 
       try {
         const git = simpleGit(currentRepoRoot)
         await git.raw(['worktree', 'remove', worktreePath, '--force'])
 
-        // If active worktree was removed, reset to main
-        const active = store.get('activeWorktree')
+        const active = getActiveWorktreeForWorkspace(workspaceId)
         if (active === worktreePath) {
-          store.set('activeWorktree', null)
-          // Restart file watcher and git polling on main repo root
-          await startWatchers('default', [currentRepoRoot])
-          await startGitPolling(currentRepoRoot, getWebContents)
+          setActiveWorktreeForWorkspace(workspaceId, null)
+          await startWatchers(workspaceId, [currentRepoRoot])
+          await startGitPollingForWorkspace(workspaceId, currentRepoRoot, getWebContents)
         }
 
-        // Refresh the cached list
-        const newActive = store.get('activeWorktree')
-        cachedList = await fetchWorktreeList(currentRepoRoot, newActive)
-        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
+        const newActive = getActiveWorktreeForWorkspace(workspaceId)
+        const list = await fetchWorktreeList(currentRepoRoot, newActive)
+        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(workspaceId, list))
 
         return { success: true }
       } catch (err: unknown) {
@@ -218,38 +192,32 @@ export function registerWorktreeHandlers(
 
   ipcMain.handle(
     IpcChannels.WORKTREE_SET_ACTIVE,
-    async (_event, worktreePath: string | null): Promise<void> => {
+    async (_event, workspaceId: string, worktreePath: string | null): Promise<void> => {
+      const currentRepoRoot = getRepoRoot(workspaceId)
       if (!currentRepoRoot) return
-      store.set('activeWorktree', worktreePath)
 
-      // Watch both repo root and active worktree (or just repo root if null)
-      const roots = worktreePath
-        ? [currentRepoRoot, worktreePath]
-        : [currentRepoRoot]
-      await startWatchers('default', roots)
+      setActiveWorktreeForWorkspace(workspaceId, worktreePath)
 
-      // Git polling uses the effective root for status
+      const roots = worktreePath ? [currentRepoRoot, worktreePath] : [currentRepoRoot]
+      await startWatchers(workspaceId, roots)
+
       const effectiveRoot = worktreePath || currentRepoRoot
-      if (effectiveRoot) {
-        await startGitPolling(effectiveRoot, getWebContents)
-      }
+      await startGitPollingForWorkspace(workspaceId, effectiveRoot, getWebContents)
 
-      // Update isCurrent flags and notify renderer
-      if (currentRepoRoot) {
-        cachedList = await fetchWorktreeList(currentRepoRoot, worktreePath)
-        getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
-      }
+      const list = await fetchWorktreeList(currentRepoRoot, worktreePath)
+      getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(workspaceId, list))
     },
   )
 
-  ipcMain.handle(IpcChannels.WORKTREE_GET_ACTIVE, () => {
-    return store.get('activeWorktree')
+  ipcMain.handle(IpcChannels.WORKTREE_GET_ACTIVE, (_event, workspaceId: string) => {
+    return getActiveWorktreeForWorkspace(workspaceId)
   })
 
-  ipcMain.handle(IpcChannels.WORKTREE_LIST_BRANCHES, async (): Promise<string[]> => {
-    if (!currentRepoRoot) return []
+  ipcMain.handle(IpcChannels.WORKTREE_LIST_BRANCHES, async (_event, workspaceId: string): Promise<string[]> => {
+    const root = getRepoRoot(workspaceId)
+    if (!root) return []
     try {
-      const git = simpleGit(currentRepoRoot)
+      const git = simpleGit(root)
       const output = await git.raw(['branch', '-a', '--format=%(refname:short)'])
       return output
         .split('\n')
@@ -261,56 +229,61 @@ export function registerWorktreeHandlers(
   })
 }
 
-/**
- * Start polling the repository's worktrees and emit updates when the list of worktrees changes.
- *
- * Performs an initial fetch (and immediate broadcast) using the store's active worktree, then polls
- * the repository periodically to detect changes and broadcasts IpcChannels.WORKTREE_LIST_CHANGED when
- * the serialized list differs from the previous snapshot.
- *
- * @param repoRoot - Filesystem path of the repository to poll
- * @param getWebContents - Function that returns the current Electron WebContents used to send IPC updates
- * @param store - Application settings store (used to read the current `activeWorktree`)
- */
+export async function startWorktreePollingForWorkspace(
+  workspaceId: string,
+  repoRoot: string,
+  getWebContents: GetWebContents,
+): Promise<void> {
+  stopWorktreePollingForWorkspace(workspaceId)
+
+  const active = getActiveWorktreeForWorkspace(workspaceId)
+  let lastJson = ''
+  const initial = await fetchWorktreeList(repoRoot, active)
+  lastJson = JSON.stringify(initial)
+  getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(workspaceId, initial))
+
+  const pollTimer = setInterval(async () => {
+    const a = getActiveWorktreeForWorkspace(workspaceId)
+    const list = await fetchWorktreeList(repoRoot, a)
+    const json = JSON.stringify(list)
+    if (json !== lastJson) {
+      lastJson = json
+      getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, worktreeListPayload(workspaceId, list))
+    }
+  }, 5000)
+
+  worktreePollByWorkspaceId.set(workspaceId, { pollTimer, repoRoot, lastJson })
+}
+
+export function stopWorktreePollingForWorkspace(workspaceId: string): void {
+  const entry = worktreePollByWorkspaceId.get(workspaceId)
+  if (!entry) return
+  clearInterval(entry.pollTimer)
+  worktreePollByWorkspaceId.delete(workspaceId)
+}
+
+export function stopAllWorktreePolling(): void {
+  for (const id of worktreePollByWorkspaceId.keys()) {
+    stopWorktreePollingForWorkspace(id)
+  }
+}
+
+export function clearWorktreeStateForWorkspace(workspaceId: string): void {
+  activeWorktreeByWorkspaceId.delete(workspaceId)
+  stopWorktreePollingForWorkspace(workspaceId)
+}
+
+/** @deprecated */
 export async function startWorktreePolling(
   repoRoot: string,
   getWebContents: GetWebContents,
-  store: Store<AppSettings>,
+  _store: unknown,
+  workspaceId: string,
 ): Promise<void> {
-  stopWorktreePolling()
-  currentRepoRoot = repoRoot
-  lastJson = ''
-
-  // Initial fetch — broadcast immediately so the renderer has fresh data
-  const active = store.get('activeWorktree')
-  cachedList = await fetchWorktreeList(repoRoot, active)
-  lastJson = JSON.stringify(cachedList)
-  getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, cachedList)
-
-  pollTimer = setInterval(async () => {
-    const currentActive = store.get('activeWorktree')
-    const list = await fetchWorktreeList(repoRoot, currentActive)
-    const json = JSON.stringify(list)
-
-    if (json !== lastJson) {
-      lastJson = json
-      cachedList = list
-      getWebContents()?.send(IpcChannels.WORKTREE_LIST_CHANGED, list)
-    }
-  }, 5000)
+  return startWorktreePollingForWorkspace(workspaceId, repoRoot, getWebContents)
 }
 
-/**
- * Stop the periodic worktree polling, clear its timer, and reset cached worktree state.
- *
- * Clears the polling interval (if running) and resets `currentRepoRoot`, `lastJson`, and `cachedList`.
- */
+/** @deprecated */
 export function stopWorktreePolling(): void {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-  currentRepoRoot = null
-  lastJson = ''
-  cachedList = []
+  stopAllWorktreePolling()
 }

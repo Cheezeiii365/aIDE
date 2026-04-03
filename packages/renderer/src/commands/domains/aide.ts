@@ -17,7 +17,12 @@ export function collectAideCommands(getCtx: GetCommandContext): CommandSpec[] {
       def: { id: 'aide.init', label: 'Initialize Project', category: 'aIDE' },
       handler: () => {
         void (async () => {
-          const result = await window.api.aideInit()
+          const wid = getCtx().getActiveWorkspaceId()
+          if (!wid) {
+            showToast('No active workspace')
+            return
+          }
+          const result = await window.api.aideInit(wid)
           if ('error' in result) {
             showToast(result.error)
           } else {
@@ -33,7 +38,12 @@ export function collectAideCommands(getCtx: GetCommandContext): CommandSpec[] {
       def: { id: 'aide.generateTasks', label: 'Generate Tasks', category: 'aIDE' },
       handler: () => {
         void (async () => {
-          const result = await window.api.generateTasks()
+          const wid = getCtx().getActiveWorkspaceId()
+          if (!wid) {
+            showToast('No active workspace')
+            return
+          }
+          const result = await window.api.generateTasks(wid)
           if ('error' in result) {
             showToast(result.error)
           } else {
@@ -46,7 +56,12 @@ export function collectAideCommands(getCtx: GetCommandContext): CommandSpec[] {
       def: { id: 'gitignore.audit', label: 'Audit .gitignore Security', category: 'aIDE' },
       handler: () => {
         void (async () => {
-          const result = await window.api.auditGitignore()
+          const wid = getCtx().getActiveWorkspaceId()
+          if (!wid) {
+            showToast('No active workspace')
+            return
+          }
+          const result = await window.api.auditGitignore(wid)
           if (result.missing.length === 0) {
             showToast('All security patterns are present in .gitignore')
           } else {

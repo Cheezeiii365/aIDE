@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AideTask, CompoundTask, TaskExecution, TaskDiagnostic, TaskRunContext } from '@aide/shared'
 import { getActiveEditor } from '../lib/editor/activeEditor'
+import { scopedTo } from '../lib/workspace/workspaceScopedListener'
 
 export interface TasksState {
   tasks: AideTask[]
@@ -23,8 +24,10 @@ export interface TasksState {
  *
  * Gathers active editor context (file, selection, line) when running tasks so that
  * ${file}, ${selectedText}, ${lineNumber} variables resolve correctly in the main process.
+ *
+ * @param workspaceId - When set, task executions and diagnostics from other workspaces are ignored (focused-workspace UI).
  */
-export function useTasks(): TasksState {
+export function useTasks(workspaceId: string | null): TasksState {
   const [tasks, setTasks] = useState<AideTask[]>([])
   const [compounds, setCompounds] = useState<CompoundTask[]>([])
   const [runningTasks, setRunningTasks] = useState<TaskExecution[]>([])
@@ -33,17 +36,33 @@ export function useTasks(): TasksState {
   const runningTasksRef = useRef<TaskExecution[]>([])
   runningTasksRef.current = runningTasks
 
-  // Load tasks on mount
+  // Load task definitions and hydrate running executions when workspace focus changes
   useEffect(() => {
-    window.api.listTasks().then(({ tasks: t, compounds: c }) => {
+    if (!workspaceId) {
+      setTasks([])
+      setCompounds([])
+      setRunningTasks([])
+      setDiagnostics([])
+      return
+    }
+    window.api.listTasks(workspaceId).then(({ tasks: t, compounds: c }) => {
       setTasks(t)
       setCompounds(c)
     })
-  }, [])
+    window.api.listRunningTasks(workspaceId).then((running) => {
+      setRunningTasks(running.filter((e) => e.status === 'running'))
+    })
+  }, [workspaceId])
 
   // Subscribe to status changes
   useEffect(() => {
     const unsub = window.api.onTaskStatusChanged((execution) => {
+      if (!workspaceId || execution.workspaceId !== workspaceId) {
+        if (execution.status !== 'running') {
+          setRunningTasks((prev) => prev.filter((e) => e.executionId !== execution.executionId))
+        }
+        return
+      }
       setRunningTasks((prev) => {
         if (execution.status === 'running') {
           // Clear diagnostics for this task when it starts
@@ -62,15 +81,15 @@ export function useTasks(): TasksState {
       })
     })
     return unsub
-  }, [])
+  }, [workspaceId])
 
   // Subscribe to diagnostics
   useEffect(() => {
-    const unsub = window.api.onTaskDiagnostics((newDiagnostics) => {
-      setDiagnostics((prev) => [...prev, ...newDiagnostics])
-    })
+    const unsub = window.api.onTaskDiagnostics(scopedTo(workspaceId, (payload) => {
+      setDiagnostics((prev) => [...prev, ...payload.diagnostics])
+    }))
     return unsub
-  }, [])
+  }, [workspaceId])
 
   const runTask = useCallback(async (taskId: string) => {
     lastTaskIdRef.current = taskId
@@ -86,19 +105,24 @@ export function useTasks(): TasksState {
       context = { activeFile: filePath, selectedText, lineNumber }
     }
 
-    await window.api.runTask(taskId, context)
-  }, [])
+    if (!workspaceId) return
+    await window.api.runTask(workspaceId, taskId, context)
+  }, [workspaceId])
 
   const killTask = useCallback((executionId: string) => {
-    window.api.killTask(executionId)
-  }, [])
+    if (!workspaceId) return
+    window.api.killTask(workspaceId, executionId)
+  }, [workspaceId])
 
   const reloadTasks = useCallback(async () => {
-    await window.api.reloadTasks()
-    const { tasks: t, compounds: c } = await window.api.listTasks()
+    if (!workspaceId) return
+    await window.api.reloadTasks(workspaceId)
+    const { tasks: t, compounds: c } = await window.api.listTasks(workspaceId)
     setTasks(t)
     setCompounds(c)
-  }, [])
+    const running = await window.api.listRunningTasks(workspaceId)
+    setRunningTasks(running.filter((e) => e.status === 'running'))
+  }, [workspaceId])
 
   const getLastTaskId = useCallback(() => lastTaskIdRef.current, [])
   const getRunningTasks = useCallback(() => runningTasksRef.current, [])

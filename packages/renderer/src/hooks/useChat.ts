@@ -9,6 +9,8 @@ import type {
   ChatToolCallPayload,
   ConversationListChangedPayload,
 } from '@aide/shared'
+import { scopedTo } from '../lib/workspace/workspaceScopedListener'
+import { approvalInboxRemove } from '../lib/workspace/approvalInboxStore'
 
 export interface UseChatReturn {
   sessionId: string | null
@@ -58,7 +60,7 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
 
       // Load conversation title from store
       if (session.id) {
-        window.api.conversationGet(session.id).then(meta => {
+        window.api.conversationGet(workspaceId, session.id).then(meta => {
           if (!cancelled && meta) {
             setConversationTitle(meta.title)
           }
@@ -71,20 +73,20 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
 
   // Subscribe to conversation list changes (for title updates)
   useEffect(() => {
-    const unsub = window.api.onConversationListChanged((payload: ConversationListChangedPayload) => {
+    const unsub = window.api.onConversationListChanged(scopedTo<ConversationListChangedPayload>(workspaceId, (payload) => {
       const sid = sessionIdRef.current
       if (!sid) return
       const meta = payload.conversations.find(c => c.id === sid)
       if (meta) {
         setConversationTitle(meta.title)
       }
-    })
+    }))
     return unsub
-  }, [])
+  }, [workspaceId])
 
   // Subscribe to stream chunks
   useEffect(() => {
-    const unsub = window.api.onChatStreamChunk((chunk: ChatStreamChunk) => {
+    const unsub = window.api.onChatStreamChunk(scopedTo<ChatStreamChunk>(workspaceId, (chunk) => {
       if (chunk.sessionId !== sessionIdRef.current) return
 
       setStreamingMessageId(chunk.messageId)
@@ -98,13 +100,13 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
           setStreamingContent(streamingContentRef.current)
         })
       }
-    })
+    }))
     return unsub
-  }, [])
+  }, [workspaceId])
 
   // Subscribe to stream end
   useEffect(() => {
-    const unsub = window.api.onChatStreamEnd((end: ChatStreamEnd) => {
+    const unsub = window.api.onChatStreamEnd(scopedTo<ChatStreamEnd>(workspaceId, (end) => {
       if (end.sessionId !== sessionIdRef.current) return
 
       // Finalize the streaming message into the messages array
@@ -143,13 +145,13 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
         setStatus('idle')
         tick()
       }
-    })
+    }))
     return unsub
   }, [workspaceId, tick])
 
   // Subscribe to tool calls
   useEffect(() => {
-    const unsub = window.api.onChatToolCall((payload: ChatToolCallPayload) => {
+    const unsub = window.api.onChatToolCall(scopedTo<ChatToolCallPayload>(workspaceId, (payload) => {
       if (payload.sessionId !== sessionIdRef.current) return
       setStatus('awaiting_approval')
 
@@ -160,7 +162,7 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
         setStatus(session.status)
         tick()
       })
-    })
+    }))
     return unsub
   }, [workspaceId, tick])
 
@@ -211,16 +213,20 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
 
   const approveToolCall = useCallback((toolCallId: string) => {
     const sid = sessionIdRef.current
-    if (!sid) return
-    window.api.chatToolApprove(sid, toolCallId)
+    const wid = workspaceId
+    if (!sid || !wid) return
+    void window.api.chatToolApprove(sid, toolCallId)
+    approvalInboxRemove(wid, sid, toolCallId)
     setStatus('tool_running')
-  }, [])
+  }, [workspaceId])
 
   const rejectToolCall = useCallback((toolCallId: string) => {
     const sid = sessionIdRef.current
-    if (!sid) return
-    window.api.chatToolReject(sid, toolCallId)
-  }, [])
+    const wid = workspaceId
+    if (!sid || !wid) return
+    void window.api.chatToolReject(sid, toolCallId)
+    approvalInboxRemove(wid, sid, toolCallId)
+  }, [workspaceId])
 
   const stop = useCallback(() => {
     const sid = sessionIdRef.current

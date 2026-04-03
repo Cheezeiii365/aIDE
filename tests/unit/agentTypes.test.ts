@@ -99,6 +99,7 @@ describe('Agent type structures', () => {
 
   it('ChatStreamChunk carries session and message context', () => {
     const chunk: ChatStreamChunk = {
+      workspaceId: 'ws-1',
       sessionId: 'session-1',
       messageId: 'msg-1',
       delta: 'partial text',
@@ -112,6 +113,7 @@ describe('Agent type structures', () => {
     ]
     for (const reason of stopReasons) {
       const end: ChatStreamEnd = {
+        workspaceId: 'ws-1',
         sessionId: 's-1',
         messageId: 'm-1',
         stopReason: reason,

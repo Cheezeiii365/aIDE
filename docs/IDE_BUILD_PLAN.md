@@ -1,7 +1,7 @@
 # Custom AI-Integrated IDE — Build Plan
 > **Project codename:** *aIDE*
-> **Last updated:** March 29, 2026
-> **Status:** Active development (Phase 2 in progress)
+> **Last updated:** April 2, 2026
+> **Status:** Active development
 
 ---
 
@@ -1263,9 +1263,17 @@ Track milestone completion here. Update as you go.
 | 4.0b Gitignore security audit | ✅ Complete | `gitignoreAudit.ts`, review modal, command palette command, toast flow |
 | 4.0c Task system | ✅ Complete | `taskRunner.ts`, `taskVariableResolver.ts`, `problemMatcher.ts`, `taskAutoDetect.ts`, `useTasks` hook, `TaskInputModal`, status bar indicator, command palette commands |
 | 4.0d Task runner parity (Phase 1) | ✅ Complete | `runOn.workspaceOpen` auto-triggers, `runOn.fileSave` triggers from editor Cmd-S, `presentation.panel` terminal routing (shared/dedicated/new), editor context variables (`${file}`, `${selectedText}`, `${lineNumber}`), Problems pane (`ProblemsPane.tsx`), singleton task guards, trigger result toasts, diagnostics clear-on-rerun/workspace-switch |
+| 4.0e Workspace runtime boundary | ✅ Complete | `WorkspaceRuntime` owns per-workspace task runner, agents, conversation store, native session watcher. `WorkspaceRuntimeRegistry` supervises focus/background. Phase 3 (2026-04-02): FS watchers, git polling, and worktree polling start/stop with each runtime via `startRuntimeServices` / `stopRuntimeServices` (per-`workspaceId` scopes/maps). Active worktree paths are keyed by workspace in `worktreeManager.ts`, not reset on every switch. |
+| 4.0f Workspace-scoped main→renderer IPC (multi-work Phase 2) | ✅ Complete | Runtime broadcasts are workspace-addressable: shared payloads carry `workspaceId` (or envelopes) for chat/CLI streams, tasks, git status/branch, worktree list, FS watch, search batches/completion, gitignore audit, PTY data/exit (`PtyDataOutPayload` / `PtyExitPayload` single-object IPC), and related `WindowApi` / preload wiring. Renderer hooks and panes filter or route by `workspaceId` so background workspaces do not corrupt the focused shell’s state. See `docs/multiwork.md` Phase 2. Verified 2026-04-02: `pnpm exec tsc` clean on shared/main/renderer. |
+| 4.0g Multi-work Phase 3 (long-lived services per runtime) | ✅ Complete | Built-in/CLI chat and conversation mutations resolve runtime by session or explicit `workspaceId`. Task control plane IPC is workspace-keyed. `GIT_STATUS`, worktree list/create/remove/set-active/get-active/branches, and multi-workspace concurrent git/worktree polling. See `docs/multiwork.md` Phase 3. |
+| 4.0h Multi-work Phase 4 (global runtime notifications) | ✅ Complete | Ribbon inbox bell (`RuntimeInboxBell`): pending built-in tool approvals + recent activity; `approvalInboxStore` / `runtimeActivityStore`; `useRuntimeGlobalNotifications` wires `onChatToolCall`, `onChatStreamEnd`, `onCliAgentResult`, `onTaskStatusChanged` for all workspaces with background toasts; IPC `CHAT_PENDING_TOOL_APPROVALS_LIST` + `AgentManager.listPendingToolApprovals` + `onWorkloadChanged` → `refreshWorkload` on approval wait; `WorkspaceRuntimeRegistry` uses `blocked` background state when `pendingApproval` / `pendingUserInput`; ribbon dot shows `blocked` vs running. See `docs/multiwork.md` Phase 4. |
+| 4.0i Multi-work Phase 5 (document sessions) | ✅ Complete | Workspace-scoped `documentStore.ts`: clean baseline, working copy, selection, `diskChangedWhileDirty`. `EditorPane` hydrates from the store and persists edits; `workspaceStateSerializer` fills `TabState.dirtyContent`, `cleanBaseline`, `selection`, conflict flag; `workspaceSwitcher` loads target `openTabs` into the store before `fromJSON`, drops `clearAllDirty`, keeps LRU editor cache clear only. Unsaved buffers survive workspace switches without disk reload. See `docs/multiwork.md` Phase 5. |
+| 4.0j Multi-work Phase 6 (per-workspace worktree + effective root) | ✅ Complete | `activeWorktreePath` on `AideLocalState` (disk + in-memory snapshots); `startRuntimeServices` hydrates `worktreeManager` from `loadWorkspaceState` before watchers; `workspaceSwitcher` calls `setActiveWorktree` when restoring. `effectiveWorkspaceRoot.ts`; `WorkspaceRuntime.getEffectiveRoot()`; task run context uses effective root for cwd / `${workspaceRoot}`; `findByFilePath` matches paths under the active worktree outside repo prefix; PTY default cwd via workspace effective root; `getWorkspaceRoot(workspaceId?)` IPC returns effective tree. See `docs/multiwork.md` Phase 6. |
+| 4.0k Multi-work Phase 7 (tasks as workspace workloads) | ✅ Complete | IPC `TASK_LIST_RUNNING` + `listRunningTasks` hydrates `useTasks` when switching workspaces (fixes stale running list). `taskInputInboxStore` + global `onTaskRequestInput` bridge in `AppShell`; background toasts with workspace switch in `useRuntimeGlobalNotifications`. Agent builtin `run_workspace_task` wires `AgentManager` → same `TaskRunner` as the UI (`runWorkspaceTask` opt). Tests: `useTasks.test.tsx`, `runWorkspaceTaskTool.test.ts`. See `docs/multiwork.md` Phase 7. |
+| 4.0l Multi-work Phase 8 (cleanup + policy) | ✅ Complete | Documented lifecycle: focus vs dispose, v1 suspension semantics (background keeps services; `asleep`+stopped only after dispose), quit/crash/`--clean` behavior, global-vs-runtime resource table, narrow IPC active-workspace fallback rules. Code pointers: `workspaceRootResolution.ts`, `mainIpcWorkspaceFallbackPolicy.test.ts`, `mainElectronStorePolicy.test.ts`. See `docs/multiwork.md` Phase 8 policy section. |
 | 4.1 Workspace creation flow | ✅ Complete | `workspaceRegistry.ts`, `useWorkspaces` hook, ribbon tabs, context menu, Cmd+1-9/Cmd+Shift+[/] switching |
 | 4.2 Workspace switching + state persistence | ✅ Complete | `stateSerializer.ts`, `workspaceStateSerializer.ts`, `workspaceSwitcher.ts`, 30s auto-save, atomic writes, worktree sync fix |
-| 4.3 Agent status in ribbon | ⬜ Not started | |
+| 4.3 Agent status in ribbon | ✅ Complete | `WorkspaceRuntimeSnapshot` workload + state drive per-tab `AgentStatusDot` (idle / running / blocked / error); tooltips; Phase 4 global inbox for approvals without a mounted chat pane. |
 | 4.4 Workspace management UI | ✅ Complete | Close workspace (Cmd+Shift+W, tab × button, middle-click, context menu), blank workspace (Cmd+Shift+N, + button), open folder in blank workspace (Cmd+O), welcome pane with shortcut hints, proper empty state on last workspace close |
 | 4.5 App lifecycle (Phase E) | ✅ Complete | Session restore, graceful quit with async save, crash recovery toast, `--clean` flag, welcome tab on empty session |
 
@@ -1274,7 +1282,7 @@ Track milestone completion here. Update as you go.
 |---|---|---|
 | 5.0a Types + IPC plumbing | ✅ Complete | `agentTypes.ts` (16 types), 14 IPC channels (10 chat + 4 MCP), WindowApi methods, preload bridge. 17 tests. |
 | 5.0b LLM client | ✅ Complete | Provider-agnostic `LlmClient` with adapter pattern. `AnthropicProvider` + `OpenAiCompatibleProvider` (covers OpenAI/Ollama/Together/Groq). Shared SSE parser, `${env:VAR}` key interpolation, AbortController cancellation. 78 tests total. |
-| 5.0c Built-in tools + registry | ✅ Complete | 8 built-in tools (`file_read`, `file_write`, `file_list`, `terminal_exec`, `search_files`, `git_status`, `git_diff`, `browser_read`) with JSON Schema inputs and direct main-process executors. `ToolRegistry` class with mode filtering, LLM-ready conversion, dynamic MCP tool registration/unregistration. `BrowserPaneManager.getPageContent()` added. 53 new tests (agentTools + toolRegistry). |
+| 5.0c Built-in tools + registry | ✅ Complete | 9 built-in tools (`file_read`, `file_write`, `file_list`, `terminal_exec`, `run_workspace_task`, `search_files`, `git_status`, `git_diff`, `browser_read`) with JSON Schema inputs and direct main-process executors. `ToolRegistry` class with mode filtering, LLM-ready conversion, dynamic MCP tool registration/unregistration. `BrowserPaneManager.getPageContent()` added. 53 new tests (agentTools + toolRegistry). |
 | 5.0d Agent loop | ✅ Complete | `AgentManager` class — core agent loop: session management, prompt assembly (system + conversation history + mode context), LLM streaming via `LlmClient`, tool execution with Promise-based approval gates, retry tracking (5 per tool), configurable turn limits (default 25), chat persistence to `.aide/local/chat.json` via atomic writes. IPC handlers for all 7 `CHAT_*` channels wired in `index.ts`. Lifecycle integrated with `activateWorkspace`/`finishQuit`. "Confirm everything" permission tier. 20 new tests. |
 | 5.1 Agent panel pane type | ✅ Complete | `ChatPane` + `CliAgentPane` dockview panel types. Both accept optional `conversationId` param for loading specific conversations. Tabs auto-title from conversation metadata. |
 | 5.1b Conversation history system | ✅ Complete | `ConversationStore` persists conversation metadata and messages under `.aide/local/conversations/`. `conversationTypes.ts` defines `ConversationMeta`, `ConversationCreateOpts`, `ConversationListChangedPayload`. 6 new IPC channels (`conversation:list/create/delete/rename/get/list-changed`). Both `AgentManager` and `CliAgentManager` integrated: multi-conversation support (removed single `workspaceSessions` map), `conversationId`-aware `getHistory`/`start`, auto-titling from first user message via `deriveTitle`, async `destroy()` with session persistence. `ChatHistoryPane` + `useConversationHistory` hook for browsing history. `useChat`/`useCliAgent` expose `conversationTitle` with live updates via `onConversationListChanged`. Command `agent.history.open` injects `onOpenConversation` so clicking a conversation opens `chatPane` or `cliAgentPane` with `conversationId` (and native/CLI backends routed to `cliAgentPane`). |
@@ -1295,6 +1303,138 @@ Track milestone completion here. Update as you go.
 | 6.4 Plugin system foundation | ⬜ Not started | |
 
 **Status key:** ⬜ Not started · 🟡 In progress · ✅ Complete · ⏸ Blocked
+
+---
+
+## Workspace Runtime Boundary
+
+### Why this boundary exists
+
+`packages/main/src/index.ts` still contains two different kinds of state:
+
+- app-wide ownership: `store`, `workspaceRegistry`, `mainWindow`, `contentView`, `browserPaneManager`
+- active-workspace ownership: `taskRunner`, `agentManager`, `cliAgentManager`, `conversationStore`, `nativeSessionWatcher`, `nativeSessionCache`, and activation sequencing state
+
+The runtime boundary freezes that distinction before the service migration begins. The first pass is intentionally additive: the runtime registry and shell exist now, but the existing singleton implementations still live in `index.ts`.
+
+### Phase 0 contracts
+
+Canonical runtime files:
+
+- `packages/main/src/workspace/runtimeTypes.ts`
+- `packages/main/src/workspace/WorkspaceRuntime.ts`
+- `packages/main/src/workspace/WorkspaceRuntimeRegistry.ts`
+
+Canonical state machine vocabulary:
+
+- `WorkspaceId`: stable runtime key, sourced from `WorkspaceEntry['id']`
+- `RuntimeState`: `idle | activating | focused | background | disposed`
+- `RuntimeLifecycle`: activation sequencing + focus/blur/dispose timestamps
+
+The first `WorkspaceRuntime` is a composition root, not a service container implementation. It owns identity, lifecycle state, and empty service slots so later migrations can move services into it without redefining the boundary each time.
+
+### Service ownership inventory
+
+| Service / global | Current owner | Future owner | Migration phase |
+|---|---|---|---|
+| `store` | app-global in `index.ts` | app-global | stays app-wide |
+| `workspaceRegistry` | app-global in `index.ts` | app-global registry backing store | stays app-wide |
+| `mainWindow` | app-global in `index.ts` | app-global | stays app-wide |
+| `contentView` | app-global in `index.ts` | app-global | stays app-wide |
+| `browserPaneManager` | app-global in `index.ts` | app-global | stays app-wide |
+| `taskRunner` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `agentManager` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `cliAgentManager` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `conversationStore` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `nativeSessionWatcher` | active-workspace singleton in `index.ts` | `WorkspaceRuntime` | later service migration |
+| `nativeSessionCache` | active-workspace cache in `index.ts` | `WorkspaceRuntime` | later service migration |
+| file watcher internals | hidden module singleton | runtime-scoped instance/registry | later service migration |
+| git polling internals | hidden module singleton | runtime-scoped instance/registry | later service migration |
+| worktree polling internals | hidden module singleton | runtime-scoped instance/registry | later service migration |
+| activation sequence / workspace-open scheduling | process-global in `index.ts` | `WorkspaceRuntime` lifecycle state | moved in boundary phase |
+
+### IPC inventory for later `workspaceId` migration
+
+Already workspace-aware enough for the boundary phase:
+
+- `WORKSPACE_*`
+- `CLI_AGENT_START`
+- `CLI_AGENT_GET_SESSION`
+- `CONVERSATION_CREATE`
+- `BROWSER_CREATE`
+- `BROWSER_DESTROY_WORKSPACE`
+- root-path based helpers such as `STATE_*`, `SEARCH_START`, `FS_LIST_ALL_FILES`, `GIT_DIFF_ORIGINAL`, `OPEN_IN_VSCODE`
+
+Likely needs `workspaceId` added later because the handler still relies on the focused runtime or global active workspace state:
+
+- `WORKSPACE_ROOT_GET`
+- `AIDE_INIT`
+- `AIDE_GET_RESOLVED_SETTINGS`
+- `SETTINGS_GET_WORKSPACE`
+- `SETTINGS_SET_WORKSPACE`
+- `GITIGNORE_AUDIT`
+- `GITIGNORE_APPEND`
+- `GITIGNORE_DISMISS`
+- `GIT_STATUS`
+- `WORKTREE_LIST`
+- `WORKTREE_CREATE`
+- `WORKTREE_REMOVE`
+- `WORKTREE_SET_ACTIVE`
+- `WORKTREE_GET_ACTIVE`
+- `WORKTREE_LIST_BRANCHES`
+- `TASK_LIST`
+- `TASK_RUN`
+- `TASK_RELOAD`
+- `TASK_GENERATE`
+- `TASK_FILE_SAVED`
+- `CHAT_SEND_MESSAGE`
+- `CHAT_SET_MODE`
+- `CHAT_SET_WORKING_SET`
+- `CHAT_TOOL_APPROVE`
+- `CHAT_TOOL_REJECT`
+- `CHAT_STOP`
+- `CLI_AGENT_SEND`
+- `CLI_AGENT_STOP`
+- `CONVERSATION_DELETE`
+- `CONVERSATION_RENAME`
+- `CONVERSATION_GET`
+
+Broadcast payloads that likely need `workspaceId` when multiplexing multiple runtimes:
+
+- `GIT_STATUS_CHANGED`
+- `GIT_BRANCH_CHANGED`
+- `WORKTREE_LIST_CHANGED`
+- `TASK_STATUS_CHANGED`
+- `TASK_REQUEST_INPUT`
+- `TASK_DIAGNOSTICS`
+- `TASK_TRIGGER_RESULT`
+- `TASK_AUTO_DETECT`
+- `GITIGNORE_AUDIT_RESULT`
+- `SETTINGS_CHANGED`
+- `SEARCH_RESULTS`
+- `SEARCH_COMPLETE`
+- `PTY_DATA_OUT`
+- `PTY_EXIT`
+- `CHAT_STREAM_CHUNK`
+- `CHAT_STREAM_END`
+- `CHAT_TOOL_CALL`
+- `CLI_AGENT_STREAM_DELTA`
+- `CLI_AGENT_MESSAGE`
+- `CLI_AGENT_STATUS`
+- `CLI_AGENT_RESULT`
+
+**Phase 2 (2026-04-02):** The broadcast channels in the list above now use typed payloads that include `workspaceId` (or an envelope with `workspaceId`) wherever main can emit from a specific workspace runtime; renderer subscribers treat focus and delivery as orthogonal. Global channels (theme, zoom, workspace registry list, lifecycle) stay unscoped. Phase 3 service migration can re-home git/worktree/file-watch polling per runtime without another IPC shape break for these events.
+
+### Phase 1 implementation rule
+
+Phase 1 is additive only:
+
+- `index.ts` activates workspaces by resolving `runtimeRegistry.getOrCreate(entry)` and then focusing that runtime
+- visible behavior remains unchanged
+- no IPC schema changes land yet
+- no service implementation has moved out of `index.ts` yet
+
+That keeps the partial-migration window explicit: ownership is now modeled, but the actual per-service migration can happen incrementally and be tracked service-by-service instead of ad hoc.
 
 ---
 

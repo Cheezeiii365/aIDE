@@ -9,6 +9,7 @@ interface Props {
   onFileOpen: (filePath: string) => void
   collapsed?: boolean
   activeRoot: string | null
+  workspaceId: string | null
   onOpenFolder: () => void
   worktreeSection?: ReactNode
 }
@@ -21,6 +22,7 @@ interface Props {
  * @param onFileOpen - Callback invoked with the selected file path
  * @param collapsed - When `true`, the component renders `null`
  * @param activeRoot - Workspace root path to display; set to `null` to show the empty state
+ * @param workspaceId - Current workspace id for scoping file watcher / git IPC events
  * @param onOpenFolder - Callback invoked when the "Open Folder" button is clicked in the empty state
  * @param worktreeSection - Optional React node rendered after the explorer section when `activeRoot` is set
  * @returns The sidebar element when visible, `null` when collapsed
@@ -29,6 +31,7 @@ export function Sidebar({
   onFileOpen,
   collapsed = false,
   activeRoot,
+  workspaceId,
   onOpenFolder,
   worktreeSection,
 }: Props) {
@@ -91,7 +94,12 @@ export function Sidebar({
                   if (e.key === 'Escape') setFilter('')
                 }}
               />
-              <FileTree rootPath={activeRoot} onFileOpen={onFileOpen} filter={filter} />
+              <FileTree
+                rootPath={activeRoot}
+                workspaceId={workspaceId}
+                onFileOpen={onFileOpen}
+                filter={filter}
+              />
             </SidebarSection>
             {worktreeSection}
           </>

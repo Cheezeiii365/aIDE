@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
 interface Props {
+  workspaceId: string
   onClose: () => void
 }
 
@@ -13,7 +14,7 @@ interface Props {
  * @param onClose - Callback invoked to close the modal
  * @returns The modal portal element mounted into `document.body`
  */
-export function CreateWorktreeModal({ onClose }: Props) {
+export function CreateWorktreeModal({ workspaceId, onClose }: Props) {
   const [branchName, setBranchName] = useState('')
   const [createNew, setCreateNew] = useState(true)
   const [baseBranch, setBaseBranch] = useState('')
@@ -25,12 +26,17 @@ export function CreateWorktreeModal({ onClose }: Props) {
 
   // Load branches and focus input on mount
   useEffect(() => {
-    window.api.listBranches().then((branches) => {
+    let cancelled = false
+    window.api.listBranches(workspaceId).then((branches) => {
+      if (cancelled) return
       setExistingBranches(branches)
       if (branches.length > 0) setBaseBranch(branches[0])
     })
     inputRef.current?.focus()
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId])
 
   // Close on Escape
   useEffect(() => {
@@ -48,7 +54,7 @@ export function CreateWorktreeModal({ onClose }: Props) {
     setError('')
     setSubmitting(true)
 
-    const result = await window.api.createWorktree({
+    const result = await window.api.createWorktree(workspaceId, {
       branch: branchName.trim(),
       createBranch: createNew,
       baseBranch: createNew ? baseBranch || undefined : undefined,

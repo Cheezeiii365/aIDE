@@ -1,7 +1,7 @@
 /**
  * Workspace state serializer (renderer side).
  *
- * Collects state from Dockview, editor caches, and sidebar to build
+ * Collects state from Dockview, document sessions, and sidebar to build
  * an AideLocalState object for persistence. Also handles restoring
  * state into the Dockview layout.
  */
@@ -9,8 +9,17 @@
 import type { DockviewApi } from 'dockview-react'
 import type { AideLocalState, TabState } from '@aide/shared'
 import { peekCachedState, getAllCachedPaths } from '../editor/editorStateCache'
-import { isDirty } from '../editor/editorDirtyState'
+import { getDocumentSession } from '../editor/documentStore'
 import { serializeBrowserPaneState } from '../browserState'
+
+function offsetToLineColumn(doc: string, offset: number): { line: number; column: number } {
+  const o = Math.max(0, Math.min(offset, doc.length))
+  const before = doc.slice(0, o)
+  const lines = before.split('\n')
+  const line = lines.length
+  const column = (lines[lines.length - 1]?.length ?? 0) + 1
+  return { line, column }
+}
 
 /**
  * Create an AideLocalState snapshot of the current workspace, including Dockview layout, open editor tabs, active tab, sidebar settings, and serialized browser pane state.
@@ -24,51 +33,61 @@ import { serializeBrowserPaneState } from '../browserState'
  * - `sidebarWidth` and `sidebarCollapsed`: current sidebar settings
  * - `sidebarSections`: persisted sidebar sections (empty object here)
  * - `browserPanes`: browser pane state produced by `serializeBrowserPaneState(dockviewApi, workspaceId)`
+ * - `activeWorktreePath`: persisted active git worktree path, or null for main worktree
  */
 export function serializeWorkspaceState(
   dockviewApi: DockviewApi | null,
   workspaceId: string | null,
   sidebarWidth: number,
   sidebarCollapsed: boolean,
+  activeWorktreePath: string | null,
 ): AideLocalState {
   let layout: unknown = null
   const openTabs: TabState[] = []
   let activeTabPath: string | null = null
 
   if (dockviewApi) {
-    // Serialize Dockview layout
     try {
       layout = dockviewApi.toJSON()
     } catch {
       layout = null
     }
 
-    // Find active editor panel
     const activePanel = dockviewApi.activePanel
     if (activePanel) {
       const fp = (activePanel.params as Record<string, unknown>)?.filePath as string | undefined
       if (fp) activeTabPath = fp
     }
 
-    // Collect tab states from all editor panels
     for (const panel of dockviewApi.panels) {
       const filePath = (panel.params as Record<string, unknown>)?.filePath as string | undefined
       if (!filePath) continue
 
-      const cachedState = peekCachedState(filePath)
-      const cursorPos = cachedState?.selection?.main
-      const cursorLine = cursorPos && cachedState ? cachedState.doc.lineAt(cursorPos.head) : null
-      const dirty = isDirty(filePath)
+      const panelWid = (panel.params as Record<string, unknown>)?.workspaceId as string | undefined
+      const wid = panelWid ?? workspaceId ?? undefined
+      const session = getDocumentSession(wid, filePath)
+      const docText = session?.workingCopy ?? peekCachedState(filePath)?.doc.toString() ?? ''
+      const cursorOffset = session?.selection?.head
+        ?? peekCachedState(filePath)?.selection.main.head
+        ?? 0
+      const { line: cursorLine, column: cursorColumn } = offsetToLineColumn(docText, cursorOffset)
+
+      const dirty = session?.isDirty ?? false
 
       const tabState: TabState = {
         filePath,
-        scrollTop: 0, // EditorView scroll not accessible from EditorState
-        cursorLine: cursorLine?.number ?? 1,
-        cursorColumn: cursorPos && cursorLine ? (cursorPos.head - cursorLine.from + 1) : 1,
+        scrollTop: 0,
+        cursorLine,
+        cursorColumn,
         foldedRanges: [],
         isDirty: dirty,
-        // Note: dirtyContent would need the EditorView's current doc text
-        // For now, dirty files will re-read from disk on restore
+        dirtyContent: dirty ? session?.workingCopy : undefined,
+        cleanBaseline: dirty ? session?.cleanBaseline : undefined,
+        selection: dirty && session
+          ? { anchor: session.selection.anchor, head: session.selection.head }
+          : undefined,
+        diskChangedWhileDirty:
+          session?.diskChangedWhileDirty === true ? true : undefined,
       }
       openTabs.push(tabState)
     }
@@ -82,6 +101,7 @@ export function serializeWorkspaceState(
     sidebarCollapsed,
     sidebarSections: {},
     browserPanes: serializeBrowserPaneState(dockviewApi, workspaceId),
+    activeWorktreePath,
   }
 }
 

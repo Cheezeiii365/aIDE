@@ -19,6 +19,12 @@ Use these terms precisely throughout this refactor.
 - `workspace switch`
   - a UI focus change between workspaces
   - should not imply runtime destruction
+- `runtime state`
+  - the user-visible and resource-policy posture of a live runtime
+  - canonical states: `foreground`, `backgrounded`, `asleep`, optional `blocked`
+- `runtime status`
+  - the lifecycle and health status of a runtime instance
+  - canonical statuses: `starting`, `running`, `stopping`, `stopped`, `error`
 - `foreground`
   - workspace is visible or actively selected in the UI
 - `backgrounded`
@@ -79,11 +85,11 @@ The result is a false multi-workspace model: the UI suggests concurrency, but on
 - Move global UI concerns into explicit global services instead of panel-local listeners
 - Prefer additive migration over a one-shot rewrite
 
-## Runtime State Machine
+## Runtime Model
 
-The runtime model should explicitly separate UI focus, backend liveness, and resource policy.
+The runtime model should explicitly separate UI focus/resource posture from backend lifecycle/health.
 
-### Primary states
+### Runtime states
 
 - `foreground`
   - workspace is open, selected, or actively edited by the user
@@ -104,15 +110,24 @@ The runtime model should explicitly separate UI focus, backend liveness, and res
     - minimal watchers or reduced watcher handling
     - durable state retained for quick wake-up
 
-### Optional explicit states
+### Optional explicit runtime state
 
 - `blocked`
   - waiting on user approval or other required input
   - should not be treated the same as asleep, because it still needs prominent status and notification handling
+
+### Runtime status
+
+- `starting`
+  - runtime is being initialized and should not yet be treated as fully operational
+- `running`
+  - runtime exists and is healthy enough to do work
+- `stopping`
+  - runtime is tearing down services and should not accept new work
+- `stopped`
+  - runtime is not live
 - `error`
   - runtime is unhealthy and may require recovery, restart, or user intervention
-- `starting`, `stopping`, `stopped`, `degraded`
-  - internal lifecycle states that may still be useful for supervision and telemetry
 
 ### Transition rules
 
@@ -135,7 +150,7 @@ Do not sleep a workspace just because an agent finished. A workspace should only
 
 ### Architectural implication
 
-The runtime state machine is more important than the eventual process model. Get the runtime lifecycle correct first. Process isolation, if needed later, should be an implementation detail behind the `RuntimeHost` boundary.
+The runtime state machine is more important than the eventual process model. Get the split between runtime state and runtime status correct first. Process isolation, if needed later, should be an implementation detail behind the `RuntimeHost` boundary.
 
 ## Target Architecture
 
@@ -151,7 +166,7 @@ Core concepts:
   - starts, looks up, transitions, suspends, resumes, and destroys runtimes
 - `WorkspaceRuntime`
   - owns the services for exactly one workspace
-  - exposes lifecycle and status
+  - exposes runtime state and runtime status
   - is the only place that knows the effective repo root / active worktree / live agents / live tasks for that workspace
 - `RuntimeHost`
   - initially the Electron main process
@@ -216,14 +231,14 @@ Deliverables:
 
 - a written `WorkspaceRuntime` definition
 - a written vocabulary section distinguishing runtime, process, and runtime host
-- a written runtime lifecycle model
-- a written runtime state machine for `foreground`, `backgrounded`, `asleep`, and optional `blocked`
+- a written runtime lifecycle/status model
+- a written runtime state model for `foreground`, `backgrounded`, `asleep`, and optional `blocked`
 - an inventory of current singleton services and where they move
 - a canonical list of all events that must carry `workspaceId`
 
 Decisions to make:
 
-- lifecycle states: `starting`, `running`, `degraded`, `paused`, `stopping`, `stopped`, `error`
+- runtime statuses: `starting`, `running`, `stopping`, `stopped`, `error`
 - runtime states: `foreground`, `backgrounded`, `asleep`, and whether `blocked` is modeled explicitly
 - whether inactive runtimes are always live or can be suspended further under resource pressure
 - whether browser panes and PTYs remain globally managed or become runtime-owned adapters
@@ -424,6 +439,53 @@ Acceptance criteria:
 - workspace switching is a UI focus operation
 - runtime destruction only happens on explicit close, app shutdown, or defined suspension policy
 - the old architecture cannot be accidentally reintroduced through convenience globals
+
+#### Phase 8 policy (as implemented)
+
+This section is the explicit lifecycle and ownership contract for the current codebase. It satisfies the Phase 8 “define policy” work items.
+
+**Workspace switching vs teardown**
+
+- `activateWorkspace(id)` in the main process starts or resumes the target `WorkspaceRuntime`, updates registry focus, and broadcasts snapshots. It does **not** dispose the previously focused runtime.
+- A runtime is torn down (`WorkspaceRuntime.dispose()` → `status: stopped`, `state: asleep`, services cleared) only when:
+  - the user closes or removes that workspace (`WORKSPACE_CLOSE` / `WORKSPACE_REMOVE` → `runtimeRegistry.delete`), or
+  - the app finishes quit (`finishQuit()` → `runtimeRegistry.disposeAll()`).
+
+**Runtime shutdown / suspension (v1)**
+
+- **User state vs engine status:** `RuntimeState` (`foreground`, `backgrounded`, `blocked`, `asleep`) describes focus and attention posture for the ribbon and workload UI. `RuntimeStatus` (`starting`, `running`, `stopping`, `stopped`, `error`) describes whether services are attached and healthy.
+- **While a workspace stays open:** switching away calls `enterBackground()` on the unfocused runtime. Per-workspace services (agents, task runner, watchers, git/worktree polling scoped to that id) **keep running**; there is no automatic “sleep” that stops them today.
+- **True stop + `asleep`:** After `dispose()`, the runtime object may remain in the registry as stopped with `state: asleep` until removal. That means “no services,” not “idle but still watching.”
+- **Future (not v1):** optional reduction of background work (slower polling, SIGSTOP on LSP, fewer watchers) when `state` is `backgrounded` with no workload — see *Risks* / *Non-Goals* in this doc. Do not conflate that future optimization with current behavior.
+
+**App quit, persistence, and crash recovery**
+
+- **Graceful quit:** `before-quit` prevents default, sends `LIFECYCLE_REQUEST_SAVE` to the renderer, waits up to ~2s for `LIFECYCLE_SAVE_COMPLETE`, then `finishQuit()` persists session workspace ids, sets `cleanShutdown: true` in the app store, kills PTYs, stops global polling/watchers, disposes all runtimes, and calls `app.quit()`.
+- **Crash / kill:** On the next launch, if `cleanShutdown` was not set to `true`, main sends `LIFECYCLE_CRASH_DETECTED` after load so the renderer can surface recovery UX.
+- **`--clean`:** Clears session workspaces and runtime focus without wiping the full store; used for a fresh session while keeping other preferences.
+
+**Global-by-design resources (and why)**
+
+These are intentionally single-instance per app, not per `WorkspaceRuntime`:
+
+| Area | Role |
+|------|------|
+| **Main window + `WebContentsView`** | One renderer surface; all workspaces share it. |
+| **`BrowserPaneManager`** | Hosts `WebContentsView` browser panes; panes are keyed by pane id and associated workspace id for visibility and teardown, but the manager is one app-level coordinator. |
+| **App-level `electron-store`** | User preferences (theme, sidebar width, editor defaults, keybinding overrides), `cleanShutdown`, and workspace **registry/session metadata** (ordered ids, active id, names). It must **not** store mutable per-workspace folder paths or active worktree as a single global key (enforced by `tests/unit/mainElectronStorePolicy.test.ts`). |
+| **App menu / global shortcuts** | Registered once; handlers delegate to workspace-aware APIs using the active workspace or explicit ids from the renderer. |
+
+Per-workspace truth lives in `WorkspaceRegistry` entries, `.aide/` on disk, `WorkspaceRuntime`, and workspace-scoped maps (PTY, git status, worktrees, watchers keyed by `workspaceId`).
+
+**Implicit “active workspace” on IPC (narrow allowance)**
+
+- `resolveWorkspaceIdForIpc` / `resolveRepoRootForWorkspace` / `resolveEffectiveRootForWorkspace` may fall back to `workspaceRegistry.getActiveId()` when `workspaceId` is omitted. That matches optional IPC shapes where the renderer intentionally means “the workspace the user is looking at.”
+- **Guardrail:** New handlers that perform work for a **specific** workspace in response to events that already carry a workspace id (tasks, agents, PTY, etc.) must use that id and must not substitute the active workspace.
+- **Allowlisted main-process fallback:** The only deliberate `resolveRepoRootForWorkspace(workspaceRegistry, undefined)` call is in `SETTINGS_SET_USER`, to broadcast merged settings for the UI-active project after global user defaults change. Any additional implicit fallbacks require updating `tests/unit/mainIpcWorkspaceFallbackPolicy.test.ts`.
+
+**Renderer shell**
+
+- `AppShell` correctly binds **visible** UX (file tree, Dockview, task panel for the focused tab, persistence hooks) to `activeWorkspaceId` / `activeWorkspace`. Cross-workspace visibility uses `workspaces`, `runtimeSnapshots`, and workspace-keyed stores (`documentStore`, inbox stores, etc.). That split is intentional: the shell is single-window; “active” is the editing context, not the only runtime.
 
 ## Cross-Cutting Design Rules
 

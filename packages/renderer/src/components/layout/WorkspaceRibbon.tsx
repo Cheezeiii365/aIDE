@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ThemeToggle } from './ThemeToggle'
+import { RuntimeInboxBell } from './RuntimeInboxBell'
 import { AgentStatusDot } from '../shared/AgentStatusDot'
-import type { WorkspaceEntry } from '@aide/shared'
+import type { WorkspaceEntry, WorkspaceRuntimeSnapshot } from '@aide/shared'
 
 interface Props {
   workspaces: WorkspaceEntry[]
+  runtimeSnapshots: Record<string, WorkspaceRuntimeSnapshot>
   activeWorkspaceId: string | null
   onSwitch: (id: string) => void
   onOpenFolder: () => void
@@ -30,6 +32,7 @@ interface Props {
  */
 export function WorkspaceRibbon({
   workspaces,
+  runtimeSnapshots,
   activeWorkspaceId,
   onSwitch,
   onOpenFolder,
@@ -88,6 +91,28 @@ export function WorkspaceRibbon({
     }
   }, [onCloseWorkspace])
 
+  const getRuntimeDotStatus = useCallback((workspaceId: string): 'idle' | 'running' | 'blocked' | 'error' => {
+    const snapshot = runtimeSnapshots[workspaceId]
+    if (!snapshot) return 'idle'
+    if (snapshot.status === 'error') return 'error'
+    if (
+      snapshot.state === 'blocked' ||
+      snapshot.workload.pendingApproval ||
+      snapshot.workload.pendingUserInput
+    ) {
+      return 'blocked'
+    }
+    if (
+      snapshot.state === 'foreground' ||
+      snapshot.state === 'backgrounded' ||
+      snapshot.workload.agentsRunning ||
+      snapshot.workload.tasksRunning
+    ) {
+      return 'running'
+    }
+    return 'idle'
+  }, [runtimeSnapshots])
+
   return (
     <header className={`workspace-ribbon${isFullscreen ? ' workspace-ribbon--fullscreen' : ''}`}>
       <div className="workspace-ribbon__tabs">
@@ -106,7 +131,15 @@ export function WorkspaceRibbon({
             onDragOver={(e) => handleDragOver(e, ws.id)}
             onDrop={() => handleDrop(ws.id)}
             onDragEnd={handleDragEnd}
-            title={ws.rootPath ?? ws.name}
+            title={
+              runtimeSnapshots[ws.id]
+                ? `${ws.rootPath ?? ws.name} • ${runtimeSnapshots[ws.id].state} • ${runtimeSnapshots[ws.id].status}${
+                  runtimeSnapshots[ws.id].workload.pendingApproval || runtimeSnapshots[ws.id].workload.pendingUserInput
+                    ? ' • needs input'
+                    : ''
+                }`
+                : (ws.rootPath ?? ws.name)
+            }
           >
             {ws.color && (
               <span
@@ -114,7 +147,7 @@ export function WorkspaceRibbon({
                 style={{ backgroundColor: ws.color }}
               />
             )}
-            {!ws.color && <AgentStatusDot status="idle" />}
+            {!ws.color && <AgentStatusDot status={getRuntimeDotStatus(ws.id)} />}
             <span className="workspace-tab__name">
               {ws.icon ? `${ws.icon} ` : ''}{ws.name}
             </span>
@@ -147,6 +180,7 @@ export function WorkspaceRibbon({
         </button>
       </div>
       <div className="workspace-ribbon__actions">
+        <RuntimeInboxBell workspaces={workspaces} onSwitchWorkspace={onSwitch} />
         <span className="workspace-ribbon__cost">$0.00</span>
         <div className="workspace-ribbon__separator" />
         <ThemeToggle />

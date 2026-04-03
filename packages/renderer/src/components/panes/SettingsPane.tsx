@@ -12,17 +12,31 @@ interface SettingsPaneParams {
 }
 
 export function SettingsPane({ params }: IDockviewPanelProps<SettingsPaneParams>) {
-  const settings = useSettings()
+  const [settingsWorkspaceId, setSettingsWorkspaceId] = useState<string | null>(null)
+  const settings = useSettings(settingsWorkspaceId)
   const { theme } = useTheme()
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('textEditor.font')
   const [workspaceAvailable, setWorkspaceAvailable] = useState(false)
 
   useEffect(() => {
-    window.api.getWorkspaceRoot().then((root) => {
+    const sync = (): void => {
+      void window.api.getActiveWorkspaceId().then(setSettingsWorkspaceId)
+    }
+    sync()
+    const unsub = window.api.onWorkspaceRegistryChanged(sync)
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    if (!settingsWorkspaceId) {
+      setWorkspaceAvailable(false)
+      return
+    }
+    void window.api.getWorkspaceRoot(settingsWorkspaceId).then((root) => {
       setWorkspaceAvailable(root !== null)
     })
-  }, [])
+  }, [settingsWorkspaceId])
 
   const categoriesWithSettings = getCategoriesWithSettings()
 

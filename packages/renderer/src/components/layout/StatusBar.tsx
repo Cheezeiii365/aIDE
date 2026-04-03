@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useEditorStatus } from '../../hooks/useEditorStatus'
 import type { TaskExecution } from '@aide/shared'
+import { scopedTo } from '../../lib/workspace/workspaceScopedListener'
 
 /**
  * Renders an inline SVG icon representing a Git branch.
@@ -32,6 +33,7 @@ function TaskSpinner() {
 }
 
 interface StatusBarProps {
+  workspaceId: string | null
   runningTasks?: TaskExecution[]
 }
 
@@ -43,17 +45,24 @@ interface StatusBarProps {
  * @param runningTasks - Optional list of running tasks; when non-empty, a spinner and the task count are shown.
  * @returns The footer element displaying branch, tasks (if any), cursor line/column, encoding, and language.
  */
-export function StatusBar({ runningTasks = [] }: StatusBarProps) {
+export function StatusBar({ workspaceId, runningTasks = [] }: StatusBarProps) {
   const { status } = useEditorStatus()
   const [branch, setBranch] = useState('main')
 
   useEffect(() => {
-    window.api.getGitStatus().then((result) => {
-      if (result) setBranch(result.branch)
+    if (!workspaceId) return undefined
+    let disposed = false
+    window.api.getGitStatus(workspaceId).then((result) => {
+      if (!disposed && result) setBranch(result.branch)
     })
-    const unsub = window.api.onGitBranchChanged(setBranch)
-    return unsub
-  }, [])
+    const unsub = window.api.onGitBranchChanged(scopedTo(workspaceId, (payload) => {
+      setBranch(payload.branch)
+    }))
+    return () => {
+      disposed = true
+      unsub()
+    }
+  }, [workspaceId])
 
   return (
     <footer className="status-bar">

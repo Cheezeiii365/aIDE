@@ -2,9 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
 import type { SearchFileResult, SearchMatch } from '@aide/shared'
 import { getAppActions } from '../../lib/appActions'
+import { scopedTo } from '../../lib/workspace/workspaceScopedListener'
 
 interface FindInFilesParams {
   workspaceRoot: string
+  workspaceId: string
   zoomFactor?: number
 }
 
@@ -42,7 +44,9 @@ export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParam
 
   // Subscribe to search results and completion
   useEffect(() => {
-    const unsubResults = window.api.onSearchResults((newResults: SearchFileResult[]) => {
+    const wid = params.workspaceId
+    const unsubResults = window.api.onSearchResults(scopedTo(wid, (payload) => {
+      const newResults = payload.results
       setResults((prev) => {
         const map = new Map(prev.map((g) => [g.filePath, g]))
         for (const r of newResults) {
@@ -55,21 +59,21 @@ export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParam
         }
         return Array.from(map.values())
       })
-    })
+    }))
 
-    const unsubComplete = window.api.onSearchComplete((summary) => {
+    const unsubComplete = window.api.onSearchComplete(scopedTo(wid, (summary) => {
       setSearching(false)
       setTotalMatches(summary.totalMatches)
-    })
+    }))
 
     return () => {
       unsubResults()
       unsubComplete()
     }
-  }, [])
+  }, [params.workspaceId])
 
   const doSearch = useCallback((q: string) => {
-    if (!q.trim() || !params.workspaceRoot) {
+    if (!q.trim() || !params.workspaceRoot || !params.workspaceId) {
       setResults([])
       setTotalMatches(0)
       return
@@ -81,6 +85,7 @@ export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParam
     setSearching(true)
 
     window.api.searchStart({
+      workspaceId: params.workspaceId,
       query: q,
       rootPath: params.workspaceRoot,
       isRegex,
@@ -88,7 +93,7 @@ export function FindInFilesPane({ params }: IDockviewPanelProps<FindInFilesParam
       wholeWord,
       fileGlob: fileGlob || undefined,
     })
-  }, [params.workspaceRoot, isRegex, caseSensitive, wholeWord, fileGlob])
+  }, [params.workspaceId, params.workspaceRoot, isRegex, caseSensitive, wholeWord, fileGlob])
 
   // Debounced search on query/toggle change
   useEffect(() => {

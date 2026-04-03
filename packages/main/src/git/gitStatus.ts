@@ -1,21 +1,20 @@
 import { ipcMain } from 'electron'
 import simpleGit from 'simple-git'
 import { IpcChannels } from '@aide/shared'
-import type { GitFileStatus, GitStatusResult } from '@aide/shared'
-
-let pollTimer: ReturnType<typeof setInterval> | null = null
-let currentRoot: string | null = null
-let lastJson = ''
-let lastBranch = ''
-let lastIgnoredJson = ''
+import type { GitBranchChangedPayload, GitFileStatus, GitStatusChangedPayload, GitStatusResult } from '@aide/shared'
 
 type GetWebContents = () => Electron.WebContents | null
 
+interface GitPollEntry {
+  pollTimer: ReturnType<typeof setInterval>
+  rootPath: string
+  workspaceId: string
+}
+
+const pollsByWorkspace = new Map<string, GitPollEntry>()
+
 /**
  * Obtains Git status for the repository at the given root path.
- *
- * @param rootPath - Absolute path to the Git working tree root to inspect
- * @returns A result containing a map of absolute file paths to single-letter Git status codes (`'D'`, `'?'`, `'A'`, `'M'`), the current branch name (or `'HEAD'` if unavailable), and an array of absolute ignored paths; `null` if the path is not a Git repository or if an error occurs.
  */
 export async function fetchGitStatus(rootPath: string): Promise<GitStatusResult | null> {
   try {
@@ -42,7 +41,6 @@ export async function fetchGitStatus(rootPath: string): Promise<GitStatusResult 
       files[`${rootPath}/${f}`] = 'C'
     }
 
-    // Fetch gitignored paths (directories listed as single entries via --directory)
     let ignoredPaths: string[] = []
     try {
       const ignoredRaw = await git.raw([
@@ -53,7 +51,7 @@ export async function fetchGitStatus(rootPath: string): Promise<GitStatusResult 
         .filter(Boolean)
         .map((f) => `${rootPath}/${f.replace(/\/$/, '')}`)
     } catch {
-      // Non-fatal: ignored paths are a nice-to-have
+      // non-fatal
     }
 
     return { files, branch: status.current ?? 'HEAD', ignoredPaths }
@@ -63,39 +61,30 @@ export async function fetchGitStatus(rootPath: string): Promise<GitStatusResult 
 }
 
 /**
- * Register an IPC handler that provides Git status for the currently selected repository root.
- *
- * The handler listens on `IpcChannels.GIT_STATUS` and returns `null` when no repository root is set;
- * otherwise it returns the result of `fetchGitStatus(currentRoot)`.
+ * Register GIT_STATUS handler: requires `workspaceId` to resolve the polling root for that runtime.
  */
 export function registerGitStatusHandlers(): void {
-  ipcMain.handle(IpcChannels.GIT_STATUS, async () => {
-    if (!currentRoot) return null
-    return fetchGitStatus(currentRoot)
+  ipcMain.handle(IpcChannels.GIT_STATUS, async (_event, workspaceId: string) => {
+    const entry = pollsByWorkspace.get(workspaceId)
+    if (!entry?.rootPath) return null
+    return fetchGitStatus(entry.rootPath)
   })
 }
 
 /**
- * Begin monitoring a Git repository at the given root and emit IPC events when its status or branch changes.
- *
- * Replaces any existing poll and performs an initial status fetch. Emits `IpcChannels.GIT_STATUS_CHANGED` when the
- * repository's file-status map or ignored-path list changes, and `IpcChannels.GIT_BRANCH_CHANGED` when the current
- * branch changes.
- *
- * @param rootPath - Absolute path to the Git repository root to monitor
- * @param getWebContents - Function that returns the Electron WebContents used to send IPC messages; may return `null`
+ * Begin Git polling for one workspace. Multiple workspaces poll concurrently.
  */
-export async function startGitPolling(
+export async function startGitPollingForWorkspace(
+  workspaceId: string,
   rootPath: string,
   getWebContents: GetWebContents,
 ): Promise<void> {
-  stopGitPolling()
-  currentRoot = rootPath
-  lastJson = ''
-  lastBranch = ''
-  lastIgnoredJson = ''
+  stopGitPollingForWorkspace(workspaceId)
 
-  // Initial fetch — broadcast immediately so the renderer has fresh data
+  let lastJson = ''
+  let lastBranch = ''
+  let lastIgnoredJson = ''
+
   const initial = await fetchGitStatus(rootPath)
   if (initial) {
     lastJson = JSON.stringify(initial.files)
@@ -103,12 +92,14 @@ export async function startGitPolling(
     lastIgnoredJson = JSON.stringify(initial.ignoredPaths)
     const wc = getWebContents()
     if (wc) {
-      wc.send(IpcChannels.GIT_STATUS_CHANGED, initial)
-      wc.send(IpcChannels.GIT_BRANCH_CHANGED, initial.branch)
+      const statusPayload: GitStatusChangedPayload = { workspaceId, status: initial }
+      wc.send(IpcChannels.GIT_STATUS_CHANGED, statusPayload)
+      const branchPayload: GitBranchChangedPayload = { workspaceId, branch: initial.branch }
+      wc.send(IpcChannels.GIT_BRANCH_CHANGED, branchPayload)
     }
   }
 
-  pollTimer = setInterval(async () => {
+  const pollTimer = setInterval(async () => {
     const result = await fetchGitStatus(rootPath)
     if (!result) return
 
@@ -120,29 +111,43 @@ export async function startGitPolling(
     if (json !== lastJson || ignoredJson !== lastIgnoredJson) {
       lastJson = json
       lastIgnoredJson = ignoredJson
-      wc.send(IpcChannels.GIT_STATUS_CHANGED, result)
+      const statusPayload: GitStatusChangedPayload = { workspaceId, status: result }
+      wc.send(IpcChannels.GIT_STATUS_CHANGED, statusPayload)
     }
 
     if (result.branch !== lastBranch) {
       lastBranch = result.branch
-      wc.send(IpcChannels.GIT_BRANCH_CHANGED, result.branch)
+      const branchPayload: GitBranchChangedPayload = { workspaceId, branch: result.branch }
+      wc.send(IpcChannels.GIT_BRANCH_CHANGED, branchPayload)
     }
   }, 3000)
+
+  pollsByWorkspace.set(workspaceId, { pollTimer, rootPath, workspaceId })
 }
 
-/**
- * Stops the active Git polling timer and resets cached repository state.
- *
- * Clears any existing polling interval, sets the current Git root to `null`,
- * and clears cached file, branch, and ignored-path data.
- */
-export function stopGitPolling(): void {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
+export function stopGitPollingForWorkspace(workspaceId: string): void {
+  const entry = pollsByWorkspace.get(workspaceId)
+  if (!entry) return
+  clearInterval(entry.pollTimer)
+  pollsByWorkspace.delete(workspaceId)
+}
+
+export function stopAllGitPolling(): void {
+  for (const id of [...pollsByWorkspace.keys()]) {
+    stopGitPollingForWorkspace(id)
   }
-  currentRoot = null
-  lastJson = ''
-  lastBranch = ''
-  lastIgnoredJson = ''
+}
+
+/** @deprecated Use startGitPollingForWorkspace */
+export async function startGitPolling(
+  rootPath: string,
+  getWebContents: GetWebContents,
+  workspaceId: string,
+): Promise<void> {
+  return startGitPollingForWorkspace(workspaceId, rootPath, getWebContents)
+}
+
+/** @deprecated Use stopAllGitPolling or stopGitPollingForWorkspace */
+export function stopGitPolling(): void {
+  stopAllGitPolling()
 }

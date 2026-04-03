@@ -52,6 +52,7 @@ export interface CliAgentMessage {
 
 /** Partial text delta streamed from an assistant response. */
 export interface CliAgentStreamDelta {
+  workspaceId: string
   sessionId: string
   messageId: string
   delta: string
@@ -80,14 +81,22 @@ export interface CliAgentSession {
 // ---------------------------------------------------------------------------
 
 export interface CliAgentStatusPayload {
+  workspaceId: string
   sessionId: string
   processStatus: CliAgentProcessStatus
   error?: string
 }
 
 export interface CliAgentResultPayload {
+  workspaceId: string
   sessionId: string
   durationMs: number
   totalCostUsd: number
   isSuccess: boolean
+}
+
+/** IPC envelope for `CLI_AGENT_MESSAGE` (message body plus routing ids). */
+export interface CliAgentMessagePayload extends CliAgentMessage {
+  workspaceId: string
+  sessionId: string
 }

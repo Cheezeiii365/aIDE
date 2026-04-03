@@ -99,13 +99,15 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
           window.api.ptyWrite(id, data)
         })
 
-        cleanupDataRef.current = window.api.onPtyData((incomingId: string, data: string) => {
-          if (incomingId === id) term.write(data)
+        cleanupDataRef.current = window.api.onPtyData((payload) => {
+          if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+            term.write(payload.data)
+          }
         })
 
-        cleanupExitRef.current = window.api.onPtyExit((incomingId: string, exitCode: number) => {
-          if (incomingId === id) {
-            term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
+        cleanupExitRef.current = window.api.onPtyExit((payload) => {
+          if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+            term.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`)
           }
         })
         return
@@ -131,13 +133,15 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
         window.api.ptyWrite(id, data)
       })
 
-      cleanupDataRef.current = window.api.onPtyData((incomingId: string, data: string) => {
-        if (incomingId === id) term.write(data)
+      cleanupDataRef.current = window.api.onPtyData((payload) => {
+        if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+          term.write(payload.data)
+        }
       })
 
-      cleanupExitRef.current = window.api.onPtyExit((incomingId: string, exitCode: number) => {
-        if (incomingId === id) {
-          term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
+      cleanupExitRef.current = window.api.onPtyExit((payload) => {
+        if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+          term.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`)
         }
       })
     }
@@ -196,13 +200,21 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       window.api.ptyWrite(newPtyId, data)
     })
 
-    cleanupDataRef.current = window.api.onPtyData((incomingId: string, data: string) => {
-      if (incomingId === newPtyId) term.write(data)
+    cleanupDataRef.current = window.api.onPtyData((payload) => {
+      if (
+        payload.ptyId === newPtyId
+        && (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+      ) {
+        term.write(payload.data)
+      }
     })
 
-    cleanupExitRef.current = window.api.onPtyExit((incomingId: string, exitCode: number) => {
-      if (incomingId === newPtyId) {
-        term.write(`\r\n[Process exited with code ${exitCode}]\r\n`)
+    cleanupExitRef.current = window.api.onPtyExit((payload) => {
+      if (
+        payload.ptyId === newPtyId
+        && (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+      ) {
+        term.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`)
       }
     })
 
@@ -240,10 +252,14 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    // Load fresh worktree list for the context menu
-    window.api.listWorktrees().then(setWorktrees)
+    const wid = params?.workspaceId
+    if (wid) {
+      window.api.listWorktrees(wid).then(setWorktrees)
+    } else {
+      setWorktrees([])
+    }
     setContextMenu({ x: e.clientX, y: e.clientY })
-  }, [])
+  }, [params?.workspaceId])
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 

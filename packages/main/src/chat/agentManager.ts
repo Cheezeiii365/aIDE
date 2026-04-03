@@ -20,6 +20,7 @@ import {
   type ChatSessionStatus,
   type ToolCall,
   type ToolResult,
+  type TaskExecution,
   type LlmProviderConfig,
   type ChatStreamChunk,
   type ChatStreamEnd,
@@ -33,6 +34,7 @@ import { LlmClient } from './llmClient'
 import { ToolRegistry } from './toolRegistry'
 import type { BrowserPaneManager } from '../browserPaneManager'
 import type { ConversationStore } from './conversationStore'
+import type { TaskVariableContext } from '../tasks/taskVariableResolver'
 
 // ─── Constants ─────────────────────────────────────────────────────
 
@@ -49,6 +51,13 @@ interface AgentManagerOpts {
   permissionTier?: PermissionTier
   autoApprove?: Record<string, boolean | ToolPermissionConfig>
   conversationStore?: ConversationStore
+  /** Called when pending tool approvals or related workload change (for runtime snapshot refresh). */
+  onWorkloadChanged?: () => void
+  /** Run a .aide/tasks.json task in this workspace (run_workspace_task builtin). */
+  runWorkspaceTask?: (
+    taskId: string,
+    ctx: TaskVariableContext,
+  ) => Promise<TaskExecution | { error: string }>
 }
 
 interface PendingApproval {
@@ -68,6 +77,7 @@ export class AgentManager {
   private permissionTier: PermissionTier
   private autoApprove: Record<string, boolean | ToolPermissionConfig>
   private conversationStore: ConversationStore | null
+  private onWorkloadChanged?: () => void
 
   // Per-session loop state
   private activeLoops = new Map<string, AbortController>()
@@ -82,11 +92,13 @@ export class AgentManager {
     this.permissionTier = opts.permissionTier ?? 'confirm'
     this.autoApprove = opts.autoApprove ?? {}
     this.conversationStore = opts.conversationStore ?? null
+    this.onWorkloadChanged = opts.onWorkloadChanged
 
     this.llmClient = new LlmClient(opts.config)
     this.toolRegistry = new ToolRegistry({
       workspaceRoot: opts.workspaceRoot,
       browserPaneManager: opts.browserPaneManager,
+      runWorkspaceTask: opts.runWorkspaceTask,
     })
     this.toolRegistry.registerBuiltins()
   }
@@ -240,6 +252,7 @@ export class AgentManager {
     if (pending) {
       this.pendingApprovals.delete(toolCallId)
       pending.resolve(true)
+      this.notifyWorkloadChanged()
     }
   }
 
@@ -248,6 +261,7 @@ export class AgentManager {
     if (pending) {
       this.pendingApprovals.delete(toolCallId)
       pending.resolve(false)
+      this.notifyWorkloadChanged()
     }
   }
 
@@ -267,12 +281,15 @@ export class AgentManager {
     }
 
     // Reject all pending approvals for this session
+    let clearedPending = false
     for (const [toolCallId, pending] of this.pendingApprovals) {
       if (pending.sessionId === sessionId) {
         pending.resolve(false)
         this.pendingApprovals.delete(toolCallId)
+        clearedPending = true
       }
     }
+    if (clearedPending) this.notifyWorkloadChanged()
 
     // Reset session status
     const session = this.sessions.get(sessionId)
@@ -289,6 +306,52 @@ export class AgentManager {
   updatePermissions(tier: PermissionTier, autoApprove: Record<string, boolean | ToolPermissionConfig>): void {
     this.permissionTier = tier
     this.autoApprove = autoApprove
+  }
+
+  getActiveSessionCount(): number {
+    return this.activeLoops.size
+  }
+
+  /** True if this manager holds an in-memory built-in chat session for the id. */
+  ownsSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId)
+  }
+
+  getPendingApprovalCount(): number {
+    return this.pendingApprovals.size
+  }
+
+  /**
+   * Pending built-in tool calls waiting for user approval (for global inbox hydration).
+   */
+  listPendingToolApprovals(): Array<{ workspaceId: string; sessionId: string; toolCall: ToolCall }> {
+    const out: Array<{ workspaceId: string; sessionId: string; toolCall: ToolCall }> = []
+    for (const [toolCallId, pending] of this.pendingApprovals) {
+      const session = this.sessions.get(pending.sessionId)
+      if (!session) continue
+      const toolCall = this.findToolCallInSession(session, toolCallId)
+      if (toolCall) {
+        out.push({
+          workspaceId: session.workspaceId,
+          sessionId: pending.sessionId,
+          toolCall: { ...toolCall },
+        })
+      }
+    }
+    return out
+  }
+
+  private findToolCallInSession(session: ChatSession, toolCallId: string): ToolCall | null {
+    for (const msg of session.messages) {
+      if (msg.role !== 'assistant' || !msg.toolCalls?.length) continue
+      const found = msg.toolCalls.find((t) => t.id === toolCallId)
+      if (found) return found
+    }
+    return null
+  }
+
+  private notifyWorkloadChanged(): void {
+    this.onWorkloadChanged?.()
   }
 
   async destroy(): Promise<void> {
@@ -376,6 +439,7 @@ export class AgentManager {
 
       if (!signal.aborted && turnCount >= this.config.maxTurns) {
         this.send(IpcChannels.CHAT_STREAM_END, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           messageId: currentMessageId,
           stopReason: 'error',
@@ -387,6 +451,7 @@ export class AgentManager {
       if (!signal.aborted) {
         const error = err instanceof Error ? err.message : 'Unknown error'
         this.send(IpcChannels.CHAT_STREAM_END, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           messageId: currentMessageId,
           stopReason: 'error',
@@ -438,6 +503,7 @@ export class AgentManager {
           case 'text_delta':
             textBuffer += event.text
             this.send(IpcChannels.CHAT_STREAM_CHUNK, {
+              workspaceId: session.workspaceId,
               sessionId: session.id,
               messageId,
               delta: event.text,
@@ -506,6 +572,7 @@ export class AgentManager {
 
     // Send stream end
     this.send(IpcChannels.CHAT_STREAM_END, {
+      workspaceId: session.workspaceId,
       sessionId: session.id,
       messageId,
       stopReason: stopReason as ChatStreamEnd['stopReason'],
@@ -545,6 +612,7 @@ export class AgentManager {
         tc.autoApproved = true
         session.status = 'tool_running'
         this.send(IpcChannels.CHAT_TOOL_CALL, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           toolCall: tc,
         } satisfies ChatToolCallPayload)
@@ -552,6 +620,7 @@ export class AgentManager {
         // Needs manual approval
         session.status = 'awaiting_approval'
         this.send(IpcChannels.CHAT_TOOL_CALL, {
+          workspaceId: session.workspaceId,
           sessionId: session.id,
           toolCall: tc,
         } satisfies ChatToolCallPayload)
@@ -593,6 +662,7 @@ export class AgentManager {
   private waitForApproval(sessionId: string, toolCall: ToolCall): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       this.pendingApprovals.set(toolCall.id, { sessionId, resolve })
+      this.notifyWorkloadChanged()
     })
   }
 

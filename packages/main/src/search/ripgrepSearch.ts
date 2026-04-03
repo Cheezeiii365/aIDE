@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { rgPath } from '@vscode/ripgrep'
-import type { SearchOpts, SearchMatch, SearchFileResult } from '@aide/shared'
+import type { SearchOpts, SearchMatch, SearchFileResult, SearchResultsPayload, SearchCompletePayload } from '@aide/shared'
 
 let activeSearch: ChildProcess | null = null
 
@@ -26,13 +26,13 @@ export function cancelSearch(): void {
  * finishes or errors, `onComplete` is invoked with summary totals.
  *
  * @param opts - Search options (query, rootPath, case sensitivity, whole-word, regex vs fixed-strings, optional file glob)
- * @param onResults - Called with an array of per-file results; each entry contains `filePath` and its `matches`
- * @param onComplete - Called once when the search process ends or errors with `{ totalMatches, totalFiles }`
+ * @param onResults - Called with workspace-scoped incremental per-file results
+ * @param onComplete - Called once when the search process ends or errors
  */
 export function startSearch(
   opts: SearchOpts,
-  onResults: (results: SearchFileResult[]) => void,
-  onComplete: (summary: { totalMatches: number; totalFiles: number }) => void,
+  onResults: (payload: SearchResultsPayload) => void,
+  onComplete: (payload: SearchCompletePayload) => void,
   excludeGlobs?: string[],
 ): void {
   cancelSearch()
@@ -67,7 +67,7 @@ export function startSearch(
       results.push({ filePath, matches })
     }
     fileMap.clear()
-    onResults(results)
+    onResults({ workspaceId: opts.workspaceId, results })
   }
 
   function scheduleFlush() {
@@ -123,12 +123,20 @@ export function startSearch(
       flushTimer = null
     }
     flush()
-    onComplete({ totalMatches, totalFiles: seenFiles.size })
+    onComplete({
+      workspaceId: opts.workspaceId,
+      totalMatches,
+      totalFiles: seenFiles.size,
+    })
     if (activeSearch === proc) activeSearch = null
   })
 
   proc.on('error', () => {
-    onComplete({ totalMatches: 0, totalFiles: 0 })
+    onComplete({
+      workspaceId: opts.workspaceId,
+      totalMatches: 0,
+      totalFiles: 0,
+    })
     if (activeSearch === proc) activeSearch = null
   })
 }

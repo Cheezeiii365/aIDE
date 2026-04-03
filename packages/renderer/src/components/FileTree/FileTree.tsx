@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DirEntry, FsWatchEvent, GitFileStatus } from '@aide/shared'
+import { scopedTo } from '../../lib/workspace/workspaceScopedListener'
 import { FileTreeItem, SearchResultItem } from './FileTreeItem'
 import type { FileTreeNode, VirtualRow } from './FileTreeItem'
 import { ContextMenu } from './ContextMenu'
@@ -79,6 +80,7 @@ function isGitIgnored(path: string, ignored: Set<string>, rootPath: string): boo
 
 interface Props {
   rootPath: string
+  workspaceId: string | null
   onFileOpen: (filePath: string) => void
   filter?: string
 }
@@ -93,7 +95,7 @@ interface Props {
  * @param filter - Optional case-insensitive name filter; when non-empty, only matching nodes and their ancestor directories are shown
  * @returns The React element rendering the file tree UI
  */
-export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
+export function FileTree({ rootPath, workspaceId, onFileOpen, filter = '' }: Props) {
   const [nodes, setNodes] = useState<Map<string, FileTreeNode>>(new Map())
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
   const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(new Set())
@@ -178,6 +180,7 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
 
   // Subscribe to file watcher events for incremental tree updates
   useEffect(() => {
+    if (!workspaceId) return undefined
     const unsub = window.api.onFsWatchEvent((events: FsWatchEvent[]) => {
       // Invalidate cached file list so search picks up changes
       allFilesStale.current = true
@@ -186,6 +189,7 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
         let changed = false
 
         for (const event of events) {
+          if (event.workspaceId !== workspaceId) continue
           const parentPath = dirname(event.path)
           const parentNode = next.get(parentPath)
 
@@ -243,7 +247,7 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     })
 
     return unsub
-  }, [])
+  }, [workspaceId])
 
   // Subscribe to git status updates — clear immediately on rootPath change
   // to avoid showing stale indicators from the previous workspace
@@ -251,20 +255,20 @@ export function FileTree({ rootPath, onFileOpen, filter = '' }: Props) {
     setGitStatus({})
     setIgnoredPaths(new Set())
 
-    if (!rootPath) return
+    if (!rootPath || !workspaceId) return
 
-    window.api.getGitStatus().then((result) => {
+    window.api.getGitStatus(workspaceId).then((result) => {
       if (result) {
         setGitStatus(result.files)
         if (result.ignoredPaths) setIgnoredPaths(new Set(result.ignoredPaths))
       }
     })
-    const unsub = window.api.onGitStatusChanged((result) => {
-      setGitStatus(result.files)
-      if (result.ignoredPaths) setIgnoredPaths(new Set(result.ignoredPaths))
-    })
+    const unsub = window.api.onGitStatusChanged(scopedTo(workspaceId, (payload) => {
+      setGitStatus(payload.status.files)
+      if (payload.status.ignoredPaths) setIgnoredPaths(new Set(payload.status.ignoredPaths))
+    }))
     return unsub
-  }, [rootPath])
+  }, [rootPath, workspaceId])
 
   const toggleExpand = useCallback(async (path: string) => {
     // Read node state DIRECTLY — not inside the updater — because React 18

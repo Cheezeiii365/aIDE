@@ -5,8 +5,10 @@ import type {
   CliAgentMessage,
   CliAgentStreamDelta,
   CliAgentStatusPayload,
+  CliAgentMessagePayload,
   ConversationListChangedPayload,
 } from '@aide/shared'
+import { scopedTo } from '../lib/workspace/workspaceScopedListener'
 
 export interface UseCliAgentReturn {
   /** False while loading persisted/native history for an existing conversation. */
@@ -99,7 +101,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
       }
     })()
 
-    window.api.conversationGet(conversationId).then(meta => {
+    window.api.conversationGet(workspaceId, conversationId).then(meta => {
       if (!cancelled && meta) setConversationTitle(meta.title)
     }).catch(() => {})
 
@@ -108,8 +110,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
 
   // Subscribe to conversation list changes (titles + late native hydration when the watcher fills the cache).
   useEffect(() => {
-    const unsub = window.api.onConversationListChanged((payload: ConversationListChangedPayload) => {
-      if (!workspaceId || payload.workspaceId !== workspaceId) return
+    const unsub = window.api.onConversationListChanged(scopedTo<ConversationListChangedPayload>(workspaceId, (payload) => {
       const sid = sessionIdRef.current ?? conversationId
       if (!sid) return
       const meta = payload.conversations.find(c => c.id === sid)
@@ -127,20 +128,20 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
       }
       const g = ++listRetryGenRef.current
       void (async () => {
-        const prior = await window.api.cliAgentLoadMessages(workspaceId, conversationId)
+        const prior = await window.api.cliAgentLoadMessages(workspaceId!, conversationId)
         if (g !== listRetryGenRef.current) return
         if (prior.length > 0) {
           messagesRef.current = prior
           tick()
         }
       })()
-    })
+    }))
     return unsub
   }, [workspaceId, conversationId, tick])
 
   // Subscribe to stream deltas
   useEffect(() => {
-    const unsub = window.api.onCliAgentStreamDelta((delta: CliAgentStreamDelta) => {
+    const unsub = window.api.onCliAgentStreamDelta(scopedTo<CliAgentStreamDelta>(workspaceId, (delta) => {
       if (delta.sessionId !== sessionIdRef.current) return
 
       setStreamingMessageId(delta.messageId)
@@ -152,13 +153,13 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
           setStreamingContent(streamingContentRef.current)
         })
       }
-    })
+    }))
     return unsub
-  }, [])
+  }, [workspaceId])
 
   // Subscribe to messages
   useEffect(() => {
-    const unsub = window.api.onCliAgentMessage((msg: CliAgentMessage & { sessionId: string }) => {
+    const unsub = window.api.onCliAgentMessage(scopedTo<CliAgentMessagePayload>(workspaceId, (msg) => {
       if (msg.sessionId !== sessionIdRef.current) return
 
       // If we have streaming content, finalize it into the message
@@ -172,21 +173,22 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
         }
       }
 
-      messagesRef.current = [...messagesRef.current, msg]
+      const { workspaceId: _w, sessionId: _s, ...rest } = msg
+      messagesRef.current = [...messagesRef.current, rest as CliAgentMessage]
       tick()
-    })
+    }))
     return unsub
-  }, [tick])
+  }, [workspaceId, tick])
 
   // Subscribe to status changes
   useEffect(() => {
-    const unsub = window.api.onCliAgentStatus((status: CliAgentStatusPayload) => {
+    const unsub = window.api.onCliAgentStatus(scopedTo<CliAgentStatusPayload>(workspaceId, (status) => {
       if (status.sessionId !== sessionIdRef.current) return
       setProcessStatus(status.processStatus)
       if (status.error) setLastError(status.error)
-    })
+    }))
     return unsub
-  }, [])
+  }, [workspaceId])
 
   // Cleanup rAF on unmount
   useEffect(() => {

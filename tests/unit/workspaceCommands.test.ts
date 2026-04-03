@@ -34,7 +34,7 @@ function stubContext(): CommandContext {
 }
 
 describe('workspace command definitions', () => {
-  it('exports nine switch commands plus close, new, open folder, and cycle', () => {
+  it('exports nine switch commands plus close, new, open folder, VS Code, and cycle', () => {
     const specs = collectWorkspaceCommands(stubContext)
     const ids = specs.map((s) => s.def.id)
     for (let n = 1; n <= 9; n++) {
@@ -44,9 +44,10 @@ describe('workspace command definitions', () => {
       'workspace.close',
       'workspace.new',
       'workspace.openFolder',
+      'workspace.openInVSCode',
       'workspace.cycleTabNext',
       'workspace.cycleTabPrev',
     ]))
-    expect(ids).toHaveLength(14)
+    expect(ids).toHaveLength(15)
   })
 })
