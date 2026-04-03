@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { BUILTIN_TOOLS } from './agentTools'
+import { BUILTIN_TOOLS } from '@main/chat/agentTools'
 
 const tool = BUILTIN_TOOLS.find((t) => t.definition.name === 'run_workspace_task')
 
