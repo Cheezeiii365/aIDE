@@ -50,8 +50,9 @@ function resolveVariable(name: string, ctx: TaskVariableContext): string {
       return ctx.activeFile ?? ''
     case 'fileRelative': {
       if (!ctx.activeFile) return ''
-      const rel = ctx.activeFile.startsWith(ctx.workspaceRoot)
-        ? ctx.activeFile.slice(ctx.workspaceRoot.length + 1)
+      const prefix = ctx.workspaceRoot.endsWith('/') ? ctx.workspaceRoot : `${ctx.workspaceRoot}/`
+      const rel = ctx.activeFile.startsWith(prefix)
+        ? ctx.activeFile.slice(prefix.length)
         : ctx.activeFile
       return rel
     }
