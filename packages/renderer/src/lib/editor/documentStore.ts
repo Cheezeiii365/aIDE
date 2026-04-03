@@ -85,7 +85,10 @@ export function putDocumentSession(
 }
 
 export function removeDocumentSession(workspaceId: string | null | undefined, filePath: string): void {
-  getBucket(workspaceId).delete(filePath)
+  const bucket = getBucket(workspaceId)
+  if (!bucket.has(filePath)) return
+  bucket.delete(filePath)
+  notify(workspaceId, filePath)
 }
 
 export function clearDocumentSessionsForWorkspace(workspaceId: string | null | undefined): void {
