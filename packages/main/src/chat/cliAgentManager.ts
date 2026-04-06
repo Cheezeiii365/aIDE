@@ -63,6 +63,16 @@ export interface CliAgentManagerOpts {
   claudeCodePath?: string
   codexPath?: string
   conversationStore?: ConversationStore
+  loadClaudeHistory?: (claudeSessionId: string) => Promise<CliAgentMessage[]>
+}
+
+function comparableHistoryCount(messages: CliAgentMessage[]): number {
+  return messages.filter((message) =>
+    message.type === 'user' ||
+    message.type === 'assistant' ||
+    message.type === 'tool_use' ||
+    message.type === 'tool_result'
+  ).length
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +86,7 @@ export class CliAgentManager {
   private claudeCodePath: string
   private codexPath: string
   private conversationStore: ConversationStore | null
+  private loadClaudeHistory: ((claudeSessionId: string) => Promise<CliAgentMessage[]>) | null
   /** Resolved path to the Claude Code CLI, cached after first lookup */
   private resolvedClaudeCodePath: string | null = null
 
@@ -85,6 +96,7 @@ export class CliAgentManager {
     this.claudeCodePath = opts.claudeCodePath ?? ''
     this.codexPath = opts.codexPath ?? ''
     this.conversationStore = opts.conversationStore ?? null
+    this.loadClaudeHistory = opts.loadClaudeHistory ?? null
   }
 
   // ─── Public API ──────────────────────────────
@@ -132,6 +144,20 @@ export class CliAgentManager {
       const raw = conversationId.slice('claude-native:'.length)
       if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
         existingClaudeSessionId = raw
+      }
+    }
+
+    if (existingClaudeSessionId && this.loadClaudeHistory) {
+      try {
+        const nativeMessages = await this.loadClaudeHistory(existingClaudeSessionId)
+        if (
+          nativeMessages.length > 0 &&
+          comparableHistoryCount(nativeMessages) > comparableHistoryCount(existingMessages)
+        ) {
+          existingMessages = nativeMessages
+        }
+      } catch {
+        // Fall back to persisted shadow copy when native Claude history is unavailable.
       }
     }
 

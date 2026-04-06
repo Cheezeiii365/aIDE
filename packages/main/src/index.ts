@@ -328,6 +328,54 @@ function getNativeSessionWatcher(runtime: WorkspaceRuntime | null): ClaudeNative
   return (runtime?.services.nativeSessionWatcher as ClaudeNativeSessionWatcher | null) ?? null
 }
 
+async function loadPreferredClaudeMessages(
+  conversationStore: ConversationStore | null,
+  nativeSessionWatcher: ClaudeNativeSessionWatcher | null,
+  conversationId: string,
+  storedData?: unknown,
+): Promise<CliAgentMessage[]> {
+  const stored = storedData ?? await conversationStore?.loadMessages(conversationId)
+  const storedMessagesRaw =
+    stored && typeof stored === 'object'
+      ? (stored as { messages?: unknown }).messages
+      : undefined
+  const storedMessages = Array.isArray(storedMessagesRaw) ? (storedMessagesRaw as CliAgentMessage[]) : []
+  const storedComparable = storedMessages.filter((message) =>
+    message.type === 'user' ||
+    message.type === 'assistant' ||
+    message.type === 'tool_use' ||
+    message.type === 'tool_result'
+  ).length
+
+  const meta = await conversationStore?.get(conversationId)
+  const claudeSessionId =
+    meta?.claudeSessionId ||
+    (
+      stored && typeof stored === 'object'
+        ? (stored as { claudeSessionId?: unknown }).claudeSessionId
+        : undefined
+    )
+
+  if (typeof claudeSessionId === 'string' && nativeSessionWatcher) {
+    try {
+      const nativeMessages = await nativeSessionWatcher.loadMessages(claudeSessionId)
+      const nativeComparable = nativeMessages.filter((message) =>
+        message.type === 'user' ||
+        message.type === 'assistant' ||
+        message.type === 'tool_use' ||
+        message.type === 'tool_result'
+      ).length
+      if (nativeMessages.length > 0 && nativeComparable > storedComparable) {
+        return nativeMessages
+      }
+    } catch {
+      // Fall through to the persisted `.aide` copy when native history is unavailable.
+    }
+  }
+
+  return storedMessages
+}
+
 function getNativeSessionCache(runtime: WorkspaceRuntime | null): ConversationMeta[] {
   return (runtime?.services.nativeSessionCache as ConversationMeta[] | null) ?? []
 }
@@ -421,10 +469,18 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
       nativeSessionCache = sessions
       runtime.setServices({ nativeSessionCache })
       runtime.refreshWorkload()
-      contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
-        workspaceId: runtime.workspaceId,
-        conversations: sessions,
-        source: 'claude-native',
+      void conversationStore.loadIndex().then((index) => {
+        contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+          workspaceId: runtime.workspaceId,
+          conversations: [...index, ...sessions],
+          source: 'claude-native',
+        })
+      }).catch(() => {
+        contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+          workspaceId: runtime.workspaceId,
+          conversations: sessions,
+          source: 'claude-native',
+        })
       })
     },
   })
@@ -455,6 +511,7 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
     claudeCodePath: resolved['agent.claudeCodePath'],
     codexPath: resolved['agent.codexPath'],
     conversationStore,
+    loadClaudeHistory: async (claudeSessionId: string) => nativeSessionWatcher.loadMessages(claudeSessionId),
   })
 
   runtime.setServices({
@@ -737,13 +794,7 @@ ipcMain.handle(
         return nativeSessionWatcher.loadMessages(rawId)
       }
     }
-    const stored = await conversationStore?.loadMessages(conversationId)
-    if (!stored || typeof stored !== 'object') {
-      return []
-    }
-    const msgs = (stored as { messages?: unknown }).messages
-    const out = Array.isArray(msgs) ? (msgs as CliAgentMessage[]) : []
-    return out
+    return loadPreferredClaudeMessages(conversationStore, nativeSessionWatcher, conversationId)
   },
 )
 
