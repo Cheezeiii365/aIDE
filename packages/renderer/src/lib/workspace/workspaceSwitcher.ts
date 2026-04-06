@@ -223,6 +223,12 @@ async function createDefaultLayout(
   const backend: AgentBackend = resolvedSettings?.['agent.backend'] ?? 'built-in'
 
   if (backend === 'claude-code' || backend === 'codex') {
+    const conversationId = await window.api.conversationCreate({
+      workspaceId,
+      backend,
+    }).then((meta) => meta.id).catch(() => undefined)
+    if (!isCurrent()) return
+
     api.addPanel({
       id: 'agent',
       component: 'cliAgentPane',
@@ -232,7 +238,7 @@ async function createDefaultLayout(
         workspaceId,
         workspaceRoot: workspaceRoot ?? undefined,
         backend,
-        conversationId: crypto.randomUUID(),
+        conversationId,
       },
       position: { referencePanel: editorPanel, direction: 'right' },
       initialWidth: 400,

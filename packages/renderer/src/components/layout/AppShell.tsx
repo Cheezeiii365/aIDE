@@ -907,27 +907,55 @@ export function AppShell() {
                       const backend = resolved['agent.backend'] ?? 'built-in'
 
                       if (backend === 'claude-code' || backend === 'codex') {
-                        api.addPanel({
-                          id: `agent-${Date.now()}`,
-                          component: 'cliAgentPane',
-                          tabComponent: 'agentTab',
-                          title: branch
-                            ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
-                            : backend === 'claude-code' ? 'Claude Code' : 'Codex',
-                          params: {
-                            workspaceId: activeWorkspaceId,
-                            workspaceRoot: workspaceRoot ?? undefined,
-                            backend,
-                            conversationId: crypto.randomUUID(),
-                            worktreePath,
-                            worktreeBranch: branch,
-                          },
-                          position: editorPanel
-                            ? { referencePanel: editorPanel, direction: 'right' }
-                            : undefined,
-                          initialWidth: 400,
+                        void window.api.conversationCreate({
+                          workspaceId: activeWorkspaceId,
+                          backend,
+                          worktreePath,
+                          worktreeBranch: branch,
+                        }).then((meta) => {
+                          api.addPanel({
+                            id: `agent-${Date.now()}`,
+                            component: 'cliAgentPane',
+                            tabComponent: 'agentTab',
+                            title: branch
+                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
+                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
+                            params: {
+                              workspaceId: activeWorkspaceId,
+                              workspaceRoot: workspaceRoot ?? undefined,
+                              backend,
+                              conversationId: meta.id,
+                              worktreePath,
+                              worktreeBranch: branch,
+                            },
+                            position: editorPanel
+                              ? { referencePanel: editorPanel, direction: 'right' }
+                              : undefined,
+                            initialWidth: 400,
+                          })
+                          persistWorkspaceRuntime()
+                        }).catch(() => {
+                          api.addPanel({
+                            id: `agent-${Date.now()}`,
+                            component: 'cliAgentPane',
+                            tabComponent: 'agentTab',
+                            title: branch
+                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
+                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
+                            params: {
+                              workspaceId: activeWorkspaceId,
+                              workspaceRoot: workspaceRoot ?? undefined,
+                              backend,
+                              worktreePath,
+                              worktreeBranch: branch,
+                            },
+                            position: editorPanel
+                              ? { referencePanel: editorPanel, direction: 'right' }
+                              : undefined,
+                            initialWidth: 400,
+                          })
+                          persistWorkspaceRuntime()
                         })
-                        persistWorkspaceRuntime()
                       } else {
                         void window.api.conversationCreate({
                           workspaceId: activeWorkspaceId,

@@ -137,6 +137,14 @@ export class CliAgentManager {
 
     const sessionId = conversationId ?? randomUUID()
 
+    if (this.conversationStore && !sessionId.startsWith('claude-native:')) {
+      await this.conversationStore.ensure(sessionId, {
+        workspaceId,
+        backend,
+        worktreePath,
+      })
+    }
+
     // If session already in memory, return it
     if (this.sessions.has(sessionId)) {
       return { sessionId }

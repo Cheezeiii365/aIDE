@@ -106,6 +106,30 @@ export class ConversationStore {
     return meta
   }
 
+  async ensure(conversationId: string, opts: ConversationCreateOpts): Promise<ConversationMeta> {
+    const index = await this.loadIndex()
+    const existing = index.find(c => c.id === conversationId)
+    if (existing) return existing
+
+    const now = Date.now()
+    const meta: ConversationMeta = {
+      id: conversationId,
+      workspaceId: opts.workspaceId,
+      backend: opts.backend,
+      title: opts.title ?? 'New Chat',
+      autoTitled: !opts.title,
+      createdAt: now,
+      updatedAt: now,
+      messageCount: 0,
+      worktreePath: opts.worktreePath,
+      worktreeBranch: opts.worktreeBranch,
+    }
+
+    index.unshift(meta)
+    await this.saveIndex(index)
+    return meta
+  }
+
   async delete(conversationId: string): Promise<void> {
     const index = await this.loadIndex()
     const filtered = index.filter(c => c.id !== conversationId)

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: ^0.2.91
+        version: 0.2.91(zod@4.3.6)
       '@anthropic-ai/claude-code':
         specifier: '*'
         version: 2.1.81
