@@ -84,6 +84,7 @@ interface ProcessSnapshot {
 
 - **Poll interval**: 5 seconds (configurable)
 - **Retention**: Keep last 60 snapshots in-memory (5 minutes of history) per workspace
+- **Disk persistence**: Optional — enabled via `telemetry.persistToDisk` setting. When on, snapshots are written to `~/.aide/telemetry/` as JSON for offline analysis during development
 - **Collection source**: Each `WorkspaceRuntime` exposes a `getResourceSnapshot()` method that aggregates counts from its services
 - **Main process memory**: `process.memoryUsage()` — cheap, no IPC needed
 - **Renderer memory**: `webContents.getProcessMemoryInfo()` — async, returns Promise
@@ -125,12 +126,12 @@ function useResourceMonitor(workspaceId?: string): {
 
 ### Phase 3: UI Surface
 
-#### Status Bar Widget
+#### Resource Icon (Top-Right Header)
 
-Minimal always-visible indicator in the bottom status bar:
-- Memory usage for active workspace (e.g., "148 MB")
+A small icon in the top-right header/toolbar area:
+- Displays current memory usage for active workspace (e.g., "148 MB")
 - Warning color when above threshold (e.g., > 500 MB)
-- Click to expand detail panel
+- Click to open resource detail panel
 
 #### Resource Panel (Debug/Dev)
 
@@ -173,8 +174,8 @@ These thresholds should be informed by real telemetry data, not guessed upfront.
 - `fileWatcher` — needs watcher count per scope
 - `documentStore` — needs session count per workspace (renderer-side, may need IPC)
 
-## Open Questions
+## Resolved Questions
 
-- Should we use `pidusage` (npm package) for cross-platform CPU% per child process, or keep it simple with memory-only initially?
-- Should snapshots be persisted to disk for longer-term analysis, or is 5 minutes of in-memory history enough for now?
-- Should the status bar widget be always visible or only when a threshold is exceeded?
+- **CPU% per child process**: Start with memory-only using built-in Node APIs (`process.memoryUsage()`, `process.getProcessMemoryInfo()`). Avoid adding `pidusage` or similar dependencies — minimal dependencies is a priority. Revisit if memory-only proves insufficient after collecting baseline data.
+- **Snapshot persistence**: In-memory ring buffer (5 minutes) by default. Add a **settings toggle** (`telemetry.persistToDisk`) that writes snapshots to disk for longer-term analysis during development. Off by default for normal usage.
+- **Status bar widget**: No status bar widget. Instead, show a **resource icon in the top-right of the UI** (header/toolbar area) that displays current memory usage and opens the resource detail panel on click.
