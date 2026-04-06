@@ -1,23 +1,27 @@
 /**
- * CLI Agent Manager — spawns and manages external CLI agent processes.
+ * CLI Agent Manager — manages external CLI agent sessions.
  *
- * Supports Claude Code (`claude -p --output-format stream-json`) and
- * Codex (stub for now). Parses structured JSON output, normalizes events
- * into CliAgentMessage format, and emits them to the renderer via IPC.
+ * Uses the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) for the
+ * `claude-code` backend. The SDK spawns a Claude Code subprocess and
+ * provides a typed async generator of messages. Codex remains a stub.
  *
- * Architecture: Claude Code's `-p` flag is one-shot (one prompt per process).
- * Each `send()` spawns a new process with the prompt as an argument and
- * `--resume` to continue the conversation. The session persists across
- * multiple send() calls via Claude Code's built-in session management.
+ * Architecture: Each `send()` calls `query()` which returns an
+ * `AsyncGenerator<SDKMessage>`. The generator is consumed in a background
+ * loop that normalizes SDK messages into CliAgentMessage and emits them
+ * via IPC. Session continuity uses the SDK's `resume` option.
+ *
+ * The SDK needs `pathToClaudeCodeExecutable` to find the Claude Code CLI.
+ * Resolution order: explicit setting → bundled in app → workspace
+ * node_modules → global `claude` in PATH.
  */
 
-import { spawn } from 'child_process'
-import { execFileSync } from 'child_process'
-import type { ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
-import { dirname, join } from 'path'
 import { randomUUID } from 'crypto'
+import { execFileSync } from 'child_process'
+import { existsSync } from 'fs'
+import { join, dirname } from 'path'
 import { app, type WebContents } from 'electron'
+import { query } from '@anthropic-ai/claude-agent-sdk'
+import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
   AgentBackend, CliAgentProcessStatus, CliAgentMessage,
@@ -25,7 +29,6 @@ import type {
   CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
   ConversationListChangedPayload,
 } from '@aide/shared'
-import { StructuredOutputParser, type ParsedEvent } from '../terminal/structuredOutputParser'
 import type { ConversationStore } from './conversationStore'
 
 // ---------------------------------------------------------------------------
@@ -36,16 +39,15 @@ interface CliAgentSessionInternal {
   id: string
   workspaceId: string
   backend: AgentBackend
-  process: ChildProcess | null
+  queryInstance: Query | null
+  abortController: AbortController | null
   processStatus: CliAgentProcessStatus
   messages: CliAgentMessage[]
   model?: string
   sessionToolNames?: string[]
   lastError?: string
   totalCostUsd: number
-  stderrBuffer: string
-  killTimer?: ReturnType<typeof setTimeout>
-  /** Claude Code session ID for --resume across sends */
+  /** Claude Code session ID for resume across sends */
   claudeSessionId?: string
   /** Worktree path this session operates in (if any). */
   worktreePath?: string
@@ -63,12 +65,6 @@ export interface CliAgentManagerOpts {
   conversationStore?: ConversationStore
 }
 
-interface ResolvedCliLaunch {
-  command: string
-  args: string[]
-  env: NodeJS.ProcessEnv
-}
-
 // ---------------------------------------------------------------------------
 // Manager
 // ---------------------------------------------------------------------------
@@ -80,6 +76,8 @@ export class CliAgentManager {
   private claudeCodePath: string
   private codexPath: string
   private conversationStore: ConversationStore | null
+  /** Resolved path to the Claude Code CLI, cached after first lookup */
+  private resolvedClaudeCodePath: string | null = null
 
   constructor(opts: CliAgentManagerOpts) {
     this.workspaceRoot = opts.workspaceRoot
@@ -92,15 +90,11 @@ export class CliAgentManager {
   // ─── Public API ──────────────────────────────
 
   /**
-   * Initialize a CLI agent session for a workspace. Does not spawn a process
-   * yet — that happens on the first `send()`. Returns immediately.
-   */
-  /**
-   * Initialize a CLI agent session. Does not spawn a process yet — that
+   * Initialize a CLI agent session. Does not start a query yet — that
    * happens on the first `send()`.
    *
    * If `conversationId` is provided, resumes an existing conversation
-   * (loads claudeSessionId from the store for --resume).
+   * (loads claudeSessionId from the store for SDK resume).
    */
   async start(
     workspaceId: string,
@@ -114,14 +108,6 @@ export class CliAgentManager {
 
     if (backend === 'built-in') {
       return { error: 'Use the built-in agent chat panel instead.' }
-    }
-
-    // Resolve binary path eagerly so we can report errors before first send
-    const launch = this.resolveLaunch(backend)
-    if (!launch) {
-      return {
-        error: 'Claude Code CLI not found. Install @anthropic-ai/claude-code globally or set agent.claudeCodePath in settings.',
-      }
     }
 
     // If resuming an existing conversation, load from store
@@ -160,10 +146,10 @@ export class CliAgentManager {
       id: sessionId,
       workspaceId,
       backend,
-      process: null,
+      queryInstance: null,
+      abortController: null,
       processStatus: 'stopped',
       messages: existingMessages,
-      stderrBuffer: '',
       totalCostUsd: 0,
       claudeSessionId: existingClaudeSessionId,
       worktreePath,
@@ -176,8 +162,8 @@ export class CliAgentManager {
   }
 
   /**
-   * Send a prompt to the CLI agent. Spawns a new process per message.
-   * Uses `--resume` with Claude Code's session ID for conversation continuity.
+   * Send a prompt to the CLI agent. Starts an SDK query that streams
+   * messages back via IPC. Uses `resume` for conversation continuity.
    */
   async send(
     sessionId: string,
@@ -186,14 +172,9 @@ export class CliAgentManager {
     const session = this.sessions.get(sessionId)
     if (!session) return { error: 'Session not found' }
 
-    // If a process is already running, reject (one at a time)
-    if (session.process) {
+    // If a query is already running, reject (one at a time)
+    if (session.queryInstance) {
       return { error: 'Agent is already processing a request. Stop it first or wait.' }
-    }
-
-    const launch = this.resolveLaunch(session.backend)
-    if (!launch) {
-      return { error: 'Claude Code CLI not found.' }
     }
 
     // Add user message to history
@@ -209,77 +190,16 @@ export class CliAgentManager {
     // Auto-title on first user message
     await this.maybeAutoTitle(session, content)
 
-    // Build args
-    const args = [
-      '-p', content,
-      '--output-format', 'stream-json',
-      '--verbose',
-    ]
-
-    // Resume previous session if we have one
-    if (session.claudeSessionId) {
-      args.push('--resume', session.claudeSessionId)
-    }
-
-    // Reset stderr buffer
-    session.stderrBuffer = ''
+    // Reset error state
     session.lastError = undefined
 
-    // Spawn the process
-    const parser = new StructuredOutputParser()
-
-    parser.on('event', (event: ParsedEvent) => {
-      this.handleParsedEvent(session, event)
-    })
-    parser.on('error', (err: Error) => {
-      console.warn('[CliAgentManager] parse error:', err.message)
-    })
-
-    const proc = spawn(launch.command, [...launch.args, ...args], {
-      cwd: session.worktreePath ?? this.workspaceRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: launch.env,
-    })
-    session.process = proc
-
-    this.setStatus(session, 'running')
-
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      parser.feed(chunk.toString('utf-8'))
-    })
-
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString('utf-8')
-      session.stderrBuffer += text
-      if (session.stderrBuffer.length > 4000) {
-        session.stderrBuffer = session.stderrBuffer.slice(-4000)
-      }
-    })
-
-    proc.on('error', (err: Error) => {
-      session.lastError = err.message
-      session.process = null
+    // Fire and forget the consumption loop
+    this.consumeQuery(session, content).catch(err => {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.error(`[CliAgentManager] Unhandled consumeQuery error for session ${session.id}:`, errMsg)
+      if (err instanceof Error && err.stack) console.error(`[CliAgentManager] Stack:`, err.stack)
+      session.lastError = errMsg
       this.setStatus(session, 'error')
-    })
-
-    proc.on('exit', (code, signal) => {
-      parser.flush()
-      session.process = null
-      if (session.killTimer) {
-        clearTimeout(session.killTimer)
-        session.killTimer = undefined
-      }
-
-      if (session.processStatus === 'stopping') {
-        this.setStatus(session, 'stopped')
-      } else if (code === 0) {
-        // Successful completion — ready for next message
-        this.setStatus(session, 'stopped')
-      } else {
-        session.lastError = session.stderrBuffer.trim().slice(-2000) ||
-          `Process exited with ${signal ? `signal ${signal}` : `code ${code}`}`
-        this.setStatus(session, 'error')
-      }
     })
 
     return { success: true }
@@ -289,16 +209,10 @@ export class CliAgentManager {
     const session = this.sessions.get(sessionId)
     if (!session) return
 
-    if (session.process) {
+    if (session.queryInstance || session.abortController) {
       this.setStatus(session, 'stopping')
-      session.process.kill('SIGTERM')
-
-      // Force kill after 5 seconds
-      session.killTimer = setTimeout(() => {
-        if (session.process) {
-          session.process.kill('SIGKILL')
-        }
-      }, 5000)
+      session.abortController?.abort()
+      session.queryInstance?.close()
     }
   }
 
@@ -315,7 +229,7 @@ export class CliAgentManager {
   /** Check if any active (running/starting) session uses the given worktree path. */
   hasActiveSessionsForWorktree(worktreePath: string): boolean {
     for (const session of this.sessions.values()) {
-      if (session.worktreePath === worktreePath && session.process) {
+      if (session.worktreePath === worktreePath && session.queryInstance) {
         return true
       }
     }
@@ -350,249 +264,280 @@ export class CliAgentManager {
   updatePaths(claudeCodePath: string, codexPath: string): void {
     this.claudeCodePath = claudeCodePath
     this.codexPath = codexPath
+    // Invalidate cache so next query re-resolves
+    this.resolvedClaudeCodePath = null
   }
 
   getRunningSessionCount(): number {
     let count = 0
     for (const session of this.sessions.values()) {
-      if (session.process) count += 1
+      if (session.queryInstance) count += 1
     }
     return count
   }
 
   async destroy(): Promise<void> {
     for (const session of this.sessions.values()) {
-      if (session.process) {
-        session.process.kill('SIGKILL')
-        if (session.killTimer) clearTimeout(session.killTimer)
-      }
-      // Persist messages and claudeSessionId
+      session.abortController?.abort()
+      session.queryInstance?.close()
       await this.persistSession(session).catch(() => {})
     }
     this.sessions.clear()
   }
 
-  // ─── Binary Resolution ───────────────────────
+  // ─── Claude Code CLI Resolution ─────────────
 
-  private resolveLaunch(backend: AgentBackend): ResolvedCliLaunch | null {
-    if (backend === 'claude-code') {
-      const explicit = this.resolveExplicitClaudeLaunch()
-      if (explicit) return explicit
+  /**
+   * Resolve the path to the Claude Code CLI executable.
+   * The SDK spawns Claude Code as a subprocess, so we need to tell it
+   * where the actual binary lives via `pathToClaudeCodeExecutable`.
+   */
+  private resolveClaudeCodeExecutable(): string | null {
+    if (this.resolvedClaudeCodePath) return this.resolvedClaudeCodePath
 
-      const bundledCli = this.resolveBundledClaudeCliPath()
-      if (bundledCli) {
-        const runtime = this.resolveNodeRuntime()
-        if (runtime) {
-          return {
-            command: runtime.command,
-            args: [bundledCli],
-            env: runtime.env,
-          }
-        }
-      }
-
-      const workspaceCli = join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      if (existsSync(workspaceCli)) {
-        const runtime = this.resolveNodeRuntime()
-        if (runtime) {
-          return {
-            command: runtime.command,
-            args: [workspaceCli],
-            env: runtime.env,
-          }
-        }
-      }
-
-      // Fallback for projects that have Claude installed locally in the workspace.
-      const localBin = join(this.workspaceRoot, 'node_modules', '.bin', 'claude')
-      if (existsSync(localBin)) {
-        return {
-          command: localBin,
-          args: [],
-          env: { ...process.env },
-        }
-      }
-
-      try {
-        const result = execFileSync('which', ['claude'], { encoding: 'utf-8' }).trim()
-        if (result) {
-          return {
-            command: result,
-            args: [],
-            env: { ...process.env },
-          }
-        }
-      } catch {
-        // Not found in PATH
-      }
-      return null
+    // 1. Explicit path from settings
+    if (this.claudeCodePath && existsSync(this.claudeCodePath)) {
+      console.log(`[CliAgentManager] Using explicit Claude Code path: ${this.claudeCodePath}`)
+      this.resolvedClaudeCodePath = this.claudeCodePath
+      return this.claudeCodePath
     }
 
-    if (backend === 'codex') {
-      if (this.codexPath && existsSync(this.codexPath)) {
-        return {
-          command: this.codexPath,
-          args: [],
-          env: { ...process.env },
-        }
-      }
-      try {
-        const result = execFileSync('which', ['codex'], { encoding: 'utf-8' }).trim()
-        if (result) {
-          return {
-            command: result,
-            args: [],
-            env: { ...process.env },
-          }
-        }
-      } catch {
-        // Not found
-      }
-      return null
-    }
-
-    return null
-  }
-
-  private resolveExplicitClaudeLaunch(): ResolvedCliLaunch | null {
-    if (!this.claudeCodePath || !existsSync(this.claudeCodePath)) {
-      return null
-    }
-
-    const directCli = this.resolveClaudeCliPathFromBin(this.claudeCodePath)
-    if (directCli) {
-      const runtime = this.resolveNodeRuntime()
-      if (runtime) {
-        return {
-          command: runtime.command,
-          args: [directCli],
-          env: runtime.env,
-        }
-      }
-    }
-
-    return {
-      command: this.claudeCodePath,
-      args: [],
-      env: { ...process.env },
-    }
-  }
-
-  private resolveClaudeCliPathFromBin(candidatePath: string): string | null {
-    if (candidatePath.endsWith('/cli.js') && existsSync(candidatePath)) {
-      return candidatePath
-    }
-
-    const siblingCli = join(dirname(candidatePath), '..', '@anthropic-ai', 'claude-code', 'cli.js')
-    if (existsSync(siblingCli)) {
-      return siblingCli
-    }
-
-    return null
-  }
-
-  private resolveBundledClaudeCliPath(): string | null {
-    const candidates: string[] = []
-
+    // 2. Bundled in Electron app
+    const bundledCandidates: string[] = []
     if (app.isPackaged) {
-      candidates.push(
+      bundledCandidates.push(
         join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
       )
     }
-
-    candidates.push(
+    bundledCandidates.push(
       join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
     )
-
-    for (const candidate of candidates) {
+    for (const candidate of bundledCandidates) {
       if (existsSync(candidate)) {
+        console.log(`[CliAgentManager] Using bundled Claude Code: ${candidate}`)
+        this.resolvedClaudeCodePath = candidate
         return candidate
       }
     }
 
-    return null
-  }
-
-  private resolveNodeRuntime(): { command: string, env: NodeJS.ProcessEnv } | null {
-    if (process.versions.electron && process.execPath) {
-      return {
-        command: process.execPath,
-        env: {
-          ...process.env,
-          ELECTRON_RUN_AS_NODE: '1',
-        },
-      }
+    // 3. Workspace-local installation
+    const workspaceCli = join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+    if (existsSync(workspaceCli)) {
+      console.log(`[CliAgentManager] Using workspace Claude Code: ${workspaceCli}`)
+      this.resolvedClaudeCodePath = workspaceCli
+      return workspaceCli
     }
 
+    // 4. Global `claude` in PATH
     try {
-      const result = execFileSync('which', ['node'], { encoding: 'utf-8' }).trim()
+      const result = execFileSync('which', ['claude'], { encoding: 'utf-8' }).trim()
       if (result) {
-        return {
-          command: result,
-          env: { ...process.env },
-        }
+        console.log(`[CliAgentManager] Using global Claude Code: ${result}`)
+        this.resolvedClaudeCodePath = result
+        return result
       }
     } catch {
       // Not found in PATH
     }
 
+    console.warn('[CliAgentManager] Claude Code CLI not found in any location')
     return null
   }
 
-  // ─── Event Normalization ─────────────────────
+  // ─── SDK Query Consumption ──────────────────
 
-  private handleParsedEvent(session: CliAgentSessionInternal, event: ParsedEvent): void {
-    const { type } = event
+  private async consumeQuery(
+    session: CliAgentSessionInternal,
+    prompt: string,
+  ): Promise<void> {
+    const abortController = new AbortController()
+    session.abortController = abortController
 
-    if (type === 'system') {
-      this.handleSystemEvent(session, event)
-    } else if (type === 'assistant') {
-      this.handleAssistantEvent(session, event)
-    } else if (type === 'stream_event') {
-      this.handleStreamEvent(session, event)
-    } else if (type === 'tool_progress') {
-      this.handleToolProgress(session, event)
-    } else if (type === 'tool_use_summary') {
-      this.handleToolUseSummary(session, event)
-    } else if (type === 'result') {
-      this.handleResultEvent(session, event)
-    } else if (type === 'rate_limit_event') {
-      this.handleRateLimitEvent(session, event)
+    const cwd = session.worktreePath ?? this.workspaceRoot
+    console.log(`[CliAgentManager] Starting SDK query for session ${session.id}`)
+    console.log(`[CliAgentManager]   cwd: ${cwd}`)
+    console.log(`[CliAgentManager]   resume: ${session.claudeSessionId ?? '(new session)'}`)
+    console.log(`[CliAgentManager]   prompt: ${prompt.slice(0, 200)}${prompt.length > 200 ? '...' : ''}`)
+
+    // Collect stderr output for diagnostics
+    const stderrChunks: string[] = []
+
+    // Resolve the Claude Code executable path for the SDK
+    const executablePath = this.resolveClaudeCodeExecutable()
+    if (!executablePath) {
+      session.lastError = 'Claude Code CLI not found. Install @anthropic-ai/claude-code globally or set agent.claudeCodePath in settings.'
+      const errorMsg: CliAgentMessage = {
+        id: randomUUID(),
+        type: 'error',
+        content: session.lastError,
+        timestamp: Date.now(),
+      }
+      session.messages.push(errorMsg)
+      this.emitMessage(session, errorMsg)
+      this.setStatus(session, 'error')
+      return
+    }
+    console.log(`[CliAgentManager]   executable: ${executablePath}`)
+
+    const options: Record<string, unknown> = {
+      cwd,
+      abortController,
+      pathToClaudeCodeExecutable: executablePath,
+      includePartialMessages: true,
+      permissionMode: 'default' as const,
+      settingSources: ['user', 'project', 'local'],
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
+      stderr: (data: string) => {
+        stderrChunks.push(data)
+        console.warn(`[CliAgentManager] stderr: ${data.trimEnd()}`)
+      },
+    }
+
+    if (session.claudeSessionId) {
+      options.resume = session.claudeSessionId
+    }
+
+    let queryInstance: ReturnType<typeof query>
+    try {
+      queryInstance = query({ prompt, options: options as Parameters<typeof query>[0]['options'] })
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      const errStack = err instanceof Error ? err.stack : undefined
+      console.error(`[CliAgentManager] Failed to create query:`, errMsg)
+      if (errStack) console.error(`[CliAgentManager] Stack:`, errStack)
+      session.lastError = `Failed to start agent: ${errMsg}`
+      this.setStatus(session, 'error')
+
+      // Surface the error in the chat as a message
+      const errorMsg: CliAgentMessage = {
+        id: randomUUID(),
+        type: 'error',
+        content: `Failed to start agent: ${errMsg}${stderrChunks.length ? '\n\nstderr:\n' + stderrChunks.join('') : ''}`,
+        timestamp: Date.now(),
+      }
+      session.messages.push(errorMsg)
+      this.emitMessage(session, errorMsg)
+      return
+    }
+
+    session.queryInstance = queryInstance
+    this.setStatus(session, 'running')
+
+    let messageCount = 0
+    try {
+      for await (const message of queryInstance) {
+        if (abortController.signal.aborted) break
+        messageCount++
+        this.handleSDKMessage(session, message)
+      }
+      console.log(`[CliAgentManager] Query completed for session ${session.id} — ${messageCount} messages received`)
+    } catch (err) {
+      if (!abortController.signal.aborted) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        const errStack = err instanceof Error ? err.stack : undefined
+        console.error(`[CliAgentManager] Query error for session ${session.id}:`, errMsg)
+        if (errStack) console.error(`[CliAgentManager] Stack:`, errStack)
+        if (stderrChunks.length) {
+          console.error(`[CliAgentManager] Captured stderr:\n${stderrChunks.join('')}`)
+        }
+        console.error(`[CliAgentManager] Messages received before error: ${messageCount}`)
+
+        // Build a detailed error message for the UI
+        const stderrText = stderrChunks.join('').trim()
+        const detailedError = stderrText
+          ? `${errMsg}\n\nstderr output:\n${stderrText.slice(-2000)}`
+          : errMsg
+        session.lastError = detailedError
+
+        // Surface the error in the chat
+        const errorMsg: CliAgentMessage = {
+          id: randomUUID(),
+          type: 'error',
+          content: detailedError,
+          timestamp: Date.now(),
+        }
+        session.messages.push(errorMsg)
+        this.emitMessage(session, errorMsg)
+
+        this.setStatus(session, 'error')
+      }
+    } finally {
+      session.queryInstance = null
+      session.abortController = null
+      if (session.processStatus === 'stopping') {
+        this.setStatus(session, 'stopped')
+      } else if (session.processStatus !== 'error') {
+        this.setStatus(session, 'stopped')
+      }
+      await this.persistSession(session).catch(() => {})
     }
   }
 
-  private handleSystemEvent(session: CliAgentSessionInternal, event: ParsedEvent): void {
-    const subtype = event.subtype as string | undefined
+  // ─── SDK Message Handling ───────────────────
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleSDKMessage(session: CliAgentSessionInternal, message: any): void {
+    const type = message.type as string
+    const subtype = message.subtype as string | undefined
+
+    // Log all non-streaming messages (stream_event is too noisy)
+    if (type !== 'stream_event') {
+      console.log(`[CliAgentManager] SDK message: type=${type}${subtype ? ` subtype=${subtype}` : ''} session=${session.id.slice(0, 8)}`)
+    }
+
+    if (type === 'system') {
+      this.handleSystemMessage(session, message)
+    } else if (type === 'assistant') {
+      this.handleAssistantMessage(session, message)
+    } else if (type === 'stream_event') {
+      this.handleStreamEvent(session, message)
+    } else if (type === 'tool_progress') {
+      this.handleToolProgress(session, message)
+    } else if (type === 'tool_use_summary') {
+      this.handleToolUseSummary(session, message)
+    } else if (type === 'result') {
+      this.handleResultMessage(session, message)
+    } else if (type === 'rate_limit_event') {
+      console.warn(`[CliAgentManager] Rate limited — session ${session.id.slice(0, 8)}`)
+      this.setStatus(session, 'rate_limited')
+    } else {
+      // Log unknown message types so we can add handling later
+      console.log(`[CliAgentManager] Unhandled SDK message type: ${type}`, JSON.stringify(message).slice(0, 500))
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleSystemMessage(session: CliAgentSessionInternal, message: any): void {
+    const subtype = message.subtype as string | undefined
 
     if (subtype === 'init') {
-      // Capture Claude Code's session ID for --resume
-      const sdkSessionId = event.session_id as string | undefined
+      // Capture session ID for resume
+      const sdkSessionId = message.session_id as string | undefined
       if (sdkSessionId) {
         session.claudeSessionId = sdkSessionId
-        // Persist to store for future resume
         this.conversationStore?.updateMeta(session.id, { claudeSessionId: sdkSessionId }).catch(() => {})
       }
 
-      session.model = (event.model as string) ?? undefined
-      const tools = event.tools as Array<{ name: string }> | undefined
-      session.sessionToolNames = tools?.map(t => t.name)
+      session.model = (message.model as string) ?? undefined
+      const tools = message.tools as string[] | undefined
+      session.sessionToolNames = tools
 
       this.setStatus(session, 'running')
 
       const msg: CliAgentMessage = {
-        id: (event.uuid as string) ?? randomUUID(),
+        id: (message.uuid as string) ?? randomUUID(),
         type: 'system',
         content: `Session initialized — model: ${session.model ?? 'unknown'}`,
         timestamp: Date.now(),
-        raw: event,
+        raw: message,
       }
       session.messages.push(msg)
       this.emitMessage(session, msg)
     } else if (subtype === 'status') {
       const msg: CliAgentMessage = {
-        id: (event.uuid as string) ?? randomUUID(),
+        id: (message.uuid as string) ?? randomUUID(),
         type: 'status',
-        content: String(event.status ?? event.message ?? 'status update'),
+        content: String(message.status ?? message.message ?? 'status update'),
         timestamp: Date.now(),
       }
       session.messages.push(msg)
@@ -600,44 +545,59 @@ export class CliAgentManager {
     }
   }
 
-  private handleAssistantEvent(session: CliAgentSessionInternal, event: ParsedEvent): void {
-    const message = event.message as Record<string, unknown> | undefined
-    let text = ''
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleAssistantMessage(session: CliAgentSessionInternal, message: any): void {
+    const betaMessage = message.message
+    if (!betaMessage || !Array.isArray(betaMessage.content)) return
 
-    if (message && Array.isArray(message.content)) {
-      for (const block of message.content) {
-        if ((block as Record<string, unknown>).type === 'text') {
-          text += (block as Record<string, unknown>).text ?? ''
+    let text = ''
+    for (const block of betaMessage.content) {
+      if (block.type === 'text') {
+        text += block.text ?? ''
+      } else if (block.type === 'tool_use') {
+        // Emit tool use as separate message
+        const toolMsg: CliAgentMessage = {
+          id: (block.id as string) ?? randomUUID(),
+          type: 'tool_use',
+          content: `Running ${block.name ?? 'tool'}...`,
+          timestamp: Date.now(),
+          toolName: block.name as string,
+          toolUseId: block.id as string,
         }
+        session.messages.push(toolMsg)
+        this.emitMessage(session, toolMsg)
       }
     }
 
-    const msg: CliAgentMessage = {
-      id: (event.uuid as string) ?? randomUUID(),
-      type: 'assistant',
-      content: text,
-      timestamp: Date.now(),
-      raw: event,
+    if (text) {
+      const msg: CliAgentMessage = {
+        id: (message.uuid as string) ?? randomUUID(),
+        type: 'assistant',
+        content: text,
+        timestamp: Date.now(),
+        raw: message,
+      }
+      session.messages.push(msg)
+      this.emitMessage(session, msg)
     }
-    session.messages.push(msg)
-    this.emitMessage(session, msg)
   }
 
-  private handleStreamEvent(session: CliAgentSessionInternal, event: ParsedEvent): void {
-    const sdkEvent = event.event as Record<string, unknown> | undefined
-    if (!sdkEvent) return
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleStreamEvent(session: CliAgentSessionInternal, message: any): void {
+    const event = message.event
+    if (!event) return
 
-    const eventType = sdkEvent.type as string | undefined
+    const eventType = event.type as string | undefined
 
     if (eventType === 'content_block_delta') {
-      const delta = sdkEvent.delta as Record<string, unknown> | undefined
+      const delta = event.delta
       if (delta?.type === 'text_delta') {
         const text = (delta.text as string) ?? ''
         if (text) {
           const streamDelta: CliAgentStreamDelta = {
             workspaceId: session.workspaceId,
             sessionId: session.id,
-            messageId: (event.uuid as string) ?? session.id,
+            messageId: (message.uuid as string) ?? session.id,
             delta: text,
           }
           this.getWebContents()?.send(IpcChannels.CLI_AGENT_STREAM_DELTA, streamDelta)
@@ -646,49 +606,71 @@ export class CliAgentManager {
     }
   }
 
-  private handleToolProgress(session: CliAgentSessionInternal, event: ParsedEvent): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleToolProgress(session: CliAgentSessionInternal, message: any): void {
     const msg: CliAgentMessage = {
-      id: (event.uuid as string) ?? randomUUID(),
+      id: (message.uuid as string) ?? randomUUID(),
       type: 'tool_use',
-      content: `Running ${event.tool_name ?? 'tool'}...`,
+      content: `Running ${message.tool_name ?? 'tool'}...`,
       timestamp: Date.now(),
-      toolName: (event.tool_name as string) ?? undefined,
-      toolUseId: (event.tool_use_id as string) ?? undefined,
+      toolName: (message.tool_name as string) ?? undefined,
+      toolUseId: (message.tool_use_id as string) ?? undefined,
     }
     session.messages.push(msg)
     this.emitMessage(session, msg)
   }
 
-  private handleToolUseSummary(session: CliAgentSessionInternal, event: ParsedEvent): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleToolUseSummary(session: CliAgentSessionInternal, message: any): void {
     const msg: CliAgentMessage = {
-      id: (event.uuid as string) ?? randomUUID(),
+      id: (message.uuid as string) ?? randomUUID(),
       type: 'tool_result',
-      content: (event.summary as string) ?? 'Tool completed',
+      content: (message.summary as string) ?? 'Tool completed',
       timestamp: Date.now(),
     }
     session.messages.push(msg)
     this.emitMessage(session, msg)
   }
 
-  private handleResultEvent(session: CliAgentSessionInternal, event: ParsedEvent): void {
-    const subtype = event.subtype as string | undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleResultMessage(session: CliAgentSessionInternal, message: any): void {
+    const subtype = message.subtype as string | undefined
     const isSuccess = subtype === 'success'
-    const durationMs = (event.duration_ms as number) ?? 0
-    const totalCostUsd = (event.total_cost_usd as number) ?? 0
+    const durationMs = (message.duration_ms as number) ?? 0
+    const totalCostUsd = (message.total_cost_usd as number) ?? 0
 
     session.totalCostUsd += totalCostUsd
 
+    // Capture session ID from result as well
+    const resultSessionId = message.session_id as string | undefined
+    if (resultSessionId && !session.claudeSessionId) {
+      session.claudeSessionId = resultSessionId
+      this.conversationStore?.updateMeta(session.id, { claudeSessionId: resultSessionId }).catch(() => {})
+    }
+
+    // Build detailed error content for non-success results
+    let errorDetail = ''
+    if (!isSuccess) {
+      const errors = message.errors as string[] | undefined
+      if (errors?.length) {
+        errorDetail = errors.join('\n')
+      }
+      console.error(`[CliAgentManager] Result error for session ${session.id.slice(0, 8)}: subtype=${subtype}`)
+      if (errorDetail) console.error(`[CliAgentManager] Error details:\n${errorDetail}`)
+      console.error(`[CliAgentManager] Full result message:`, JSON.stringify(message).slice(0, 2000))
+    }
+
     const msg: CliAgentMessage = {
-      id: (event.uuid as string) ?? randomUUID(),
+      id: (message.uuid as string) ?? randomUUID(),
       type: isSuccess ? 'result' : 'error',
       content: isSuccess
         ? `Completed in ${(durationMs / 1000).toFixed(1)}s`
-        : `Failed: ${subtype ?? 'unknown error'}`,
+        : `Failed: ${subtype ?? 'unknown error'}${errorDetail ? '\n\n' + errorDetail : ''}`,
       timestamp: Date.now(),
       durationMs,
       totalCostUsd,
       isSuccess,
-      raw: event,
+      raw: message,
     }
     session.messages.push(msg)
     this.emitMessage(session, msg)
@@ -701,10 +683,6 @@ export class CliAgentManager {
       isSuccess,
     }
     this.getWebContents()?.send(IpcChannels.CLI_AGENT_RESULT, resultPayload)
-  }
-
-  private handleRateLimitEvent(session: CliAgentSessionInternal, _event: ParsedEvent): void {
-    this.setStatus(session, 'rate_limited')
   }
 
   // ─── IPC Emission Helpers ────────────────────
