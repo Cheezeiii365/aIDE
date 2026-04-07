@@ -470,9 +470,11 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
       runtime.setServices({ nativeSessionCache })
       runtime.refreshWorkload()
       void conversationStore.loadIndex().then((index) => {
+        const seen = new Set(index.map(c => c.id))
+        const uniqueSessions = sessions.filter(s => !seen.has(s.id))
         contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
           workspaceId: runtime.workspaceId,
-          conversations: [...index, ...sessions],
+          conversations: [...index, ...uniqueSessions],
           source: 'claude-native',
         })
       }).catch(() => {
