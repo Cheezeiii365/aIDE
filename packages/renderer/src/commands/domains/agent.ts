@@ -55,6 +55,55 @@ function addBuiltInAgentPanel(
   })
 }
 
+function addCliAgentPanel(
+  ctx: CommandContext,
+  api: DockviewApi,
+  workspaceId: string,
+  workspaceRoot: string | undefined,
+  editorPanel: IDockviewPanel | undefined,
+  backend: Extract<ConversationMeta['backend'], 'claude-code' | 'codex'>,
+): void {
+  void window.api.conversationCreate({
+    workspaceId,
+    backend,
+  }).then((meta) => {
+    api.addPanel({
+      id: `agent-${Date.now()}`,
+      component: 'cliAgentPane',
+      tabComponent: 'agentTab',
+      title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+      params: {
+        workspaceId,
+        workspaceRoot,
+        backend,
+        conversationId: meta.id,
+      },
+      position: editorPanel
+        ? { referencePanel: editorPanel, direction: 'right' }
+        : undefined,
+      initialWidth: 400,
+    })
+    ctx.persistWorkspaceRuntime()
+  }).catch(() => {
+    api.addPanel({
+      id: `agent-${Date.now()}`,
+      component: 'cliAgentPane',
+      tabComponent: 'agentTab',
+      title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+      params: {
+        workspaceId,
+        workspaceRoot,
+        backend,
+      },
+      position: editorPanel
+        ? { referencePanel: editorPanel, direction: 'right' }
+        : undefined,
+      initialWidth: 400,
+    })
+    ctx.persistWorkspaceRuntime()
+  })
+}
+
 /**
  * @returns `agent.open` and `agent.history.open` specs.
  */
@@ -76,23 +125,7 @@ export function collectAgentCommands(getCtx: GetCommandContext): CommandSpec[] {
         void window.api.getResolvedSettings(workspaceId).then((resolved) => {
           const backend = resolved['agent.backend'] ?? 'built-in'
           if (backend === 'claude-code' || backend === 'codex') {
-            api.addPanel({
-              id: `agent-${Date.now()}`,
-              component: 'cliAgentPane',
-              tabComponent: 'agentTab',
-              title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
-              params: {
-                workspaceId,
-                workspaceRoot,
-                backend,
-                conversationId: crypto.randomUUID(),
-              },
-              position: editorPanel
-                ? { referencePanel: editorPanel, direction: 'right' }
-                : undefined,
-              initialWidth: 400,
-            })
-            ctx.persistWorkspaceRuntime()
+            addCliAgentPanel(ctx, api, workspaceId, workspaceRoot, editorPanel, backend)
           } else {
             addBuiltInAgentPanel(ctx, api, workspaceId, workspaceRoot, editorPanel)
           }

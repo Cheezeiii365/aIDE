@@ -66,6 +66,8 @@ export function AppShell() {
   const sidebarWidthRef = useRef(220)
   const prevWorkspaceRootRef = useRef<string | null>(null)
   const prevWorkspaceIdRef = useRef<string | null>(null)
+  /** Always-current activeWorkspaceId, for async closures that need to detect a workspace switch after awaits. */
+  const activeWorkspaceIdRef = useRef<string | null>(null)
   /** Last known active worktree per workspace id (for saves during workspace switch). */
   const worktreeByWsRef = useRef(new Map<string, string | null>())
   const preservedTerminalIdsRef = useRef(new Set<string>())
@@ -124,6 +126,10 @@ export function AppShell() {
       worktreeByWsRef.current.set(activeWorkspaceId, activeWorktree)
     }
   }, [activeWorkspaceId, activeWorktree])
+
+  useEffect(() => {
+    activeWorkspaceIdRef.current = activeWorkspaceId
+  }, [activeWorkspaceId])
 
   const persistWorkspaceRuntime = useCallback((
     workspaceId: string | null = activeWorkspaceId,
@@ -903,31 +909,69 @@ export function AppShell() {
                       (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
                     )
 
+                    // Capture workspace identity at click time so async IPC
+                    // resolution after a workspace switch can't mutate the
+                    // wrong Dockview or persist runtime under a stale id.
+                    const initialWorkspaceId = activeWorkspaceId
+                    const isStillCurrent = () =>
+                      dockviewApiRef.current === api && activeWorkspaceIdRef.current === initialWorkspaceId
+
                     window.api.getResolvedSettings(activeWorkspaceId).then((resolved) => {
+                      if (!isStillCurrent()) return
                       const backend = resolved['agent.backend'] ?? 'built-in'
 
                       if (backend === 'claude-code' || backend === 'codex') {
-                        api.addPanel({
-                          id: `agent-${Date.now()}`,
-                          component: 'cliAgentPane',
-                          tabComponent: 'agentTab',
-                          title: branch
-                            ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
-                            : backend === 'claude-code' ? 'Claude Code' : 'Codex',
-                          params: {
-                            workspaceId: activeWorkspaceId,
-                            workspaceRoot: workspaceRoot ?? undefined,
-                            backend,
-                            conversationId: crypto.randomUUID(),
-                            worktreePath,
-                            worktreeBranch: branch,
-                          },
-                          position: editorPanel
-                            ? { referencePanel: editorPanel, direction: 'right' }
-                            : undefined,
-                          initialWidth: 400,
+                        void window.api.conversationCreate({
+                          workspaceId: activeWorkspaceId,
+                          backend,
+                          worktreePath,
+                          worktreeBranch: branch,
+                        }).then((meta) => {
+                          if (!isStillCurrent()) return
+                          api.addPanel({
+                            id: `agent-${Date.now()}`,
+                            component: 'cliAgentPane',
+                            tabComponent: 'agentTab',
+                            title: branch
+                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
+                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
+                            params: {
+                              workspaceId: activeWorkspaceId,
+                              workspaceRoot: workspaceRoot ?? undefined,
+                              backend,
+                              conversationId: meta.id,
+                              worktreePath,
+                              worktreeBranch: branch,
+                            },
+                            position: editorPanel
+                              ? { referencePanel: editorPanel, direction: 'right' }
+                              : undefined,
+                            initialWidth: 400,
+                          })
+                          persistWorkspaceRuntime()
+                        }).catch(() => {
+                          if (!isStillCurrent()) return
+                          api.addPanel({
+                            id: `agent-${Date.now()}`,
+                            component: 'cliAgentPane',
+                            tabComponent: 'agentTab',
+                            title: branch
+                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
+                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
+                            params: {
+                              workspaceId: activeWorkspaceId,
+                              workspaceRoot: workspaceRoot ?? undefined,
+                              backend,
+                              worktreePath,
+                              worktreeBranch: branch,
+                            },
+                            position: editorPanel
+                              ? { referencePanel: editorPanel, direction: 'right' }
+                              : undefined,
+                            initialWidth: 400,
+                          })
+                          persistWorkspaceRuntime()
                         })
-                        persistWorkspaceRuntime()
                       } else {
                         void window.api.conversationCreate({
                           workspaceId: activeWorkspaceId,
@@ -935,6 +979,7 @@ export function AppShell() {
                           worktreePath,
                           worktreeBranch: branch,
                         }).then((meta) => {
+                          if (!isStillCurrent()) return
                           api.addPanel({
                             id: `agent-${Date.now()}`,
                             component: 'chatPane',
@@ -954,6 +999,7 @@ export function AppShell() {
                           })
                           persistWorkspaceRuntime()
                         }).catch(() => {
+                          if (!isStillCurrent()) return
                           api.addPanel({
                             id: `agent-${Date.now()}`,
                             component: 'chatPane',
@@ -974,6 +1020,7 @@ export function AppShell() {
                         })
                       }
                     }).catch(() => {
+                      if (!isStillCurrent()) return
                       // Fallback to built-in
                       void window.api.conversationCreate({
                         workspaceId: activeWorkspaceId,
@@ -981,6 +1028,7 @@ export function AppShell() {
                         worktreePath,
                         worktreeBranch: branch,
                       }).then((meta) => {
+                        if (!isStillCurrent()) return
                         api.addPanel({
                           id: `agent-${Date.now()}`,
                           component: 'chatPane',
@@ -1000,6 +1048,7 @@ export function AppShell() {
                         })
                         persistWorkspaceRuntime()
                       }).catch(() => {
+                        if (!isStillCurrent()) return
                         api.addPanel({
                           id: `agent-${Date.now()}`,
                           component: 'chatPane',

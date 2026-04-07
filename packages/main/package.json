@@ -5,6 +5,7 @@
   "main": "./dist/index.js",
   "dependencies": {
     "@aide/shared": "workspace:*",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.91",
     "electron-store": "^6.0.1",
     "node-pty": "^1.1.0",
     "simple-git": "^3.33.0"

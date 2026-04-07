@@ -9,6 +9,7 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'packages/shared/src'),
       '@main': resolve(__dirname, 'packages/main/src'),
       '@renderer': resolve(__dirname, 'packages/renderer/src'),
+      '@anthropic-ai/claude-agent-sdk': resolve(__dirname, 'tests/stubs/claude-agent-sdk.ts'),
     },
   },
   test: {

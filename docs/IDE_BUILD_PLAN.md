@@ -96,7 +96,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 ### Nice-to-have (v2+)
 - [x] Agent chat panel UI — Dockview `chatPane` with Ask/Edit/Agent modes, streaming message display, tool call approval cards, working set picker, markdown rendering with syntax highlighting
 - [ ] Cursor-style agent panel UI (structured diffs, progress, pause/resume)
-- [ ] Claude Agent SDK integration (replacing raw Claude Code CLI)
+- [x] Claude Agent SDK integration (replacing raw Claude Code CLI subprocess spawning with `@anthropic-ai/claude-agent-sdk` `query()` async generator)
 - [ ] Tailwind CSS IntelliSense (via tailwindcss-language-server)
 - [x] Git worktree management — sidebar panel to create/remove/switch worktrees, file tree re-roots on worktree switch, terminal right-click to switch worktree cwd, auto-detect externally created worktrees
 - [ ] Git integration UI (diff viewer, stage/unstage, commit)
@@ -236,8 +236,7 @@ Main Process (Electron)
 ### AI integration
 | Layer | Choice | Why |
 |---|---|---|
-| Phase 1 agent | **Claude Code CLI** (via node-pty terminal) | Zero integration cost; terminal is sufficient for v1 |
-| Phase 2 agent | **Claude Agent SDK** (programmatic) | Structured output, diff preview, pause/resume control |
+| Agent backend | **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) | Typed streaming via `query()` async generator, session resume, built-in tools. Replaces raw CLI subprocess spawning |
 | API key management | Electron `safeStorage` | Encrypts API key at rest using OS keychain |
 
 ### State / persistence
