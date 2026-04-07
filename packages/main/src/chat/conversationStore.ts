@@ -47,9 +47,22 @@ async function readJson<T>(filePath: string): Promise<T | null> {
 export class ConversationStore {
   private workspaceRoot: string
   private cachedIndex: ConversationMeta[] | null = null
+  private mutationQueue: Promise<unknown> = Promise.resolve()
 
   constructor(workspaceRoot: string) {
     this.workspaceRoot = workspaceRoot
+  }
+
+  /**
+   * Serialize index read-modify-write operations to prevent races where
+   * concurrent calls observe stale state and produce duplicate or lost
+   * entries. The cached index array is shared by reference, so any mutation
+   * path must run inside this queue.
+   */
+  private withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.mutationQueue.then(fn, fn)
+    this.mutationQueue = next.catch(() => {})
+    return next
   }
 
   private get conversationsDir(): string {
@@ -85,55 +98,61 @@ export class ConversationStore {
   // ─── CRUD ────────────────────────────────────
 
   async create(opts: ConversationCreateOpts): Promise<ConversationMeta> {
-    const index = await this.loadIndex()
-    const now = Date.now()
+    return this.withIndexLock(async () => {
+      const index = await this.loadIndex()
+      const now = Date.now()
 
-    const meta: ConversationMeta = {
-      id: randomUUID(),
-      workspaceId: opts.workspaceId,
-      backend: opts.backend,
-      title: opts.title ?? 'New Chat',
-      autoTitled: !opts.title,
-      createdAt: now,
-      updatedAt: now,
-      messageCount: 0,
-      worktreePath: opts.worktreePath,
-      worktreeBranch: opts.worktreeBranch,
-    }
+      const meta: ConversationMeta = {
+        id: randomUUID(),
+        workspaceId: opts.workspaceId,
+        backend: opts.backend,
+        title: opts.title ?? 'New Chat',
+        autoTitled: !opts.title,
+        createdAt: now,
+        updatedAt: now,
+        messageCount: 0,
+        worktreePath: opts.worktreePath,
+        worktreeBranch: opts.worktreeBranch,
+      }
 
-    index.unshift(meta) // newest first
-    await this.saveIndex(index)
-    return meta
+      index.unshift(meta) // newest first
+      await this.saveIndex(index)
+      return meta
+    })
   }
 
   async ensure(conversationId: string, opts: ConversationCreateOpts): Promise<ConversationMeta> {
-    const index = await this.loadIndex()
-    const existing = index.find(c => c.id === conversationId)
-    if (existing) return existing
+    return this.withIndexLock(async () => {
+      const index = await this.loadIndex()
+      const existing = index.find(c => c.id === conversationId)
+      if (existing) return existing
 
-    const now = Date.now()
-    const meta: ConversationMeta = {
-      id: conversationId,
-      workspaceId: opts.workspaceId,
-      backend: opts.backend,
-      title: opts.title ?? 'New Chat',
-      autoTitled: !opts.title,
-      createdAt: now,
-      updatedAt: now,
-      messageCount: 0,
-      worktreePath: opts.worktreePath,
-      worktreeBranch: opts.worktreeBranch,
-    }
+      const now = Date.now()
+      const meta: ConversationMeta = {
+        id: conversationId,
+        workspaceId: opts.workspaceId,
+        backend: opts.backend,
+        title: opts.title ?? 'New Chat',
+        autoTitled: !opts.title,
+        createdAt: now,
+        updatedAt: now,
+        messageCount: 0,
+        worktreePath: opts.worktreePath,
+        worktreeBranch: opts.worktreeBranch,
+      }
 
-    index.unshift(meta)
-    await this.saveIndex(index)
-    return meta
+      index.unshift(meta)
+      await this.saveIndex(index)
+      return meta
+    })
   }
 
   async delete(conversationId: string): Promise<void> {
-    const index = await this.loadIndex()
-    const filtered = index.filter(c => c.id !== conversationId)
-    await this.saveIndex(filtered)
+    await this.withIndexLock(async () => {
+      const index = await this.loadIndex()
+      const filtered = index.filter(c => c.id !== conversationId)
+      await this.saveIndex(filtered)
+    })
 
     // Remove message file
     const msgPath = this.messagePath(conversationId)
@@ -153,12 +172,14 @@ export class ConversationStore {
     conversationId: string,
     patch: Partial<Pick<ConversationMeta, 'title' | 'autoTitled' | 'updatedAt' | 'messageCount' | 'firstMessage' | 'claudeSessionId' | 'worktreePath'>>,
   ): Promise<void> {
-    const index = await this.loadIndex()
-    const entry = index.find(c => c.id === conversationId)
-    if (!entry) return
+    await this.withIndexLock(async () => {
+      const index = await this.loadIndex()
+      const entry = index.find(c => c.id === conversationId)
+      if (!entry) return
 
-    Object.assign(entry, patch)
-    await this.saveIndex(index)
+      Object.assign(entry, patch)
+      await this.saveIndex(index)
+    })
   }
 
   /**
