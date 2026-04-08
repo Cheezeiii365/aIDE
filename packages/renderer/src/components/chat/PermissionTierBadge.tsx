@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import type { PermissionTier } from '@aide/shared'
+import { Badge } from '../ui/Badge'
 
-const TIER_CONFIG: Record<PermissionTier, { label: string; icon: string; className: string }> = {
-  'confirm': { label: 'Confirm', icon: '⛨', className: 'confirm' },
-  'auto-approve': { label: 'Auto', icon: '⚡', className: 'auto' },
-  'autopilot': { label: 'Autopilot', icon: '◉', className: 'autopilot' },
+type BadgeVariant = 'warning' | 'info' | 'success'
+
+const TIER_CONFIG: Record<PermissionTier, { label: string; icon: string; variant: BadgeVariant }> = {
+  'confirm': { label: 'Confirm', icon: '⛨', variant: 'warning' },
+  'auto-approve': { label: 'Auto', icon: '⚡', variant: 'info' },
+  'autopilot': { label: 'Autopilot', icon: '◉', variant: 'success' },
 }
 
 interface PermissionTierBadgeProps {
@@ -41,9 +44,8 @@ export function PermissionTierBadge({ workspaceId }: PermissionTierBadgeProps) {
   const config = TIER_CONFIG[tier]
 
   return (
-    <div className={`perm-tier-badge perm-tier-badge--${config.className}`} title={`Permission tier: ${config.label}`}>
-      <span className="perm-tier-badge__icon">{config.icon}</span>
-      <span className="perm-tier-badge__label">{config.label}</span>
-    </div>
+    <Badge variant={config.variant} icon={config.icon} title={`Permission tier: ${config.label}`}>
+      {config.label}
+    </Badge>
   )
 }
