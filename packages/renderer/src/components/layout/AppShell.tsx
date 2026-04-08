@@ -28,6 +28,7 @@ import { autoSave, switchWorkspace as doSwitchWorkspace } from '../../lib/worksp
 import { createTerminalPanelParams, getTerminalParams } from '../../lib/terminal/terminalState'
 import { createBrowserPanelParams, getBrowserParams } from '../../lib/browserState'
 import { getPanelZoomFactor, updatePanelZoomParams } from '../../lib/panelZoom'
+import { backendLabel, isCliBackend } from '../../lib/agentBackend'
 import { DockviewNavigation } from '../../lib/dockviewNavigation'
 import {
   captureWorkspaceRuntimeSnapshot,
@@ -920,7 +921,7 @@ export function AppShell() {
                       if (!isStillCurrent()) return
                       const backend = resolved['agent.backend'] ?? 'built-in'
 
-                      if (backend === 'claude-code' || backend === 'codex') {
+                      if (isCliBackend(backend)) {
                         void window.api.conversationCreate({
                           workspaceId: activeWorkspaceId,
                           backend,
@@ -933,8 +934,8 @@ export function AppShell() {
                             component: 'cliAgentPane',
                             tabComponent: 'agentTab',
                             title: branch
-                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
-                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
+                              ? `${backendLabel(backend)} (${branch})`
+                              : backendLabel(backend),
                             params: {
                               workspaceId: activeWorkspaceId,
                               workspaceRoot: workspaceRoot ?? undefined,
@@ -956,8 +957,8 @@ export function AppShell() {
                             component: 'cliAgentPane',
                             tabComponent: 'agentTab',
                             title: branch
-                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
-                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
+                              ? `${backendLabel(backend)} (${branch})`
+                              : backendLabel(backend),
                             params: {
                               workspaceId: activeWorkspaceId,
                               workspaceRoot: workspaceRoot ?? undefined,

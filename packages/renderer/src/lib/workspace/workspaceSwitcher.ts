@@ -7,6 +7,7 @@
 
 import type { DockviewApi } from 'dockview-react'
 import type { AgentBackend, AideLocalState, AideLocalTerminals } from '@aide/shared'
+import { backendLabel, isCliBackend } from '../agentBackend'
 import { clearCache } from '../editor/editorStateCache'
 import { hydrateDocumentStoreFromOpenTabs } from '../editor/documentStore'
 import { createRestoredTerminalPanelParams, createTerminalPanelParams } from '../terminal/terminalState'
@@ -222,7 +223,7 @@ async function createDefaultLayout(
 
   const backend: AgentBackend = resolvedSettings?.['agent.backend'] ?? 'built-in'
 
-  if (backend === 'claude-code' || backend === 'codex') {
+  if (isCliBackend(backend)) {
     const conversationId = await window.api.conversationCreate({
       workspaceId,
       backend,
@@ -233,7 +234,7 @@ async function createDefaultLayout(
       id: 'agent',
       component: 'cliAgentPane',
       tabComponent: 'agentTab',
-      title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+      title: backendLabel(backend),
       params: {
         workspaceId,
         workspaceRoot: workspaceRoot ?? undefined,
