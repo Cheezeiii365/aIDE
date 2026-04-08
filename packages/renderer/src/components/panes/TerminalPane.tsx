@@ -31,8 +31,11 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const focusRafRef = useRef<number | null>(null)
   const ptyIdRef = useRef<string | null>(null)
-  const terminalIdRef = useRef<string>(params?.terminalId || globalThis.crypto?.randomUUID?.() || `terminal-${Date.now()}`)
+  const terminalIdRef = useRef<string>(
+    params?.terminalId || globalThis.crypto?.randomUUID?.() || `terminal-${Date.now()}`,
+  )
   const cleanupDataRef = useRef<(() => void) | null>(null)
   const cleanupExitRef = useRef<(() => void) | null>(null)
   const inputDisposableRef = useRef<{ dispose(): void } | null>(null)
@@ -49,6 +52,17 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       title: params?.title ?? 'Terminal',
     })
   }, [api, params])
+
+  const focusTerminal = useCallback(() => {
+    if (focusRafRef.current !== null) {
+      window.cancelAnimationFrame(focusRafRef.current)
+    }
+    focusRafRef.current = window.requestAnimationFrame(() => {
+      focusRafRef.current = null
+      if (!api.isActive) return
+      termRef.current?.focus()
+    })
+  }, [api])
 
   // Create terminal on mount
   useEffect(() => {
@@ -75,6 +89,9 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
     term.open(hostRef.current)
     termRef.current = term
     fitRef.current = fitAddon
+    if (api.isActive) {
+      focusTerminal()
+    }
 
     requestAnimationFrame(() => {
       if (!destroyed) fitAddon.fit()
@@ -100,13 +117,19 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
         })
 
         cleanupDataRef.current = window.api.onPtyData((payload) => {
-          if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+          if (
+            payload.ptyId === id &&
+            (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+          ) {
             term.write(payload.data)
           }
         })
 
         cleanupExitRef.current = window.api.onPtyExit((payload) => {
-          if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+          if (
+            payload.ptyId === id &&
+            (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+          ) {
             term.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`)
           }
         })
@@ -134,13 +157,19 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       })
 
       cleanupDataRef.current = window.api.onPtyData((payload) => {
-        if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+        if (
+          payload.ptyId === id &&
+          (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+        ) {
           term.write(payload.data)
         }
       })
 
       cleanupExitRef.current = window.api.onPtyExit((payload) => {
-        if (payload.ptyId === id && (!params?.workspaceId || payload.workspaceId === params.workspaceId)) {
+        if (
+          payload.ptyId === id &&
+          (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+        ) {
           term.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`)
         }
       })
@@ -170,12 +199,16 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
       inputDisposableRef.current = null
       cleanupDataRef.current = null
       cleanupExitRef.current = null
+      if (focusRafRef.current !== null) {
+        window.cancelAnimationFrame(focusRafRef.current)
+        focusRafRef.current = null
+      }
       term.dispose()
       termRef.current = null
       fitRef.current = null
       ptyIdRef.current = null
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, focusTerminal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rebind PTY listeners when taskPtyId changes (reused task terminal panels)
   useEffect(() => {
@@ -202,8 +235,8 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
 
     cleanupDataRef.current = window.api.onPtyData((payload) => {
       if (
-        payload.ptyId === newPtyId
-        && (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+        payload.ptyId === newPtyId &&
+        (!params?.workspaceId || payload.workspaceId === params.workspaceId)
       ) {
         term.write(payload.data)
       }
@@ -211,8 +244,8 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
 
     cleanupExitRef.current = window.api.onPtyExit((payload) => {
       if (
-        payload.ptyId === newPtyId
-        && (!params?.workspaceId || payload.workspaceId === params.workspaceId)
+        payload.ptyId === newPtyId &&
+        (!params?.workspaceId || payload.workspaceId === params.workspaceId)
       ) {
         term.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`)
       }
@@ -225,10 +258,10 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
   // Focus terminal when panel becomes active
   useEffect(() => {
     const disposable = api.onDidActiveChange(({ isActive }) => {
-      if (isActive) termRef.current?.focus()
+      if (isActive) focusTerminal()
     })
     return () => disposable.dispose()
-  }, [api])
+  }, [api, focusTerminal])
 
   // Update xterm theme when app theme changes
   useEffect(() => {
@@ -250,16 +283,19 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
     }
   }, [params])
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    const wid = params?.workspaceId
-    if (wid) {
-      window.api.listWorktrees(wid).then(setWorktrees)
-    } else {
-      setWorktrees([])
-    }
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }, [params?.workspaceId])
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      const wid = params?.workspaceId
+      if (wid) {
+        window.api.listWorktrees(wid).then(setWorktrees)
+      } else {
+        setWorktrees([])
+      }
+      setContextMenu({ x: e.clientX, y: e.clientY })
+    },
+    [params?.workspaceId],
+  )
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
@@ -286,47 +322,62 @@ export function TerminalPane({ api, params }: IDockviewPanelProps<TerminalPanelP
     return () => window.removeEventListener('keydown', handler)
   }, [contextMenu, closeContextMenu])
 
-  const switchToWorktree = useCallback((path: string) => {
-    const ptyId = ptyIdRef.current
-    if (ptyId) {
-      window.api.ptyWrite(ptyId, `cd ${path}\n`)
-    }
-    api.updateParameters({
-      ...params,
-      terminalId: terminalIdRef.current,
-      worktreePath: path,
-      title: params?.title ?? 'Terminal',
-    })
-    closeContextMenu()
-  }, [api, closeContextMenu, params])
+  const switchToWorktree = useCallback(
+    (path: string) => {
+      const ptyId = ptyIdRef.current
+      if (ptyId) {
+        window.api.ptyWrite(ptyId, `cd ${path}\n`)
+      }
+      api.updateParameters({
+        ...params,
+        terminalId: terminalIdRef.current,
+        worktreePath: path,
+        title: params?.title ?? 'Terminal',
+      })
+      closeContextMenu()
+    },
+    [api, closeContextMenu, params],
+  )
 
   return (
     <>
       <div ref={hostRef} className="terminal-pane" onContextMenu={handleContextMenu} />
-      {contextMenu && worktrees.length > 1 && createPortal(
-        <div className="context-menu-overlay" onMouseDown={closeContextMenu}>
-          <div
-            ref={menuRef}
-            className="context-menu"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="context-menu__item" style={{ cursor: 'default', opacity: 0.6, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Switch to worktree
-            </div>
-            {worktrees.map((wt) => (
-              <button
-                key={wt.path}
+      {contextMenu &&
+        worktrees.length > 1 &&
+        createPortal(
+          <div className="context-menu-overlay" onMouseDown={closeContextMenu}>
+            <div
+              ref={menuRef}
+              className="context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div
                 className="context-menu__item"
-                onClick={() => switchToWorktree(wt.path)}
+                style={{
+                  cursor: 'default',
+                  opacity: 0.6,
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
               >
-                {wt.branch}{wt.isMain ? ' (main)' : ''}
-              </button>
-            ))}
-          </div>
-        </div>,
-        document.body,
-      )}
+                Switch to worktree
+              </div>
+              {worktrees.map((wt) => (
+                <button
+                  key={wt.path}
+                  className="context-menu__item"
+                  onClick={() => switchToWorktree(wt.path)}
+                >
+                  {wt.branch}
+                  {wt.isMain ? ' (main)' : ''}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   )
 }

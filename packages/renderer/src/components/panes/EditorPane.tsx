@@ -5,7 +5,12 @@ import { EditorView, keymap } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { getLanguageExtension, getLanguageName } from '../../lib/editor/languageExtension'
-import { themeCompartment, editorMetricsCompartment, getThemeExtension, getEditorMetricsExtension } from '../../lib/editor/editorTheme'
+import {
+  themeCompartment,
+  editorMetricsCompartment,
+  getThemeExtension,
+  getEditorMetricsExtension,
+} from '../../lib/editor/editorTheme'
 import { wrapCompartment, getWrapExtension, toggleWrap } from '../../lib/editor/editorWrap'
 import { consumeCachedState } from '../../lib/editor/editorStateCache'
 import {
@@ -64,6 +69,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const isReloadingRef = useRef(false)
+  const focusRafRef = useRef<number | null>(null)
   const { theme } = useTheme()
   const { setStatus } = useEditorStatus()
   const paramsRef = useRef(params)
@@ -77,22 +83,36 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   const workspaceRoot = params.workspaceRoot ?? null
   const workspaceId = params.workspaceId
 
-  const toggleInlineDiffForView = useCallback(async (view: EditorView) => {
-    const diffRoot =
-      (workspaceId ? await window.api.getWorkspaceRoot(workspaceId) : null)
-      ?? workspaceRoot
-      ?? (await window.api.getWorkspaceRoot())
-    const enabled = await toggleInlineDiff(view, diffRoot, filePath)
-    setDiffActive(enabled)
-    showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
-    return enabled
-  }, [filePath, workspaceId, workspaceRoot])
+  const toggleInlineDiffForView = useCallback(
+    async (view: EditorView) => {
+      const diffRoot =
+        (workspaceId ? await window.api.getWorkspaceRoot(workspaceId) : null) ??
+        workspaceRoot ??
+        (await window.api.getWorkspaceRoot())
+      const enabled = await toggleInlineDiff(view, diffRoot, filePath)
+      setDiffActive(enabled)
+      showToast(enabled ? 'Inline diff enabled' : 'Inline diff disabled')
+      return enabled
+    },
+    [filePath, workspaceId, workspaceRoot],
+  )
 
   useEffect(() => {
     paramsRef.current = params
     themeRef.current = theme
     setStatusRef.current = setStatus
   }, [params, setStatus, theme])
+
+  const focusEditor = useCallback(() => {
+    if (focusRafRef.current !== null) {
+      window.cancelAnimationFrame(focusRafRef.current)
+    }
+    focusRafRef.current = window.requestAnimationFrame(() => {
+      focusRafRef.current = null
+      if (!api.isActive) return
+      viewRef.current?.focus()
+    })
+  }, [api])
 
   // Create editor on mount
   useEffect(() => {
@@ -148,7 +168,9 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         basicSetup,
         themeCompartment.of(getThemeExtension(themeRef.current)),
         editorMetricsCompartment.of(
-          getEditorMetricsExtension(Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(paramsRef.current))),
+          getEditorMetricsExtension(
+            Math.round(EDITOR_BASE_FONT_SIZE * getPanelZoomFactor(paramsRef.current)),
+          ),
         ),
         wrapCompartment.of(getWrapExtension(false)),
         indentationMarkers(),
@@ -266,12 +288,10 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
       viewRef.current = view
       const selMain = state.selection.main
-      updateDocumentFromEditor(
-        wid,
-        filePath,
-        state.doc.toString(),
-        { anchor: selMain.anchor, head: selMain.head },
-      )
+      updateDocumentFromEditor(wid, filePath, state.doc.toString(), {
+        anchor: selMain.anchor,
+        head: selMain.head,
+      })
       publishContent(filePath, state.doc.toString())
       setLoading(false)
 
@@ -285,6 +305,8 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
       if (view.hasFocus) {
         setActiveEditor(view, filePath)
+      } else if (api.isActive) {
+        focusEditor()
       }
 
       return () => {
@@ -312,19 +334,21 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
         clearActiveEditor(viewRef.current)
         const st = viewRef.current.state
         const m = st.selection.main
-        updateDocumentFromEditor(
-          paramsRef.current.workspaceId,
-          filePath,
-          st.doc.toString(),
-          { anchor: m.anchor, head: m.head },
-        )
+        updateDocumentFromEditor(paramsRef.current.workspaceId, filePath, st.doc.toString(), {
+          anchor: m.anchor,
+          head: m.head,
+        })
         viewRef.current.destroy()
         viewRef.current = null
+      }
+      if (focusRafRef.current !== null) {
+        window.cancelAnimationFrame(focusRafRef.current)
+        focusRafRef.current = null
       }
       removeDocumentSession(paramsRef.current.workspaceId, filePath)
       clearContent(filePath)
     }
-  }, [filePath, workspaceId, toggleInlineDiffForView])
+  }, [api, filePath, focusEditor, workspaceId, toggleInlineDiffForView])
 
   async function reloadFromDisk(path: string) {
     const view = viewRef.current
@@ -350,17 +374,14 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       const wid = paramsRef.current.workspaceId
 
       const relevant = events.filter(
-        (e) =>
-          (!wid || e.workspaceId === wid)
-          && e.path === filePath
-          && !e.isDirectory,
+        (e) => (!wid || e.workspaceId === wid) && e.path === filePath && !e.isDirectory,
       )
       if (relevant.length === 0) return
 
       const hasDelete = relevant.some((e) => e.type === 'delete')
       const hasUpdate = relevant.some((e) => e.type === 'update' || e.type === 'create')
 
-       if (hasDelete && !hasUpdate) {
+      if (hasDelete && !hasUpdate) {
         showToast('File was deleted externally')
         const st = view.state
         const text = st.doc.toString()
@@ -448,6 +469,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
   useEffect(() => {
     const disposable = api.onDidActiveChange(({ isActive }) => {
       if (isActive && viewRef.current) {
+        focusEditor()
         setActiveEditor(viewRef.current, filePath)
         const state = viewRef.current.state
         const pos = state.selection.main.head
@@ -462,7 +484,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
       }
     })
     return () => disposable.dispose()
-  }, [api, filePath, setStatus])
+  }, [api, filePath, focusEditor, setStatus])
 
   const handleDiffBadgeClick = useCallback(() => {
     const view = viewRef.current
