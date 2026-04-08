@@ -25,7 +25,9 @@ import { useEditorStatus } from '../../hooks/useEditorStatus'
 import { useTheme } from '../../hooks/useTheme'
 import { showToast } from '../shared/Toast'
 import { diffCompartment, toggleInlineDiff } from '../../lib/editor/editorInlineDiff'
+import { EditorBreadcrumbBar } from './EditorBreadcrumbBar'
 import '../../styles/inline-diff.css'
+import '../../styles/editor-breadcrumb.css'
 
 interface EditorPaneParams {
   filePath: string
@@ -433,8 +435,8 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
     const name = filePath.split('/').pop() ?? filePath
     const wid = (params.workspaceId ?? '') as string
     const applyTitle = () => {
-      const s = getDocumentSession(params.workspaceId, filePath)
-      api.setTitle(s?.isDirty ? '• ' + name : name)
+      // Tab dirty state is rendered by EditorTab; no need to prefix the title.
+      api.setTitle(name)
     }
     applyTitle()
     const unsub = onDocumentSessionChanged((wk, path) => {
@@ -478,6 +480,7 @@ export function EditorPane({ params, api }: IDockviewPanelProps<EditorPaneParams
 
   return (
     <div className="editor-pane">
+      <EditorBreadcrumbBar filePath={filePath} workspaceRoot={workspaceRoot} />
       {loading && <div className="editor-pane__loading">Loading…</div>}
       {diffActive && (
         <div

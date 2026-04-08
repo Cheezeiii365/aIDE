@@ -19,6 +19,7 @@
     "test:e2e": "playwright test",
     "test:ci": "pnpm typecheck && pnpm test && pnpm test:e2e",
     "dist": "electron-vite build && electron-builder --mac",
+    "dist:local": "electron-vite build && electron-builder --mac --publish never",
     "dist:linux": "electron-vite build && electron-builder --linux",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:publish": "electron-vite build && electron-builder --mac --publish always",

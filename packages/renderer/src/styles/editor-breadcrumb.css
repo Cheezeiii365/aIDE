@@ -1,0 +1,222 @@
+/* Per-tab breadcrumb bar shown above the CodeMirror host inside EditorPane. */
+
+.editor-breadcrumb {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border-subtle, var(--border-base));
+  font-size: 11px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.editor-breadcrumb__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.editor-breadcrumb__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.editor-breadcrumb__icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.editor-breadcrumb__path {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  margin-left: 4px;
+}
+
+.editor-breadcrumb__segment-wrap {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.editor-breadcrumb__segment {
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  font: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-breadcrumb__segment:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.editor-breadcrumb__segment--last {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.editor-breadcrumb__chevron {
+  color: var(--text-muted);
+  margin: 0 1px;
+  font-size: 12px;
+}
+
+.editor-breadcrumb__right {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.editor-breadcrumb__lsp {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.editor-breadcrumb__lsp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.editor-breadcrumb__lsp--healthy {
+  color: var(--text-success, #98c379);
+}
+.editor-breadcrumb__lsp--starting {
+  color: var(--text-warning, #e5c07b);
+}
+.editor-breadcrumb__lsp--down {
+  color: var(--text-error, #e06c75);
+}
+.editor-breadcrumb__lsp--none {
+  color: var(--text-muted);
+}
+
+/* ─── Tab styling (paired with dockview-theme.css overrides) ─────── */
+
+.editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+.editor-tab__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+.editor-tab__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.editor-tab__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-tab__dirty {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.editor-tab__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.editor-tab:hover .editor-tab__close,
+.dv-active-tab .editor-tab__close {
+  opacity: 1;
+}
+
+.editor-tab__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ─── Right-side tab strip actions ───────────────── */
+
+.editor-tab-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  height: 100%;
+}
+
+.editor-tab-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.editor-tab-actions__btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
