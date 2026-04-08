@@ -48,6 +48,14 @@ export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   'agent.claudeCodePath': '',
   'agent.opencodePath': '',
   'agent.codexPath': '',
+
+  // OpenCode-specific session defaults
+  'agent.opencode.defaultProvider': '',
+  'agent.opencode.defaultModel': '',
+  'agent.opencode.defaultAgent': '',
+  'agent.opencode.defaultMode': '',
+  'agent.opencode.defaultSystemPrompt': '',
+  'agent.opencode.defaultToolToggles': {} as Record<string, boolean>,
 }
 
 /**
@@ -99,6 +107,27 @@ export function resolveAppDefaults(store: Store<AppSettings>): ResolvedSettings 
     'agent.opencodePath':
       userDefaults['agent.opencodePath'] ?? BUILT_IN_DEFAULTS['agent.opencodePath'],
     'agent.codexPath': userDefaults['agent.codexPath'] ?? BUILT_IN_DEFAULTS['agent.codexPath'],
+
+    // OpenCode session defaults
+    'agent.opencode.defaultProvider':
+      userDefaults['agent.opencode.defaultProvider'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultProvider'],
+    'agent.opencode.defaultModel':
+      userDefaults['agent.opencode.defaultModel'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultModel'],
+    'agent.opencode.defaultAgent':
+      userDefaults['agent.opencode.defaultAgent'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultAgent'],
+    'agent.opencode.defaultMode':
+      userDefaults['agent.opencode.defaultMode'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultMode'],
+    'agent.opencode.defaultSystemPrompt':
+      userDefaults['agent.opencode.defaultSystemPrompt'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultSystemPrompt'],
+    'agent.opencode.defaultToolToggles': {
+      ...BUILT_IN_DEFAULTS['agent.opencode.defaultToolToggles'],
+      ...(userDefaults['agent.opencode.defaultToolToggles'] ?? {}),
+    },
   }
 }
 
@@ -170,5 +199,13 @@ export async function resolveSettings(
     'agent.claudeCodePath': appDefaults['agent.claudeCodePath'],
     'agent.opencodePath': appDefaults['agent.opencodePath'],
     'agent.codexPath': appDefaults['agent.codexPath'],
+
+    // OpenCode session defaults (user-only — see SENSITIVE_AGENT_KEYS)
+    'agent.opencode.defaultProvider': appDefaults['agent.opencode.defaultProvider'],
+    'agent.opencode.defaultModel': appDefaults['agent.opencode.defaultModel'],
+    'agent.opencode.defaultAgent': appDefaults['agent.opencode.defaultAgent'],
+    'agent.opencode.defaultMode': appDefaults['agent.opencode.defaultMode'],
+    'agent.opencode.defaultSystemPrompt': appDefaults['agent.opencode.defaultSystemPrompt'],
+    'agent.opencode.defaultToolToggles': appDefaults['agent.opencode.defaultToolToggles'],
   }
 }

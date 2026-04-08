@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
-import type { AgentBackend, CliAgentBackendState, CliAgentMessage } from '@aide/shared'
+import type { AgentBackend, CliAgentMessage } from '@aide/shared'
 import { useCliAgent } from '../../hooks/useCliAgent'
 import { AgentStatusDot } from '../chat/AgentStatusDot'
 import { ChatInput } from '../chat/ChatInput'
@@ -9,10 +9,9 @@ import { CLI_BACKENDS, backendBadgeLabel, backendLabel } from '../../lib/agentBa
 import { CostTokenBadge } from '../cliAgent/CostTokenBadge'
 import { RichPartRenderer, isRichPartType } from '../cliAgent/RichPartRenderer'
 import { SessionMenu } from '../cliAgent/SessionMenu'
-import { SessionSettingsPanel } from '../cliAgent/SessionSettingsPanel'
-import { DiagnosticsPanel } from '../cliAgent/DiagnosticsPanel'
-import { TuiControlPanel } from '../cliAgent/TuiControlPanel'
+import { SessionSettingsPopover } from '../cliAgent/SessionSettingsPopover'
 import '../../styles/cli-agent-pane.css'
+import '../../styles/cli-agent-settings.css'
 
 interface CliAgentPanelParams {
   workspaceId?: string
@@ -122,11 +121,11 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
   )
 
   const isOpenCode = headerBackend === 'opencode'
-  // Mirror the live per-backend state from the hook so the pickers reflect any
-  // overrides the user has applied (and so dependent dropdowns like the model
-  // picker re-render when the provider changes).
-  const currentBackendState: CliAgentBackendState | null = isOpenCode
-    ? agent.backendState ?? { model: agent.model ?? undefined }
+  // Mirror the live per-backend state from the hook so the popover pickers
+  // reflect any overrides the user has applied (and so dependent dropdowns
+  // like the model picker re-render when the provider changes).
+  const currentBackendState = isOpenCode
+    ? (agent.backendState ?? { model: agent.model ?? undefined })
     : null
 
   return (
@@ -163,6 +162,14 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
           hideCost={headerBackend === 'claude-code'}
         />
         <div className="cli-agent-pane__header-spacer" />
+        {isOpenCode && agent.sessionId && currentBackendState && (
+          <SessionSettingsPopover
+            sessionId={agent.sessionId}
+            state={currentBackendState}
+            onPatch={agent.updateSessionConfig}
+            disabled={isActive}
+          />
+        )}
         {isOpenCode && (
           <SessionMenu
             sessionId={agent.sessionId}
@@ -183,19 +190,6 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
           </button>
         )}
       </div>
-
-      {/* OpenCode-only collapsible panels */}
-      {isOpenCode && currentBackendState && (
-        <div style={{ padding: '4px 8px 0 8px' }}>
-          <SessionSettingsPanel
-            sessionId={agent.sessionId}
-            backendState={currentBackendState}
-            onPatch={agent.updateSessionConfig}
-          />
-          <DiagnosticsPanel workspaceId={workspaceId ?? null} sessionId={agent.sessionId} />
-          <TuiControlPanel sessionId={agent.sessionId} />
-        </div>
-      )}
 
       {toast && (
         <div

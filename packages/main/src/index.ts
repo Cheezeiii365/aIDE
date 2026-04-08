@@ -546,6 +546,14 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
       nativeSessionWatcher.loadMessages(claudeSessionId),
     permissionTier: permConfig.permissionTier,
     autoApprove: permConfig.autoApprove,
+    opencodeDefaults: {
+      providerID: resolved['agent.opencode.defaultProvider'] || undefined,
+      modelID: resolved['agent.opencode.defaultModel'] || undefined,
+      agent: resolved['agent.opencode.defaultAgent'] || undefined,
+      mode: resolved['agent.opencode.defaultMode'] || undefined,
+      systemPromptOverride: resolved['agent.opencode.defaultSystemPrompt'] || undefined,
+      toolToggles: resolved['agent.opencode.defaultToolToggles'] ?? undefined,
+    },
     onWorkloadChanged: () => {
       runtime.refreshWorkload()
     },
@@ -1371,15 +1379,25 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
   if (key.startsWith('agent.')) {
     const config = loadLlmConfig()
     const permConfig = loadPermissionConfig()
+    const appDefs = resolveAppDefaults(store)
     for (const runtime of runtimeRegistry.list()) {
       getAgentManager(runtime)?.updateConfig(config)
       getAgentManager(runtime)?.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
       // Mirror permission updates into the CLI agent manager so OpenCode
       // permission decisions stay in sync with live tier changes.
-      getCliAgentManager(runtime)?.updatePermissions(
-        permConfig.permissionTier,
-        permConfig.autoApprove,
-      )
+      const cm = getCliAgentManager(runtime)
+      cm?.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+      // Refresh OpenCode session-default seeds whenever any opencode default
+      // is touched. New sessions started afterwards inherit the new values;
+      // existing sessions retain their per-session overrides.
+      cm?.updateOpencodeDefaults({
+        providerID: appDefs['agent.opencode.defaultProvider'] || undefined,
+        modelID: appDefs['agent.opencode.defaultModel'] || undefined,
+        agent: appDefs['agent.opencode.defaultAgent'] || undefined,
+        mode: appDefs['agent.opencode.defaultMode'] || undefined,
+        systemPromptOverride: appDefs['agent.opencode.defaultSystemPrompt'] || undefined,
+        toolToggles: appDefs['agent.opencode.defaultToolToggles'] ?? undefined,
+      })
       runtime.refreshWorkload()
     }
   }

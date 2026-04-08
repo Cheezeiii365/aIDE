@@ -4,10 +4,13 @@ import type {
   CliAgentSession,
   OpenCodeFileEntry,
   OpenCodeFindResult,
+  OpenCodePathInfo,
+  OpenCodeServerInfo,
   OpenCodeShellResult,
   OpenCodeSymbolResult,
 } from '@aide/shared'
 import { OpenCodeProvidersTab } from '../settings/OpenCodeProvidersTab'
+import '../../styles/cli-agent-settings.css'
 
 interface OpenCodeToolsPaneParams {
   workspaceId?: string
@@ -17,10 +20,13 @@ interface OpenCodeToolsPaneParams {
 
 type Tab = 'files' | 'search' | 'shell' | 'status' | 'providers'
 
+const TABS: Tab[] = ['files', 'search', 'shell', 'status', 'providers']
+
 /**
  * Dockview pane exposing OpenCode's file/find/shell/lsp endpoints as
- * opt-in commands. Only useful when an OpenCode session is active in the
- * workspace; otherwise shows an empty state.
+ * opt-in commands. The Status tab also hosts diagnostics + TUI controls
+ * + the Initialize AGENTS.md command, which used to live as cluttered
+ * disclosures inside the chat pane itself.
  */
 export function OpenCodeToolsPane({ params }: IDockviewPanelProps<OpenCodeToolsPaneParams>) {
   const { workspaceId, sessionId: paramSessionId } = params ?? {}
@@ -42,52 +48,43 @@ export function OpenCodeToolsPane({ params }: IDockviewPanelProps<OpenCodeToolsP
 
   if (!sessionId) {
     return (
-      <div style={{ padding: 12, fontSize: 12, opacity: 0.6 }}>
-        Open an OpenCode chat in this workspace to use OpenCode tools.
+      <div className="oc-tools-pane">
+        <div className="oc-tools-pane__empty">
+          open an opencode chat in this workspace to use opencode tools
+        </div>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', fontSize: 12 }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          padding: 4,
-          borderBottom: '1px solid var(--color-border, rgba(255,255,255,0.1))',
-        }}
-      >
-        {(['files', 'search', 'shell', 'status', 'providers'] as const).map((t) => (
+    <div className="oc-tools-pane">
+      <nav className="oc-tools-pane__tabs" role="tablist">
+        {TABS.map((t) => (
           <button
             key={t}
+            role="tab"
+            aria-selected={tab === t}
             onClick={() => setTab(t)}
-            style={{
-              padding: '2px 8px',
-              background:
-                tab === t
-                  ? 'var(--color-accent-bg, rgba(120,180,255,0.2))'
-                  : 'transparent',
-              border: 'none',
-              color: 'inherit',
-              borderRadius: 3,
-              cursor: 'pointer',
-            }}
+            className={`oc-tools-pane__tab${tab === t ? ' is-active' : ''}`}
           >
             {t}
           </button>
         ))}
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+      </nav>
+      <div className="oc-tools-pane__body">
         {tab === 'files' && <FilesTab sessionId={sessionId} />}
         {tab === 'search' && <SearchTab sessionId={sessionId} />}
         {tab === 'shell' && <ShellTab sessionId={sessionId} />}
-        {tab === 'status' && <StatusTab sessionId={sessionId} />}
+        {tab === 'status' && (
+          <StatusTab sessionId={sessionId} workspaceId={workspaceId ?? null} />
+        )}
         {tab === 'providers' && <OpenCodeProvidersTab workspaceId={workspaceId ?? null} />}
       </div>
     </div>
   )
 }
+
+// ─── Files ─────────────────────────────────────────────────────────
 
 function FilesTab({ sessionId }: { sessionId: string }) {
   const [path, setPath] = useState('.')
@@ -104,21 +101,23 @@ function FilesTab({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     void list('.')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+    <div className="oc-status">
+      <div className="oc-status__inline">
         <input
           value={path}
           onChange={(e) => setPath(e.target.value)}
-          style={{ flex: 1, fontSize: 11 }}
           placeholder="path…"
         />
-        <button onClick={() => void list(path)}>List</button>
+        <button className="oc-status__btn" onClick={() => void list(path)}>
+          List
+        </button>
       </div>
-      {error && <div style={{ color: 'tomato' }}>{error}</div>}
-      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+      {error && <div className="oc-error">{error}</div>}
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
         {entries.map((e) => (
           <li
             key={e.path}
@@ -133,29 +132,18 @@ function FilesTab({ sessionId }: { sessionId: string }) {
                 })()
               }
             }}
-            style={{ cursor: 'pointer', padding: '1px 0' }}
+            style={{ cursor: 'pointer', padding: '2px 0', color: e.isDirectory ? 'var(--accent)' : 'var(--text-primary)' }}
           >
-            {e.isDirectory ? '📁' : '📄'} {e.name}
+            {e.isDirectory ? '▸ ' : '  '}{e.name}
           </li>
         ))}
       </ul>
-      {content !== null && (
-        <pre
-          style={{
-            marginTop: 8,
-            padding: 6,
-            maxHeight: 200,
-            overflow: 'auto',
-            background: 'var(--color-surface-1, rgba(0,0,0,0.2))',
-            fontSize: 10,
-          }}
-        >
-          {content}
-        </pre>
-      )}
+      {content !== null && <pre className="oc-status__pre">{content}</pre>}
     </div>
   )
 }
+
+// ─── Search ────────────────────────────────────────────────────────
 
 function SearchTab({ sessionId }: { sessionId: string }) {
   const [query, setQuery] = useState('')
@@ -180,12 +168,16 @@ function SearchTab({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-        <select value={mode} onChange={(e) => setMode(e.target.value as 'text')}>
-          <option value="text">Text</option>
-          <option value="files">Files</option>
-          <option value="symbols">Symbols</option>
+    <div className="oc-status">
+      <div className="oc-status__inline">
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as 'text')}
+          style={{ padding: '3px 6px', background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: 2, fontFamily: 'var(--font-mono)', fontSize: 10 }}
+        >
+          <option value="text">text</option>
+          <option value="files">files</option>
+          <option value="symbols">symbols</option>
         </select>
         <input
           value={query}
@@ -194,21 +186,24 @@ function SearchTab({ sessionId }: { sessionId: string }) {
             if (e.key === 'Enter') void run()
           }}
           placeholder="query…"
-          style={{ flex: 1, fontSize: 11 }}
         />
-        <button onClick={() => void run()}>Find</button>
+        <button className="oc-status__btn" onClick={() => void run()}>
+          Find
+        </button>
       </div>
-      {error && <div style={{ color: 'tomato' }}>{error}</div>}
-      <ul style={{ margin: 0, padding: 0, listStyle: 'none', fontSize: 11 }}>
+      {error && <div className="oc-error">{error}</div>}
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
         {results.map((r, i) => (
           <li key={i} style={{ padding: '2px 0' }}>
-            <pre style={{ margin: 0, fontSize: 10 }}>{JSON.stringify(r, null, 0)}</pre>
+            <pre className="oc-status__pre">{JSON.stringify(r, null, 0)}</pre>
           </li>
         ))}
       </ul>
     </div>
   )
 }
+
+// ─── Shell ─────────────────────────────────────────────────────────
 
 function ShellTab({ sessionId }: { sessionId: string }) {
   const [cmd, setCmd] = useState('')
@@ -227,8 +222,8 @@ function ShellTab({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+    <div className="oc-status">
+      <div className="oc-status__inline">
         <input
           value={cmd}
           onChange={(e) => setCmd(e.target.value)}
@@ -236,24 +231,14 @@ function ShellTab({ sessionId }: { sessionId: string }) {
             if (e.key === 'Enter') void run()
           }}
           placeholder="shell command…"
-          style={{ flex: 1, fontSize: 11, fontFamily: 'monospace' }}
         />
-        <button onClick={() => void run()} disabled={busy}>
+        <button className="oc-status__btn" disabled={busy} onClick={() => void run()}>
           Run
         </button>
       </div>
-      {error && <div style={{ color: 'tomato' }}>{error}</div>}
+      {error && <div className="oc-error">{error}</div>}
       {output && (
-        <pre
-          style={{
-            margin: 0,
-            padding: 6,
-            background: 'var(--color-surface-1, rgba(0,0,0,0.2))',
-            fontSize: 10,
-            maxHeight: 240,
-            overflow: 'auto',
-          }}
-        >
+        <pre className="oc-status__pre" style={{ maxHeight: 240 }}>
           [exit {output.exitCode}]{'\n'}
           {output.stdout}
           {output.stderr ? `\n--- stderr ---\n${output.stderr}` : ''}
@@ -263,29 +248,238 @@ function ShellTab({ sessionId }: { sessionId: string }) {
   )
 }
 
-function StatusTab({ sessionId }: { sessionId: string }) {
+// ─── Status (formerly the cluttered DiagnosticsPanel + TuiControlPanel) ───
+
+function StatusTab({
+  sessionId,
+  workspaceId,
+}: {
+  sessionId: string
+  workspaceId: string | null
+}) {
+  const [server, setServer] = useState<OpenCodeServerInfo | null>(null)
+  const [paths, setPaths] = useState<OpenCodePathInfo | null>(null)
   const [lsp, setLsp] = useState<unknown>(null)
   const [formatter, setFormatter] = useState<unknown>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     void (async () => {
-      const l = await window.api.cliAgentLspStatus(sessionId)
-      setLsp(l.status)
-      const f = await window.api.cliAgentFormatterStatus(sessionId)
-      setFormatter(f.status)
+      try {
+        if (workspaceId) {
+          const s = (await window.api.cliAgentServerInfo(workspaceId)) as OpenCodeServerInfo | null
+          if (!cancelled) setServer(s)
+        }
+        const p = await window.api.cliAgentPathGet(sessionId)
+        if (!cancelled && !p.error) setPaths((p.paths as OpenCodePathInfo) ?? null)
+        const l = await window.api.cliAgentLspStatus(sessionId)
+        if (!cancelled) setLsp(l.status)
+        const f = await window.api.cliAgentFormatterStatus(sessionId)
+        if (!cancelled) setFormatter(f.status)
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+      }
     })()
-  }, [sessionId])
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, workspaceId])
+
+  const flash = (text: string) => {
+    setToast(text)
+    window.setTimeout(() => setToast(null), 2400)
+  }
+
+  const onInitAgents = async () => {
+    const result = await window.api.cliAgentSessionInit(sessionId)
+    if (result.error) flash(`error: ${result.error}`)
+    else flash('AGENTS.md initialization started')
+  }
 
   return (
-    <div>
-      <h4 style={{ margin: '4px 0' }}>LSP</h4>
-      <pre style={{ fontSize: 10, maxHeight: 120, overflow: 'auto' }}>
-        {JSON.stringify(lsp, null, 2)}
-      </pre>
-      <h4 style={{ margin: '4px 0' }}>Formatter</h4>
-      <pre style={{ fontSize: 10, maxHeight: 120, overflow: 'auto' }}>
-        {JSON.stringify(formatter, null, 2)}
-      </pre>
+    <div className="oc-status">
+      {error && <div className="oc-error">{error}</div>}
+      {toast && (
+        <div
+          style={{
+            padding: '4px 8px',
+            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+            border: '1px solid var(--accent)',
+            borderRadius: 2,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9,
+            color: 'var(--text-primary)',
+            letterSpacing: '0.04em',
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
+      {/* SERVER */}
+      <section className="oc-status__section">
+        <h3 className="oc-status__heading">Server</h3>
+        {server ? (
+          <dl className="oc-status__row">
+            <dt>url</dt>
+            <dd>{server.url}</dd>
+            <dt>mode</dt>
+            <dd>{server.mode}</dd>
+            <dt>pid</dt>
+            <dd>{server.pid ?? '—'}</dd>
+            <dt>started</dt>
+            <dd>{new Date(server.startedAt).toLocaleTimeString()}</dd>
+          </dl>
+        ) : (
+          <div className="oc-empty">no server info</div>
+        )}
+      </section>
+
+      {/* PATHS */}
+      {paths && (
+        <section className="oc-status__section">
+          <h3 className="oc-status__heading">Paths</h3>
+          <dl className="oc-status__row">
+            {paths.config && (
+              <>
+                <dt>config</dt>
+                <dd>{paths.config}</dd>
+              </>
+            )}
+            {paths.data && (
+              <>
+                <dt>data</dt>
+                <dd>{paths.data}</dd>
+              </>
+            )}
+            {paths.cache && (
+              <>
+                <dt>cache</dt>
+                <dd>{paths.cache}</dd>
+              </>
+            )}
+            {paths.log && (
+              <>
+                <dt>log</dt>
+                <dd>{paths.log}</dd>
+              </>
+            )}
+          </dl>
+        </section>
+      )}
+
+      {/* LSP / FORMATTER */}
+      <section className="oc-status__section">
+        <h3 className="oc-status__heading">LSP</h3>
+        <pre className="oc-status__pre">{JSON.stringify(lsp, null, 2)}</pre>
+      </section>
+      <section className="oc-status__section">
+        <h3 className="oc-status__heading">Formatter</h3>
+        <pre className="oc-status__pre">{JSON.stringify(formatter, null, 2)}</pre>
+      </section>
+
+      {/* COMMANDS — pulled in from the old SessionMenu */}
+      <section className="oc-status__section">
+        <h3 className="oc-status__heading">Commands</h3>
+        <button className="oc-status__btn" onClick={() => void onInitAgents()}>
+          Initialize AGENTS.md
+        </button>
+        <button
+          className="oc-status__btn"
+          onClick={() =>
+            void window.api
+              .cliAgentLogWrite(sessionId, 'log from aIDE diagnostics', 'INFO')
+              .then(() => flash('log line written'))
+          }
+        >
+          Write test log
+        </button>
+      </section>
+
+      {/* ADVANCED — opt-in TUI controls (mostly useful for power users
+          driving an external opencode TUI alongside aIDE) */}
+      <details className="oc-status__advanced">
+        <summary>Advanced · TUI controls</summary>
+        <div className="oc-status__advanced-body">
+          <TuiButtons sessionId={sessionId} flash={flash} />
+        </div>
+      </details>
     </div>
+  )
+}
+
+function TuiButtons({
+  sessionId,
+  flash,
+}: {
+  sessionId: string
+  flash: (text: string) => void
+}) {
+  const [appendText, setAppendText] = useState('')
+  const [execCmd, setExecCmd] = useState('')
+
+  const call = async (label: string, fn: () => Promise<{ error?: string }>) => {
+    const r = await fn()
+    if (r.error) flash(`${label}: ${r.error}`)
+    else flash(`${label} ok`)
+  }
+
+  return (
+    <>
+      <div className="oc-status__btnrow">
+        <button className="oc-status__btn" onClick={() => void call('help', () => window.api.cliAgentTuiOpenHelp(sessionId))}>
+          Help
+        </button>
+        <button className="oc-status__btn" onClick={() => void call('sessions', () => window.api.cliAgentTuiOpenSessions(sessionId))}>
+          Sessions
+        </button>
+        <button className="oc-status__btn" onClick={() => void call('themes', () => window.api.cliAgentTuiOpenThemes(sessionId))}>
+          Themes
+        </button>
+        <button className="oc-status__btn" onClick={() => void call('models', () => window.api.cliAgentTuiOpenModels(sessionId))}>
+          Models
+        </button>
+        <button className="oc-status__btn" onClick={() => void call('submit', () => window.api.cliAgentTuiSubmitPrompt(sessionId))}>
+          Submit
+        </button>
+        <button className="oc-status__btn" onClick={() => void call('clear', () => window.api.cliAgentTuiClearPrompt(sessionId))}>
+          Clear
+        </button>
+      </div>
+      <div className="oc-status__inline">
+        <input
+          value={appendText}
+          onChange={(e) => setAppendText(e.target.value)}
+          placeholder="text to append…"
+        />
+        <button
+          className="oc-status__btn"
+          onClick={() => {
+            void call('append', () => window.api.cliAgentTuiAppendPrompt(sessionId, appendText))
+            setAppendText('')
+          }}
+        >
+          Append
+        </button>
+      </div>
+      <div className="oc-status__inline">
+        <input
+          value={execCmd}
+          onChange={(e) => setExecCmd(e.target.value)}
+          placeholder="tui command…"
+        />
+        <button
+          className="oc-status__btn"
+          onClick={() => {
+            void call('execute', () => window.api.cliAgentTuiExecuteCommand(sessionId, execCmd))
+            setExecCmd('')
+          }}
+        >
+          Execute
+        </button>
+      </div>
+    </>
   )
 }

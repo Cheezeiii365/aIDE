@@ -88,6 +88,21 @@ interface PendingPermission {
   resolve: (response: 'always' | 'once' | 'reject') => void
 }
 
+/**
+ * User-scoped defaults applied as the *initial* `backendStates['opencode']`
+ * for new sessions. Resolved once at construction (and refreshed via
+ * `updateOpencodeDefaults` when settings change). Per-session edits made
+ * from the chat pane never write back to these.
+ */
+export interface OpencodeSessionDefaults {
+  providerID?: string
+  modelID?: string
+  agent?: string
+  mode?: string
+  systemPromptOverride?: string
+  toolToggles?: Record<string, boolean>
+}
+
 export interface CliAgentManagerOpts {
   workspaceRoot: string
   workspaceId?: string
@@ -99,6 +114,7 @@ export interface CliAgentManagerOpts {
   loadClaudeHistory?: (claudeSessionId: string) => Promise<CliAgentMessage[]>
   permissionTier?: PermissionTier
   autoApprove?: Record<string, boolean | ToolPermissionConfig>
+  opencodeDefaults?: OpencodeSessionDefaults
   /** Called when pending approvals / running session counts change. */
   onWorkloadChanged?: () => void
 }
@@ -169,6 +185,7 @@ export class CliAgentManager implements ToolApprovalOwner {
 
   private permissionTier: PermissionTier
   private autoApprove: Record<string, boolean | ToolPermissionConfig>
+  private opencodeDefaults: OpencodeSessionDefaults
   private readonly onWorkloadChanged?: () => void
 
   private openCodeHost: OpenCodeServerHost | null = null
@@ -185,6 +202,7 @@ export class CliAgentManager implements ToolApprovalOwner {
     this.loadClaudeHistory = opts.loadClaudeHistory ?? null
     this.permissionTier = opts.permissionTier ?? 'confirm'
     this.autoApprove = opts.autoApprove ?? {}
+    this.opencodeDefaults = opts.opencodeDefaults ?? {}
     this.onWorkloadChanged = opts.onWorkloadChanged
   }
 
@@ -212,6 +230,14 @@ export class CliAgentManager implements ToolApprovalOwner {
 
     let existingMessages = persisted.messages ?? []
     const backendStates = persisted.backendStates ?? {}
+
+    // Seed opencode state from user defaults *only* on the first time we
+    // touch this conversation as opencode (no persisted opencode block).
+    // We never overwrite existing per-session overrides.
+    if (backend === 'opencode' && !backendStates['opencode']) {
+      const seed = this.buildOpencodeSeed()
+      if (seed) backendStates['opencode'] = seed
+    }
 
     if (!backendStates['claude-code']?.sessionId && conversationId?.startsWith('claude-native:')) {
       const raw = conversationId.slice('claude-native:'.length)
@@ -297,6 +323,12 @@ export class CliAgentManager implements ToolApprovalOwner {
       return { error: 'Native Claude conversations cannot switch to a different backend.' }
     }
 
+    // First time this conversation switches to opencode → seed defaults.
+    if (backend === 'opencode' && !session.backendStates['opencode']) {
+      const seed = this.buildOpencodeSeed()
+      if (seed) session.backendStates['opencode'] = seed
+    }
+
     session.backend = backend
     session.model = session.backendStates[backend]?.model
     session.sessionToolNames = undefined
@@ -305,6 +337,36 @@ export class CliAgentManager implements ToolApprovalOwner {
     await this.broadcastConversationList(session.workspaceId)
     this.emitStatus(session)
     return { success: true }
+  }
+
+  /**
+   * Build a fresh `CliAgentBackendState` for an opencode session from the
+   * user's defaults. Returns `null` when no defaults are set so we don't
+   * pollute the persisted state with empty objects.
+   */
+  private buildOpencodeSeed(): CliAgentBackendState | null {
+    const d = this.opencodeDefaults
+    const hasAny =
+      !!d.providerID ||
+      !!d.modelID ||
+      !!d.agent ||
+      !!d.mode ||
+      !!d.systemPromptOverride ||
+      (d.toolToggles && Object.keys(d.toolToggles).length > 0)
+    if (!hasAny) return null
+    const seed: CliAgentBackendState = {}
+    if (d.providerID && d.modelID) {
+      seed.providerID = d.providerID
+      seed.modelID = d.modelID
+      seed.model = `${d.providerID}/${d.modelID}`
+    }
+    if (d.agent) seed.agent = d.agent
+    if (d.mode) seed.mode = d.mode
+    if (d.systemPromptOverride) seed.systemPromptOverride = d.systemPromptOverride
+    if (d.toolToggles && Object.keys(d.toolToggles).length > 0) {
+      seed.toolToggles = { ...d.toolToggles }
+    }
+    return seed
   }
 
   async send(sessionId: string, content: string): Promise<{ success: true } | { error: string }> {
@@ -427,6 +489,16 @@ export class CliAgentManager implements ToolApprovalOwner {
   ): void {
     this.permissionTier = tier
     this.autoApprove = autoApprove
+  }
+
+  /**
+   * Replace the opencode session-default seed (called from the settings-
+   * changed handler when any `agent.opencode.default*` key is touched).
+   * Existing sessions keep their per-session overrides; the new defaults
+   * only apply to sessions created/switched-into-opencode after this call.
+   */
+  updateOpencodeDefaults(defaults: OpencodeSessionDefaults): void {
+    this.opencodeDefaults = defaults
   }
 
   getRunningSessionCount(): number {

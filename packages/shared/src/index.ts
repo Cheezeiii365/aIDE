@@ -523,6 +523,16 @@ export interface AideProjectSettings {
   'agent.claudeCodePath'?: string
   'agent.opencodePath'?: string
   'agent.codexPath'?: string
+
+  // OpenCode-specific defaults (seed values for new opencode sessions).
+  // Per-session overrides happen via the chat pane gear menu and never
+  // mutate these defaults.
+  'agent.opencode.defaultProvider'?: string
+  'agent.opencode.defaultModel'?: string
+  'agent.opencode.defaultAgent'?: string
+  'agent.opencode.defaultMode'?: string
+  'agent.opencode.defaultSystemPrompt'?: string
+  'agent.opencode.defaultToolToggles'?: Record<string, boolean>
 }
 
 // Fully resolved settings (no optional fields)
@@ -554,6 +564,14 @@ export interface ResolvedSettings {
   'agent.claudeCodePath': string
   'agent.opencodePath': string
   'agent.codexPath': string
+
+  // OpenCode-specific defaults
+  'agent.opencode.defaultProvider': string
+  'agent.opencode.defaultModel': string
+  'agent.opencode.defaultAgent': string
+  'agent.opencode.defaultMode': string
+  'agent.opencode.defaultSystemPrompt': string
+  'agent.opencode.defaultToolToggles': Record<string, boolean>
 }
 
 /**
@@ -571,6 +589,14 @@ export const SENSITIVE_AGENT_KEYS: ReadonlySet<string> = new Set([
   'agent.codexPath',
   'agent.permissionTier',
   'agent.autoApprove',
+  // OpenCode defaults are user preferences (model choice, system prompt) that
+  // shouldn't be silently overridden by a checked-in workspace settings file.
+  'agent.opencode.defaultProvider',
+  'agent.opencode.defaultModel',
+  'agent.opencode.defaultAgent',
+  'agent.opencode.defaultMode',
+  'agent.opencode.defaultSystemPrompt',
+  'agent.opencode.defaultToolToggles',
 ])
 
 // .aide/local/workspace.json

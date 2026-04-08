@@ -1,0 +1,660 @@
+/* ============================================================
+ * cli-agent-settings.css
+ *
+ * Refined terminal-minimal styling for the OpenCode session
+ * settings popover, the trimmed CliAgentPane header chrome,
+ * and the OpenCodeToolsPane status sub-sections.
+ *
+ * Design language:
+ *   - hairline 1px borders, no shadows
+ *   - 2px corner radii everywhere (sharp, never rounded)
+ *   - all-caps mono labels with 0.08em tracking
+ *   - transparent inputs with focus underlines instead of fills
+ *   - high information density without crowding
+ * ============================================================ */
+
+/* ─── Popover trigger (gear button in pane header) ─────────────── */
+
+.oc-settings-pop {
+  position: relative;
+  display: inline-block;
+}
+
+.oc-settings-pop__trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  transition: color var(--motion-fast), border-color var(--motion-fast),
+    background var(--motion-fast);
+}
+
+.oc-settings-pop__trigger:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+  background: var(--bg-hover);
+}
+
+.oc-settings-pop__trigger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.oc-settings-pop__trigger[aria-expanded='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.oc-settings-pop__gear {
+  display: inline-block;
+  transform: translateY(-1px);
+}
+
+/* small dot indicating per-session overrides exist */
+.oc-settings-pop__dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ─── Popover panel ───────────────────────────────────────────── */
+
+.oc-settings-pop__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  width: 320px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  /* Subtle dot grid backdrop — adds the terminal feel without noise. */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--text-muted) 10%, transparent) 0.5px,
+    transparent 0.5px
+  );
+  background-size: 12px 12px;
+  /* A single hairline highlight rather than a drop shadow. */
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.4),
+    0 0 0 1px var(--border-base);
+  animation: oc-pop-in 100ms ease-out;
+}
+
+@keyframes oc-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header strip */
+.oc-settings-pop__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.oc-settings-pop__title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.oc-settings-pop__sid {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Tab strip */
+.oc-settings-pop__tabs {
+  display: flex;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.oc-settings-pop__tab {
+  flex: 1;
+  padding: 6px 4px;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+  margin-bottom: -1px;
+}
+
+.oc-settings-pop__tab:hover {
+  color: var(--text-secondary);
+}
+
+.oc-settings-pop__tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+/* Body */
+.oc-settings-pop__body {
+  padding: 12px;
+  min-height: 100px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+/* Footer */
+.oc-settings-pop__foot {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.oc-settings-pop__hint {
+  display: block;
+  text-align: center;
+}
+
+/* ─── Tab content primitives ──────────────────────────────────── */
+
+.oc-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oc-field__label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.oc-input {
+  width: 100%;
+  padding: 4px 6px;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+
+.oc-input:hover:not(:disabled) {
+  border-color: var(--border-base);
+}
+
+.oc-input:focus {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.oc-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.oc-input--area {
+  font-family: var(--font-mono);
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.5;
+}
+
+select.oc-input {
+  /* Native arrow looks fine and matches the rest of the IDE chrome. */
+  appearance: auto;
+  cursor: pointer;
+}
+
+.oc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+  border-left: 1px solid var(--accent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.oc-meta__flags {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
+.oc-meta__cost {
+  color: var(--text-muted);
+}
+
+.oc-desc {
+  margin: 0;
+  padding: 4px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-left: 1px solid var(--border-subtle);
+  font-style: italic;
+}
+
+.oc-hint {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.oc-error {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-error);
+  padding: 4px 6px;
+  border-left: 1px solid var(--text-error);
+  background: color-mix(in srgb, var(--text-error) 6%, transparent);
+}
+
+.oc-empty {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 16px 8px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Tools list ──────────────────────────────────────────────── */
+
+.oc-tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oc-tools__item {
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.oc-tools__item:last-child {
+  border-bottom: none;
+}
+
+.oc-tools__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.oc-tools__row input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.oc-tools__name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-primary);
+}
+
+.oc-tools__desc {
+  display: block;
+  margin-left: 18px;
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* ─── Trimmed kebab menu (re-styled to match popover) ─────────── */
+
+.oc-kebab {
+  position: relative;
+  display: inline-block;
+}
+
+.oc-kebab__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  transition: color var(--motion-fast), border-color var(--motion-fast),
+    background var(--motion-fast);
+}
+
+.oc-kebab__trigger:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+  background: var(--bg-hover);
+}
+
+.oc-kebab__trigger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.oc-kebab__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  min-width: 160px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  padding: 4px 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.4),
+    0 0 0 1px var(--border-base);
+  animation: oc-pop-in 100ms ease-out;
+}
+
+.oc-kebab__sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-subtle);
+}
+
+.oc-kebab__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+.oc-kebab__item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-selected);
+}
+
+.oc-kebab__item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.oc-kebab__item--danger {
+  color: var(--text-error);
+}
+
+.oc-kebab__item--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-error) 10%, transparent);
+}
+
+/* ─── OpenCodeToolsPane refinements (Status tab) ──────────────── */
+
+.oc-tools-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.oc-tools-pane__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-elevated);
+  padding: 0 4px;
+}
+
+.oc-tools-pane__tab {
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: -1px;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+
+.oc-tools-pane__tab:hover {
+  color: var(--text-secondary);
+}
+
+.oc-tools-pane__tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.oc-tools-pane__body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+}
+
+.oc-tools-pane__empty {
+  padding: 24px 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* Status tab specifically */
+
+.oc-status {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.oc-status__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oc-status__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.oc-status__heading::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.oc-status__row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.oc-status__row dt {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+}
+
+.oc-status__row dd {
+  margin: 0;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.oc-status__pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.oc-status__btn {
+  align-self: flex-start;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: all var(--motion-fast);
+}
+
+.oc-status__btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.oc-status__advanced {
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-muted) 4%, transparent);
+}
+
+.oc-status__advanced summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  outline: none;
+}
+
+.oc-status__advanced summary:hover {
+  color: var(--text-secondary);
+}
+
+.oc-status__advanced[open] summary {
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.oc-status__advanced-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oc-status__btnrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.oc-status__inline {
+  display: flex;
+  gap: 4px;
+}
+
+.oc-status__inline input {
+  flex: 1;
+  padding: 3px 6px;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  outline: none;
+}
+
+.oc-status__inline input:focus {
+  border-color: var(--accent);
+}
