@@ -10,23 +10,29 @@
  * loop that normalizes SDK messages into CliAgentMessage and emits them
  * via IPC. Session continuity uses the SDK's `resume` option.
  *
- * The SDK needs `pathToClaudeCodeExecutable` to find the Claude Code CLI.
- * Resolution order: explicit setting → bundled in app → workspace
- * node_modules → global `claude` in PATH.
+ * The SDK ships its own `cli.js`, but packaged Electron apps need that file
+ * unpacked onto the real filesystem so a child Node process can execute it.
+ * Resolution order: explicit setting -> bundled Agent SDK in app -> legacy
+ * bundled Claude Code package -> workspace node_modules -> global `claude`.
  */
 
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import { existsSync } from 'fs'
-import { join, dirname } from 'path'
+import { join } from 'path'
 import { app, type WebContents } from 'electron'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
-  AgentBackend, CliAgentProcessStatus, CliAgentMessage,
-  CliAgentSession, CliAgentStreamDelta,
-  CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
+  AgentBackend,
+  CliAgentProcessStatus,
+  CliAgentMessage,
+  CliAgentSession,
+  CliAgentStreamDelta,
+  CliAgentStatusPayload,
+  CliAgentResultPayload,
+  CliAgentMessagePayload,
   ConversationListChangedPayload,
 } from '@aide/shared'
 import type { ConversationStore } from './conversationStore'
@@ -67,11 +73,12 @@ export interface CliAgentManagerOpts {
 }
 
 function comparableHistoryCount(messages: CliAgentMessage[]): number {
-  return messages.filter((message) =>
-    message.type === 'user' ||
-    message.type === 'assistant' ||
-    message.type === 'tool_use' ||
-    message.type === 'tool_result'
+  return messages.filter(
+    (message) =>
+      message.type === 'user' ||
+      message.type === 'assistant' ||
+      message.type === 'tool_use' ||
+      message.type === 'tool_result',
   ).length
 }
 
@@ -131,7 +138,10 @@ export class CliAgentManager {
       if (meta?.claudeSessionId) {
         existingClaudeSessionId = meta.claudeSessionId
       }
-      const saved = await this.conversationStore.loadMessages(conversationId) as { messages?: CliAgentMessage[], claudeSessionId?: string } | null
+      const saved = (await this.conversationStore.loadMessages(conversationId)) as {
+        messages?: CliAgentMessage[]
+        claudeSessionId?: string
+      } | null
       if (saved?.messages) {
         existingMessages = saved.messages
       }
@@ -199,10 +209,7 @@ export class CliAgentManager {
    * Send a prompt to the CLI agent. Starts an SDK query that streams
    * messages back via IPC. Uses `resume` for conversation continuity.
    */
-  async send(
-    sessionId: string,
-    content: string,
-  ): Promise<{ success: true } | { error: string }> {
+  async send(sessionId: string, content: string): Promise<{ success: true } | { error: string }> {
     const session = this.sessions.get(sessionId)
     if (!session) return { error: 'Session not found' }
 
@@ -228,9 +235,12 @@ export class CliAgentManager {
     session.lastError = undefined
 
     // Fire and forget the consumption loop
-    this.consumeQuery(session, content).catch(err => {
+    this.consumeQuery(session, content).catch((err) => {
       const errMsg = err instanceof Error ? err.message : String(err)
-      console.error(`[CliAgentManager] Unhandled consumeQuery error for session ${session.id}:`, errMsg)
+      console.error(
+        `[CliAgentManager] Unhandled consumeQuery error for session ${session.id}:`,
+        errMsg,
+      )
       if (err instanceof Error && err.stack) console.error(`[CliAgentManager] Stack:`, err.stack)
       session.lastError = errMsg
       this.setStatus(session, 'error')
@@ -340,10 +350,26 @@ export class CliAgentManager {
     const bundledCandidates: string[] = []
     if (app.isPackaged) {
       bundledCandidates.push(
-        join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+        join(
+          process.resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          '@anthropic-ai',
+          'claude-agent-sdk',
+          'cli.js',
+        ),
+        join(
+          process.resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          '@anthropic-ai',
+          'claude-code',
+          'cli.js',
+        ),
       )
     }
     bundledCandidates.push(
+      join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'),
       join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
     )
     for (const candidate of bundledCandidates) {
@@ -355,11 +381,16 @@ export class CliAgentManager {
     }
 
     // 3. Workspace-local installation
-    const workspaceCli = join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-    if (existsSync(workspaceCli)) {
-      console.log(`[CliAgentManager] Using workspace Claude Code: ${workspaceCli}`)
-      this.resolvedClaudeCodePath = workspaceCli
-      return workspaceCli
+    const workspaceCandidates = [
+      join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'),
+      join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+    ]
+    for (const candidate of workspaceCandidates) {
+      if (existsSync(candidate)) {
+        console.log(`[CliAgentManager] Using workspace Claude Code: ${candidate}`)
+        this.resolvedClaudeCodePath = candidate
+        return candidate
+      }
     }
 
     // 4. Global `claude` in PATH
@@ -380,10 +411,7 @@ export class CliAgentManager {
 
   // ─── SDK Query Consumption ──────────────────
 
-  private async consumeQuery(
-    session: CliAgentSessionInternal,
-    prompt: string,
-  ): Promise<void> {
+  private async consumeQuery(session: CliAgentSessionInternal, prompt: string): Promise<void> {
     const abortController = new AbortController()
     session.abortController = abortController
 
@@ -391,7 +419,9 @@ export class CliAgentManager {
     console.log(`[CliAgentManager] Starting SDK query for session ${session.id}`)
     console.log(`[CliAgentManager]   cwd: ${cwd}`)
     console.log(`[CliAgentManager]   resume: ${session.claudeSessionId ?? '(new session)'}`)
-    console.log(`[CliAgentManager]   prompt: ${prompt.slice(0, 200)}${prompt.length > 200 ? '...' : ''}`)
+    console.log(
+      `[CliAgentManager]   prompt: ${prompt.slice(0, 200)}${prompt.length > 200 ? '...' : ''}`,
+    )
 
     // Collect stderr output for diagnostics
     const stderrChunks: string[] = []
@@ -399,7 +429,8 @@ export class CliAgentManager {
     // Resolve the Claude Code executable path for the SDK
     const executablePath = this.resolveClaudeCodeExecutable()
     if (!executablePath) {
-      session.lastError = 'Claude Code CLI not found. Install @anthropic-ai/claude-code globally or set agent.claudeCodePath in settings.'
+      session.lastError =
+        'Claude Code CLI not found. Install @anthropic-ai/claude-code globally or set agent.claudeCodePath in settings.'
       const errorMsg: CliAgentMessage = {
         id: randomUUID(),
         type: 'error',
@@ -464,7 +495,9 @@ export class CliAgentManager {
         messageCount++
         this.handleSDKMessage(session, message)
       }
-      console.log(`[CliAgentManager] Query completed for session ${session.id} — ${messageCount} messages received`)
+      console.log(
+        `[CliAgentManager] Query completed for session ${session.id} — ${messageCount} messages received`,
+      )
     } catch (err) {
       if (!abortController.signal.aborted) {
         const errMsg = err instanceof Error ? err.message : String(err)
@@ -516,7 +549,9 @@ export class CliAgentManager {
 
     // Log all non-streaming messages (stream_event is too noisy)
     if (type !== 'stream_event') {
-      console.log(`[CliAgentManager] SDK message: type=${type}${subtype ? ` subtype=${subtype}` : ''} session=${session.id.slice(0, 8)}`)
+      console.log(
+        `[CliAgentManager] SDK message: type=${type}${subtype ? ` subtype=${subtype}` : ''} session=${session.id.slice(0, 8)}`,
+      )
     }
 
     if (type === 'system') {
@@ -536,7 +571,10 @@ export class CliAgentManager {
       this.setStatus(session, 'rate_limited')
     } else {
       // Log unknown message types so we can add handling later
-      console.log(`[CliAgentManager] Unhandled SDK message type: ${type}`, JSON.stringify(message).slice(0, 500))
+      console.log(
+        `[CliAgentManager] Unhandled SDK message type: ${type}`,
+        JSON.stringify(message).slice(0, 500),
+      )
     }
   }
 
@@ -549,7 +587,9 @@ export class CliAgentManager {
       const sdkSessionId = message.session_id as string | undefined
       if (sdkSessionId) {
         session.claudeSessionId = sdkSessionId
-        this.conversationStore?.updateMeta(session.id, { claudeSessionId: sdkSessionId }).catch(() => {})
+        this.conversationStore
+          ?.updateMeta(session.id, { claudeSessionId: sdkSessionId })
+          .catch(() => {})
       }
 
       session.model = (message.model as string) ?? undefined
@@ -679,7 +719,9 @@ export class CliAgentManager {
     const resultSessionId = message.session_id as string | undefined
     if (resultSessionId && !session.claudeSessionId) {
       session.claudeSessionId = resultSessionId
-      this.conversationStore?.updateMeta(session.id, { claudeSessionId: resultSessionId }).catch(() => {})
+      this.conversationStore
+        ?.updateMeta(session.id, { claudeSessionId: resultSessionId })
+        .catch(() => {})
     }
 
     // Build detailed error content for non-success results
@@ -689,9 +731,14 @@ export class CliAgentManager {
       if (errors?.length) {
         errorDetail = errors.join('\n')
       }
-      console.error(`[CliAgentManager] Result error for session ${session.id.slice(0, 8)}: subtype=${subtype}`)
+      console.error(
+        `[CliAgentManager] Result error for session ${session.id.slice(0, 8)}: subtype=${subtype}`,
+      )
       if (errorDetail) console.error(`[CliAgentManager] Error details:\n${errorDetail}`)
-      console.error(`[CliAgentManager] Full result message:`, JSON.stringify(message).slice(0, 2000))
+      console.error(
+        `[CliAgentManager] Full result message:`,
+        JSON.stringify(message).slice(0, 2000),
+      )
     }
 
     const msg: CliAgentMessage = {
@@ -737,7 +784,11 @@ export class CliAgentManager {
   }
 
   private emitMessage(session: CliAgentSessionInternal, msg: CliAgentMessage): void {
-    const ipcMsg: CliAgentMessagePayload = { ...msg, workspaceId: session.workspaceId, sessionId: session.id }
+    const ipcMsg: CliAgentMessagePayload = {
+      ...msg,
+      workspaceId: session.workspaceId,
+      sessionId: session.id,
+    }
     this.getWebContents()?.send(IpcChannels.CLI_AGENT_MESSAGE, ipcMsg)
 
     if (session.processStatus === 'rate_limited' && msg.type !== 'status') {
@@ -756,7 +807,7 @@ export class CliAgentManager {
     await this.conversationStore.updateMeta(session.id, {
       updatedAt: Date.now(),
       messageCount: session.messages.length,
-      firstMessage: session.messages.find(m => m.type === 'user')?.content.slice(0, 100),
+      firstMessage: session.messages.find((m) => m.type === 'user')?.content.slice(0, 100),
       claudeSessionId: session.claudeSessionId,
       worktreePath: session.worktreePath,
     })
@@ -765,7 +816,7 @@ export class CliAgentManager {
   private async maybeAutoTitle(session: CliAgentSessionInternal, content: string): Promise<void> {
     if (!this.conversationStore) return
 
-    const userMessages = session.messages.filter(m => m.type === 'user')
+    const userMessages = session.messages.filter((m) => m.type === 'user')
     if (userMessages.length !== 1) return
 
     const meta = await this.conversationStore.get(session.id)
