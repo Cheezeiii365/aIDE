@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type {
   AgentBackend,
+  CliAgentBackendState,
   CliAgentProcessStatus,
   CliAgentMessage,
+  CliAgentResultPayload,
   CliAgentStreamDelta,
   CliAgentStatusPayload,
   CliAgentMessagePayload,
+  CliAgentTokenUsage,
   ConversationListChangedPayload,
 } from '@aide/shared'
 import { scopedTo } from '../lib/workspace/workspaceScopedListener'
@@ -13,6 +16,8 @@ import { scopedTo } from '../lib/workspace/workspaceScopedListener'
 export interface UseCliAgentReturn {
   /** False while loading persisted/native history for an existing conversation. */
   historyHydrated: boolean
+  /** The active CLI session id (null until first start()). */
+  sessionId: string | null
   messages: CliAgentMessage[]
   processStatus: CliAgentProcessStatus
   streamingContent: string
@@ -22,11 +27,19 @@ export interface UseCliAgentReturn {
   conversationTitle: string
   /** Currently active external backend for this session (source of truth for the pane header). */
   activeBackend: AgentBackend | null
+  /** Cumulative cost (USD) for the session. */
+  totalCostUsd: number
+  /** Cumulative token usage for the session. */
+  totalTokens: CliAgentTokenUsage | null
+  /** Per-backend state (provider/model/agent/system/tools) for the active backend. */
+  backendState: CliAgentBackendState | null
   start: (backend: AgentBackend) => Promise<void>
   send: (content: string) => Promise<void>
   stop: () => void
   /** Hot-swap the underlying CLI backend for this conversation. Returns true on success. */
   switchBackend: (backend: AgentBackend) => Promise<boolean>
+  /** Patch backend-state overrides for the current session (model / agent / system / tools / etc.). */
+  updateSessionConfig: (patch: Partial<CliAgentBackendState>) => Promise<boolean>
 }
 
 export interface UseCliAgentOptions {
@@ -50,6 +63,9 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const streamingContentRef = useRef('')
   const [streamingContent, setStreamingContent] = useState('')
+  const [totalCostUsd, setTotalCostUsd] = useState(0)
+  const [totalTokens, setTotalTokens] = useState<CliAgentTokenUsage | null>(null)
+  const [backendState, setBackendState] = useState<CliAgentBackendState | null>(null)
   const rafRef = useRef<number | null>(null)
   const hydrateGenRef = useRef(0)
   const listRetryGenRef = useRef(0)
@@ -87,7 +103,9 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
         setProcessStatus(session.processStatus)
         setModel(session.model ?? null)
         setLastError(session.lastError ?? null)
-        setActiveBackend(session.activeBackend ?? session.backend ?? options.backend ?? null)
+        const ab = session.activeBackend ?? session.backend ?? options.backend ?? null
+        setActiveBackend(ab)
+        setBackendState(extractBackendState(session, ab))
         setHistoryHydrated(true)
         tick()
         return
@@ -196,6 +214,16 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
     return unsub
   }, [workspaceId])
 
+  // Subscribe to result events for cost / token totals.
+  useEffect(() => {
+    const unsub = window.api.onCliAgentResult((result: CliAgentResultPayload) => {
+      if (result.sessionId !== sessionIdRef.current) return
+      setTotalCostUsd(result.totalCostUsd)
+      if (result.totalTokens) setTotalTokens(result.totalTokens)
+    })
+    return unsub
+  }, [])
+
   // Cleanup rAF on unmount
   useEffect(() => {
     return () => {
@@ -232,28 +260,39 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
         setProcessStatus(session.processStatus)
         setModel(session.model ?? null)
         setLastError(session.lastError ?? null)
-        setActiveBackend(session.activeBackend ?? session.backend ?? backend)
+        const ab = session.activeBackend ?? session.backend ?? backend
+        setActiveBackend(ab)
+        setBackendState(extractBackendState(session, ab))
+        if (typeof session.totalCostUsd === 'number') setTotalCostUsd(session.totalCostUsd)
+        if (session.totalTokens) setTotalTokens(session.totalTokens)
       }
       tick()
     }
   }, [workspaceId, conversationId, worktreePath, tick])
 
+  const updateSessionConfig = useCallback(
+    async (patch: Partial<CliAgentBackendState>): Promise<boolean> => {
+      const sid = sessionIdRef.current
+      if (!sid) return false
+      // Optimistically merge so the picker reflects the selection immediately
+      // (main only emits a status event afterwards, which doesn't carry
+      // backend-state, so we cannot rely on a roundtrip refresh).
+      setBackendState((prev) => ({ ...(prev ?? {}), ...patch }))
+      const result = await window.api.cliAgentUpdateSessionConfig(sid, patch as Record<string, unknown>)
+      if (result.error) {
+        setLastError(result.error)
+        return false
+      }
+      if (patch.model) setModel(patch.model)
+      return true
+    },
+    [],
+  )
+
   const switchBackend = useCallback(async (backend: AgentBackend): Promise<boolean> => {
     const sid = sessionIdRef.current
     if (!sid) return false
-    // The hot-swap IPC ships with the backend rework. Until then, gracefully no-op
-    // and let the caller fall back to the start() path.
-    const api = window.api as typeof window.api & {
-      cliAgentSwitchBackend?: (
-        sessionId: string,
-        backend: AgentBackend,
-      ) => Promise<{ success: true } | { error: string }>
-    }
-    if (typeof api.cliAgentSwitchBackend !== 'function') {
-      setLastError('Backend hot-swap is not available in this build yet.')
-      return false
-    }
-    const result = await api.cliAgentSwitchBackend(sid, backend)
+    const result = await window.api.cliAgentSwitchBackend(sid, backend)
     if ('error' in result) {
       setLastError(result.error)
       return false
@@ -290,6 +329,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
 
   return {
     historyHydrated,
+    sessionId: sessionIdRef.current,
     messages: messagesRef.current,
     processStatus,
     streamingContent,
@@ -298,9 +338,27 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
     lastError,
     conversationTitle,
     activeBackend,
+    totalCostUsd,
+    totalTokens,
+    backendState,
     start,
     send,
     stop,
     switchBackend,
+    updateSessionConfig,
   }
+}
+
+/**
+ * Pull the per-backend state for the *active* backend out of a session
+ * payload. Returns null when the session has no recorded state for that
+ * backend yet (e.g. fresh session, no overrides applied).
+ */
+function extractBackendState(
+  session: { activeBackend?: AgentBackend; backend?: AgentBackend; backendStates?: Record<string, CliAgentBackendState> | undefined },
+  active: AgentBackend | null,
+): CliAgentBackendState | null {
+  const key = active ?? session.activeBackend ?? session.backend
+  if (!key || !session.backendStates) return null
+  return session.backendStates[key as string] ?? null
 }

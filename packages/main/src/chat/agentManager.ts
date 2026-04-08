@@ -35,6 +35,8 @@ import { ToolRegistry } from './toolRegistry'
 import type { BrowserPaneManager } from '../browserPaneManager'
 import type { ConversationStore } from './conversationStore'
 import type { TaskVariableContext } from '../tasks/taskVariableResolver'
+import { shouldAutoApprove as evalShouldAutoApprove } from './permissionMatching'
+import type { ToolApprovalOwner } from './approvalRouter'
 
 // ─── Constants ─────────────────────────────────────────────────────
 
@@ -67,7 +69,7 @@ interface PendingApproval {
 
 // ─── Manager ───────────────────────────────────────────────────────
 
-export class AgentManager {
+export class AgentManager implements ToolApprovalOwner {
   private sessions = new Map<string, ChatSession>()
   private llmClient: LlmClient
   private toolRegistry: ToolRegistry
@@ -666,59 +668,15 @@ export class AgentManager {
     })
   }
 
-  // ─── Permission Checks ─────────���────────────────────────────
-
-  private static readonly READ_ONLY_TOOLS = new Set([
-    'file_read', 'file_list', 'search_files', 'git_status', 'git_diff', 'browser_read',
-  ])
+  // ─── Permission Checks ────────────────────────────────────────
 
   private shouldAutoApprove(toolName: string, input: Record<string, unknown>): boolean {
-    // Per-tool overrides take precedence over tier
-    const override = this.autoApprove[toolName]
-    if (override === true) return true
-    if (override === false) return false
-    if (typeof override === 'object') {
-      return this.matchesPatternConfig(override, toolName, input)
-    }
-
-    // Fall back to tier logic
-    switch (this.permissionTier) {
-      case 'autopilot':
-        return true
-      case 'auto-approve':
-        return AgentManager.READ_ONLY_TOOLS.has(toolName)
-      case 'confirm':
-      default:
-        return false
-    }
+    return evalShouldAutoApprove(toolName, input, this.permissionTier, this.autoApprove)
   }
 
-  private matchesPatternConfig(
-    config: ToolPermissionConfig,
-    toolName: string,
-    input: Record<string, unknown>,
-  ): boolean {
-    // For terminal_exec, match against the command string; otherwise match stringified input
-    const matchTarget = toolName === 'terminal_exec'
-      ? String(input.command ?? '')
-      : JSON.stringify(input)
-
-    // Deny patterns take precedence
-    if (config.denyPatterns?.some((p) => this.globMatch(matchTarget, p))) {
-      return false
-    }
-    // Must match at least one allow pattern
-    if (config.allowPatterns && config.allowPatterns.length > 0) {
-      return config.allowPatterns.some((p) => this.globMatch(matchTarget, p))
-    }
-    return false
-  }
-
-  private globMatch(text: string, pattern: string): boolean {
-    // Simple glob: * matches any sequence of characters
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    const regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$')
-    return regex.test(text)
+  /** ToolApprovalOwner: does this manager own the given pending tool call? */
+  ownsToolCall(toolCallId: string): boolean {
+    return this.pendingApprovals.has(toolCallId)
   }
 
   // ���── Message Conversion ─────────���────────────────────────────

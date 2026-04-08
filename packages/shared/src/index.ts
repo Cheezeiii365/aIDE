@@ -31,12 +31,27 @@ export type {
   CliAgentBackendState,
   CliAgentBackendStateMap,
   CliAgentProcessStatus,
+  CliAgentTokenUsage,
+  CliAgentMessageType,
   CliAgentMessage,
+  CliAgentPermissionRequest,
   CliAgentStreamDelta,
   CliAgentSession,
+  CliAgentWorkspaceCostSummary,
   CliAgentStatusPayload,
   CliAgentResultPayload,
   CliAgentMessagePayload,
+  OpenCodeProviderSummary,
+  OpenCodeAgentSummary,
+  OpenCodeToolSummary,
+  OpenCodeFileEntry,
+  OpenCodeFindResult,
+  OpenCodeSymbolResult,
+  OpenCodeShellResult,
+  OpenCodeServerInfo,
+  OpenCodePathInfo,
+  OpenCodeTodoItem,
+  OpenCodeAuthMethod,
 } from './cliAgentTypes'
 export type {
   ConversationMeta,
@@ -296,6 +311,62 @@ export const IpcChannels = {
   CLI_AGENT_MESSAGE: 'cli-agent:message',
   CLI_AGENT_STATUS: 'cli-agent:status',
   CLI_AGENT_RESULT: 'cli-agent:result',
+  CLI_AGENT_WORKSPACE_COST: 'cli-agent:workspace-cost',
+
+  // ─── CLI Agent: per-session config ───────────
+  CLI_AGENT_UPDATE_SESSION_CONFIG: 'cli-agent:update-session-config',
+  CLI_AGENT_LIST_PROVIDERS: 'cli-agent:list-providers',
+  CLI_AGENT_LIST_AGENTS: 'cli-agent:list-agents',
+  CLI_AGENT_LIST_MODES: 'cli-agent:list-modes',
+  CLI_AGENT_LIST_TOOLS: 'cli-agent:list-tools',
+
+  // ─── CLI Agent: session ops (OpenCode) ───────
+  CLI_AGENT_SESSION_SHARE: 'cli-agent:session-share',
+  CLI_AGENT_SESSION_UNSHARE: 'cli-agent:session-unshare',
+  CLI_AGENT_SESSION_SUMMARIZE: 'cli-agent:session-summarize',
+  CLI_AGENT_SESSION_REVERT: 'cli-agent:session-revert',
+  CLI_AGENT_SESSION_UNREVERT: 'cli-agent:session-unrevert',
+  CLI_AGENT_SESSION_FORK: 'cli-agent:session-fork',
+  CLI_AGENT_SESSION_ABORT: 'cli-agent:session-abort',
+  CLI_AGENT_SESSION_DIFF: 'cli-agent:session-diff',
+  CLI_AGENT_SESSION_TODO: 'cli-agent:session-todo',
+  CLI_AGENT_SESSION_INIT: 'cli-agent:session-init',
+  CLI_AGENT_SESSION_DELETE_REMOTE: 'cli-agent:session-delete-remote',
+
+  // ─── CLI Agent: workspace ops (OpenCode) ─────
+  CLI_AGENT_FILE_LIST: 'cli-agent:file-list',
+  CLI_AGENT_FILE_READ: 'cli-agent:file-read',
+  CLI_AGENT_FILE_STATUS: 'cli-agent:file-status',
+  CLI_AGENT_FIND_TEXT: 'cli-agent:find-text',
+  CLI_AGENT_FIND_FILES: 'cli-agent:find-files',
+  CLI_AGENT_FIND_SYMBOLS: 'cli-agent:find-symbols',
+  CLI_AGENT_SHELL_RUN: 'cli-agent:shell-run',
+  CLI_AGENT_LSP_STATUS: 'cli-agent:lsp-status',
+  CLI_AGENT_FORMATTER_STATUS: 'cli-agent:formatter-status',
+
+  // ─── CLI Agent: config / auth / providers ────
+  CLI_AGENT_CONFIG_GET: 'cli-agent:config-get',
+  CLI_AGENT_CONFIG_UPDATE: 'cli-agent:config-update',
+  CLI_AGENT_CONFIG_PROVIDERS: 'cli-agent:config-providers',
+  CLI_AGENT_AUTH_SET: 'cli-agent:auth-set',
+  CLI_AGENT_PROVIDER_LIST: 'cli-agent:provider-list',
+  CLI_AGENT_PROVIDER_AUTH: 'cli-agent:provider-auth',
+  CLI_AGENT_PROVIDER_OAUTH_AUTHORIZE: 'cli-agent:provider-oauth-authorize',
+  CLI_AGENT_PROVIDER_OAUTH_CALLBACK: 'cli-agent:provider-oauth-callback',
+  CLI_AGENT_PATH_GET: 'cli-agent:path-get',
+  CLI_AGENT_LOG_WRITE: 'cli-agent:log-write',
+  CLI_AGENT_SERVER_INFO: 'cli-agent:server-info',
+
+  // ─── CLI Agent: TUI control (OpenCode) ───────
+  CLI_AGENT_TUI_APPEND_PROMPT: 'cli-agent:tui-append-prompt',
+  CLI_AGENT_TUI_SUBMIT_PROMPT: 'cli-agent:tui-submit-prompt',
+  CLI_AGENT_TUI_CLEAR_PROMPT: 'cli-agent:tui-clear-prompt',
+  CLI_AGENT_TUI_OPEN_HELP: 'cli-agent:tui-open-help',
+  CLI_AGENT_TUI_OPEN_SESSIONS: 'cli-agent:tui-open-sessions',
+  CLI_AGENT_TUI_OPEN_THEMES: 'cli-agent:tui-open-themes',
+  CLI_AGENT_TUI_OPEN_MODELS: 'cli-agent:tui-open-models',
+  CLI_AGENT_TUI_EXECUTE_COMMAND: 'cli-agent:tui-execute-command',
+  CLI_AGENT_TUI_SHOW_TOAST: 'cli-agent:tui-show-toast',
 
   // ─── Conversation History ────────────────────
   CONVERSATION_LIST: 'conversation:list',
@@ -1072,6 +1143,104 @@ export interface WindowApi {
   onCliAgentMessage: (callback: (msg: CliAgentMessagePayload) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void
   onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => () => void
+  onCliAgentWorkspaceCost: (callback: (summary: unknown) => void) => () => void
+
+  // ─── CLI Agent: per-session config + listings ──
+  cliAgentUpdateSessionConfig: (
+    sessionId: string,
+    patch: Record<string, unknown>,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentListProviders: (sessionId: string) => Promise<unknown>
+  cliAgentListAgents: (sessionId: string) => Promise<unknown>
+  cliAgentListModes: (sessionId: string) => Promise<unknown>
+  cliAgentListTools: (
+    sessionId: string,
+    providerID: string,
+    modelID: string,
+  ) => Promise<unknown>
+
+  // ─── CLI Agent: session ops ────────────────────
+  cliAgentSessionShare: (sessionId: string) => Promise<{ url?: string; error?: string }>
+  cliAgentSessionUnshare: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionSummarize: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionRevert: (
+    sessionId: string,
+    messageId: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionUnrevert: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionFork: (
+    sessionId: string,
+    messageId: string,
+  ) => Promise<{ newSessionId?: string; error?: string }>
+  cliAgentSessionAbort: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionDiff: (sessionId: string) => Promise<{ diff?: unknown; error?: string }>
+  cliAgentSessionTodo: (sessionId: string) => Promise<{ todos?: unknown; error?: string }>
+  cliAgentSessionInit: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionDeleteRemote: (sessionId: string) => Promise<{ success?: true; error?: string }>
+
+  // ─── CLI Agent: workspace ops ──────────────────
+  cliAgentFileList: (sessionId: string, path: string) => Promise<{ entries?: unknown; error?: string }>
+  cliAgentFileRead: (sessionId: string, path: string) => Promise<{ content?: string; error?: string }>
+  cliAgentFileStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
+  cliAgentFindText: (sessionId: string, query: string) => Promise<{ results?: unknown; error?: string }>
+  cliAgentFindFiles: (sessionId: string, pattern: string) => Promise<{ paths?: unknown; error?: string }>
+  cliAgentFindSymbols: (sessionId: string, query: string) => Promise<{ symbols?: unknown; error?: string }>
+  cliAgentShellRun: (sessionId: string, command: string) => Promise<{ result?: unknown; error?: string }>
+  cliAgentLspStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
+  cliAgentFormatterStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
+
+  // ─── CLI Agent: config / auth / providers ──────
+  cliAgentConfigGet: (sessionId: string) => Promise<{ config?: unknown; error?: string }>
+  cliAgentConfigUpdate: (
+    sessionId: string,
+    patch: Record<string, unknown>,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentConfigProviders: (sessionId: string) => Promise<{ providers?: unknown; error?: string }>
+  cliAgentAuthSet: (
+    sessionId: string,
+    key: string,
+    value: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentProviderList: (sessionId: string) => Promise<{ providers?: unknown; error?: string }>
+  cliAgentProviderAuth: (
+    sessionId: string,
+    providerId: string,
+  ) => Promise<{ methods?: unknown; error?: string }>
+  cliAgentProviderOauthAuthorize: (
+    sessionId: string,
+    providerId: string,
+  ) => Promise<{ url?: string; error?: string }>
+  cliAgentProviderOauthCallback: (
+    sessionId: string,
+    code: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentPathGet: (sessionId: string) => Promise<{ paths?: unknown; error?: string }>
+  cliAgentLogWrite: (
+    sessionId: string,
+    message: string,
+    level?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentServerInfo: (workspaceId: string) => Promise<unknown>
+
+  // ─── CLI Agent: TUI control ────────────────────
+  cliAgentTuiAppendPrompt: (
+    sessionId: string,
+    text: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiSubmitPrompt: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiClearPrompt: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenHelp: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenSessions: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenThemes: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenModels: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiExecuteCommand: (
+    sessionId: string,
+    command: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiShowToast: (
+    sessionId: string,
+    args: { title?: string; message: string; variant: string },
+  ) => Promise<{ success?: true; error?: string }>
 
   // ─── Conversation History ────────────────────
   conversationList: (workspaceId: string) => Promise<ConversationMeta[]>

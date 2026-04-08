@@ -1,9 +1,16 @@
 /**
  * CLI Agent Manager — manages external CLI agent sessions.
  *
- * Unlike the original Claude-only implementation, this manager now owns the
- * generic session lifecycle for all external backends and delegates transport
- * details to backend adapters.
+ * Owns the generic session lifecycle for all external backends (claude-code,
+ * opencode, codex), delegates per-turn transport details to backend adapters,
+ * and bridges OpenCode's full SDK surface (sessions / config / providers /
+ * file / find / shell / lsp / etc.) into IPC-callable manager methods.
+ *
+ * Multi-workspace lifecycle: one CliAgentManager per WorkspaceRuntime, each
+ * owning its own per-workspace OpenCodeServerHost. The manager implements
+ * `ToolApprovalOwner` so its OpenCode permission prompts can flow through the
+ * single ApprovalRouter / CHAT_TOOL_CALL approval surface shared with the
+ * built-in agent.
  */
 
 import { randomUUID } from 'crypto'
@@ -14,28 +21,50 @@ import { app, type WebContents } from 'electron'
 import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
   AgentBackend,
+  CliAgentBackendState,
   CliAgentBackendStateMap,
   CliAgentMessage,
   CliAgentMessagePayload,
+  CliAgentPermissionRequest,
   CliAgentProcessStatus,
   CliAgentResultPayload,
   CliAgentSession,
   CliAgentStatusPayload,
   CliAgentStreamDelta,
+  CliAgentTokenUsage,
+  CliAgentWorkspaceCostSummary,
   ConversationListChangedPayload,
   ExternalCliBackend,
+  OpenCodeAgentSummary,
+  OpenCodeAuthMethod,
+  OpenCodeFileEntry,
+  OpenCodeFindResult,
+  OpenCodePathInfo,
+  OpenCodeProviderSummary,
+  OpenCodeServerInfo,
+  OpenCodeShellResult,
+  OpenCodeSymbolResult,
+  OpenCodeToolSummary,
+  OpenCodeTodoItem,
+  PermissionTier,
+  ToolPermissionConfig,
 } from '@aide/shared'
 import type { ConversationStore } from './conversationStore'
 import { createClaudeCodeAdapter } from './cliAdapters/claudeCodeAdapter'
 import { createCodexAdapter } from './cliAdapters/codexAdapter'
 import { createOpenCodeAdapter } from './cliAdapters/openCodeAdapter'
 import type { CliBackendAdapter, CliBackendEvent, CliBackendRun } from './cliAdapters/types'
+import { OpenCodeServerHost } from './openCodeServerHost'
+import type { ToolApprovalOwner } from './approvalRouter'
+import type { ChatToolCallPayload, ToolCall } from '@aide/shared'
 
 interface PersistedCliConversation {
   messages?: CliAgentMessage[]
   activeBackend?: ExternalCliBackend
   backendStates?: CliAgentBackendStateMap
   claudeSessionId?: string
+  totalCostUsd?: number
+  totalTokens?: CliAgentTokenUsage
 }
 
 interface CliAgentSessionInternal {
@@ -49,18 +78,29 @@ interface CliAgentSessionInternal {
   sessionToolNames?: string[]
   lastError?: string
   totalCostUsd: number
+  totalTokens?: CliAgentTokenUsage
   worktreePath?: string
   backendStates: CliAgentBackendStateMap
 }
 
+interface PendingPermission {
+  sessionId: string
+  resolve: (response: 'always' | 'once' | 'reject') => void
+}
+
 export interface CliAgentManagerOpts {
   workspaceRoot: string
+  workspaceId?: string
   getWebContents: () => WebContents | null
   claudeCodePath?: string
   opencodePath?: string
   codexPath?: string
   conversationStore?: ConversationStore
   loadClaudeHistory?: (claudeSessionId: string) => Promise<CliAgentMessage[]>
+  permissionTier?: PermissionTier
+  autoApprove?: Record<string, boolean | ToolPermissionConfig>
+  /** Called when pending approvals / running session counts change. */
+  onWorkloadChanged?: () => void
 }
 
 function comparableHistoryCount(messages: CliAgentMessage[]): number {
@@ -92,12 +132,30 @@ function parsePersistedConversation(raw: unknown): PersistedCliConversation {
     activeBackend: persisted.activeBackend,
     backendStates,
     claudeSessionId: persisted.claudeSessionId,
+    totalCostUsd: persisted.totalCostUsd,
+    totalTokens: persisted.totalTokens,
   }
 }
 
-export class CliAgentManager {
+function sumTokenUsage(
+  a: CliAgentTokenUsage | undefined,
+  b: CliAgentTokenUsage | undefined,
+): CliAgentTokenUsage | undefined {
+  if (!a) return b
+  if (!b) return a
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    reasoning: a.reasoning + b.reasoning,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+  }
+}
+
+export class CliAgentManager implements ToolApprovalOwner {
   private sessions = new Map<string, CliAgentSessionInternal>()
   private readonly workspaceRoot: string
+  private readonly workspaceId: string
   private readonly getWebContents: () => WebContents | null
   private claudeCodePath: string
   private opencodePath: string
@@ -107,18 +165,30 @@ export class CliAgentManager {
     | ((claudeSessionId: string) => Promise<CliAgentMessage[]>)
     | null
   private resolvedClaudeCodePath: string | null = null
-  private resolvedOpenCodePath: string | null = null
   private resolvedCodexPath: string | null = null
+
+  private permissionTier: PermissionTier
+  private autoApprove: Record<string, boolean | ToolPermissionConfig>
+  private readonly onWorkloadChanged?: () => void
+
+  private openCodeHost: OpenCodeServerHost | null = null
+  private pendingPermissions = new Map<string, PendingPermission>()
 
   constructor(opts: CliAgentManagerOpts) {
     this.workspaceRoot = opts.workspaceRoot
+    this.workspaceId = opts.workspaceId ?? ''
     this.getWebContents = opts.getWebContents
     this.claudeCodePath = opts.claudeCodePath ?? ''
     this.opencodePath = opts.opencodePath ?? ''
     this.codexPath = opts.codexPath ?? ''
     this.conversationStore = opts.conversationStore ?? null
     this.loadClaudeHistory = opts.loadClaudeHistory ?? null
+    this.permissionTier = opts.permissionTier ?? 'confirm'
+    this.autoApprove = opts.autoApprove ?? {}
+    this.onWorkloadChanged = opts.onWorkloadChanged
   }
+
+  // ─── Lifecycle ──────────────────────────────────────────────
 
   async start(
     workspaceId: string,
@@ -198,7 +268,8 @@ export class CliAgentManager {
       activeRun: null,
       processStatus: 'stopped',
       messages: existingMessages,
-      totalCostUsd: 0,
+      totalCostUsd: persisted.totalCostUsd ?? 0,
+      totalTokens: persisted.totalTokens,
       model: backendStates[backend]?.model,
       worktreePath,
       backendStates,
@@ -277,6 +348,7 @@ export class CliAgentManager {
 
     session.activeRun = run
     this.setStatus(session, 'running')
+    this.notifyWorkloadChanged()
 
     run.completed
       .catch((error) => {
@@ -291,7 +363,15 @@ export class CliAgentManager {
         if (session.processStatus === 'stopping' || session.processStatus === 'running') {
           this.setStatus(session, 'stopped')
         }
+        // Clear any unresolved permissions for this session.
+        for (const [id, pending] of this.pendingPermissions) {
+          if (pending.sessionId === session.id) {
+            pending.resolve('reject')
+            this.pendingPermissions.delete(id)
+          }
+        }
         await this.persistSession(session)
+        this.notifyWorkloadChanged()
       })
 
     return { success: true }
@@ -334,8 +414,19 @@ export class CliAgentManager {
     this.opencodePath = opencodePath
     this.codexPath = codexPath
     this.resolvedClaudeCodePath = null
-    this.resolvedOpenCodePath = null
     this.resolvedCodexPath = null
+    if (this.openCodeHost) {
+      this.openCodeHost.setPath(opencodePath)
+    }
+  }
+
+  /** Update permission tier / autoApprove map (called from settings-changed handler). */
+  updatePermissions(
+    tier: PermissionTier,
+    autoApprove: Record<string, boolean | ToolPermissionConfig>,
+  ): void {
+    this.permissionTier = tier
+    this.autoApprove = autoApprove
   }
 
   getRunningSessionCount(): number {
@@ -346,26 +437,751 @@ export class CliAgentManager {
     return count
   }
 
+  /** Workspace-wide cost / token rollup across this manager's sessions. */
+  getWorkspaceCostSummary(): CliAgentWorkspaceCostSummary {
+    let totalCostUsd = 0
+    let totalTokens: CliAgentTokenUsage | undefined = undefined
+    let sessionCount = 0
+    for (const session of this.sessions.values()) {
+      sessionCount += 1
+      totalCostUsd += session.totalCostUsd
+      totalTokens = sumTokenUsage(totalTokens, session.totalTokens)
+    }
+    return {
+      workspaceId: this.workspaceId,
+      totalCostUsd,
+      totalTokens: totalTokens ?? {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      sessionCount,
+    }
+  }
+
   async destroy(): Promise<void> {
     for (const session of this.sessions.values()) {
       session.activeRun?.close()
       await this.persistSession(session).catch(() => {})
     }
     this.sessions.clear()
+    if (this.openCodeHost) {
+      try {
+        await this.openCodeHost.dispose()
+      } catch {
+        /* ignore */
+      }
+      this.openCodeHost = null
+    }
+    // Resolve any outstanding permissions as rejected.
+    for (const pending of this.pendingPermissions.values()) {
+      pending.resolve('reject')
+    }
+    this.pendingPermissions.clear()
   }
+
+  // ─── ToolApprovalOwner (for ApprovalRouter) ────────────────────
+
+  ownsToolCall(toolCallId: string): boolean {
+    return this.pendingPermissions.has(toolCallId)
+  }
+
+  approveToolCall(_sessionId: string, toolCallId: string): void {
+    const pending = this.pendingPermissions.get(toolCallId)
+    if (!pending) return
+    this.pendingPermissions.delete(toolCallId)
+    pending.resolve('always')
+    this.notifyWorkloadChanged()
+  }
+
+  rejectToolCall(_sessionId: string, toolCallId: string): void {
+    const pending = this.pendingPermissions.get(toolCallId)
+    if (!pending) return
+    this.pendingPermissions.delete(toolCallId)
+    pending.resolve('reject')
+    this.notifyWorkloadChanged()
+  }
+
+  getPendingApprovalCount(): number {
+    return this.pendingPermissions.size
+  }
+
+  // ─── Per-session config (Phase 2 wiring) ───────────────────────
+
+  async updateSessionConfig(
+    sessionId: string,
+    patch: Partial<CliAgentBackendState>,
+  ): Promise<{ success: true } | { error: string }> {
+    const session = this.sessions.get(sessionId)
+    if (!session) return { error: 'Session not found' }
+    const prior = session.backendStates[session.backend] ?? {}
+    session.backendStates[session.backend] = { ...prior, ...patch }
+    if (patch.model) session.model = patch.model
+    await this.persistSession(session)
+    this.emitStatus(session)
+    return { success: true }
+  }
+
+  // ─── OpenCode SDK passthroughs (Phase 2 / 6 / 7 / 8) ───────────
+
+  private async getOpenCodeClient(sessionId: string) {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error('Session not found')
+    if (session.backend !== 'opencode') {
+      throw new Error('This operation is only available for OpenCode sessions.')
+    }
+    const host = this.ensureOpenCodeHost()
+    return host.getClient()
+  }
+
+  async listOpenCodeProviders(sessionId: string): Promise<OpenCodeProviderSummary[]> {
+    const client = await this.getOpenCodeClient(sessionId)
+    // Shape: { providers: Provider[], default: Record<string,string> }
+    // Provider.models is Record<modelID, Model> where Model has nested
+    // capabilities + cost.cache subfields (NOT flat tool_call / cache_read).
+    const result = await callSdk<{
+      providers?: Array<{
+        id?: string
+        name?: string
+        models?: Record<
+          string,
+          {
+            id?: string
+            name?: string
+            capabilities?: {
+              reasoning?: boolean
+              attachment?: boolean
+              toolcall?: boolean
+            }
+            cost?: {
+              input: number
+              output: number
+              cache?: { read: number; write: number }
+            }
+          }
+        >
+      }>
+    }>(() => (client as any).config.providers())
+    return (result?.providers ?? []).map((p) => ({
+      id: p.id ?? '',
+      name: p.name ?? p.id ?? '',
+      models: Object.entries(p.models ?? {}).map(([modelId, m]) => ({
+        id: m.id ?? modelId,
+        name: m.name ?? m.id ?? modelId,
+        reasoning: m.capabilities?.reasoning,
+        attachment: m.capabilities?.attachment,
+        toolCall: m.capabilities?.toolcall,
+        cost: m.cost
+          ? {
+              input: m.cost.input,
+              output: m.cost.output,
+              cacheRead: m.cost.cache?.read,
+              cacheWrite: m.cost.cache?.write,
+            }
+          : undefined,
+      })),
+    }))
+  }
+
+  async listOpenCodeAgents(sessionId: string): Promise<OpenCodeAgentSummary[]> {
+    const client = await this.getOpenCodeClient(sessionId)
+    const result = await callSdk<
+      Array<{ name?: string; description?: string; mode?: string }>
+    >(() => (client as any).app.agents())
+    if (!Array.isArray(result)) return []
+    return result.map((a) => ({
+      name: a.name ?? '',
+      description: a.description,
+      mode: a.mode,
+    }))
+  }
+
+  async listOpenCodeModes(sessionId: string): Promise<string[]> {
+    const client = await this.getOpenCodeClient(sessionId)
+    const result = await callSdk<{ agents?: Record<string, { mode?: string }> }>(() =>
+      (client as any).config.get(),
+    )
+    const modes = new Set<string>(['primary', 'subagent', 'all'])
+    for (const agent of Object.values(result?.agents ?? {})) {
+      if (agent?.mode) modes.add(agent.mode)
+    }
+    return Array.from(modes)
+  }
+
+  async listOpenCodeTools(
+    sessionId: string,
+    providerID: string,
+    modelID: string,
+  ): Promise<OpenCodeToolSummary[]> {
+    const client = await this.getOpenCodeClient(sessionId)
+    try {
+      // SDK query expects { provider, model } (not providerID/modelID).
+      const result = await callSdk<
+        Array<{ id?: string; description?: string; parameters?: unknown }>
+      >(() => (client as any).tool.list({ query: { provider: providerID, model: modelID } }))
+      if (Array.isArray(result)) {
+        return result.map((t) => ({
+          id: t.id ?? '',
+          description: t.description,
+          schema: t.parameters,
+        }))
+      }
+    } catch {
+      // Fallback to ids() if list() rejects
+    }
+    const ids = await callSdk<string[]>(() => (client as any).tool.ids())
+    return (ids ?? []).map((id) => ({ id }))
+  }
+
+  // ─── Session ops ─────────────────────────────────────────────
+
+  async sessionShare(sessionId: string): Promise<{ url?: string; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const session = this.sessions.get(sessionId)
+      const remoteId = session?.backendStates['opencode']?.sessionId
+      if (!remoteId) return { error: 'No active OpenCode session id' }
+      const result = await callSdk<{ url?: string; share?: { url?: string } }>(() =>
+        (client as any).session.share({ path: { id: remoteId } }),
+      )
+      return { url: result?.url ?? result?.share?.url }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionUnshare(sessionId: string): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      await callSdk(() => (client as any).session.unshare({ path: { id: remoteId } }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionSummarize(sessionId: string): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      await callSdk(() => (client as any).session.summarize({ path: { id: remoteId } }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionRevert(
+    sessionId: string,
+    messageId: string,
+  ): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      await callSdk(() =>
+        (client as any).session.revert({
+          path: { id: remoteId },
+          body: { messageID: messageId },
+        }),
+      )
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionUnrevert(sessionId: string): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      await callSdk(() => (client as any).session.unrevert({ path: { id: remoteId } }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionFork(
+    sessionId: string,
+    messageId: string,
+  ): Promise<{ newSessionId?: string; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      const result = await callSdk<{ id?: string }>(() =>
+        (client as any).session.fork({
+          path: { id: remoteId },
+          body: { messageID: messageId },
+        }),
+      )
+      return { newSessionId: result?.id }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionAbort(sessionId: string): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      await callSdk(() => (client as any).session.abort({ path: { id: remoteId } }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionDiff(
+    sessionId: string,
+  ): Promise<{ diff?: unknown; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      const result = await callSdk<unknown>(() =>
+        (client as any).session.diff({ path: { id: remoteId } }),
+      )
+      return { diff: result }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionTodo(
+    sessionId: string,
+  ): Promise<{ todos?: OpenCodeTodoItem[]; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      const result = await callSdk<Array<{ id?: string; text?: string; done?: boolean }>>(() =>
+        (client as any).session.todo({ path: { id: remoteId } }),
+      )
+      const todos = (Array.isArray(result) ? result : []).map((t) => ({
+        id: t.id ?? '',
+        text: t.text ?? '',
+        done: t.done,
+      }))
+      return { todos }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionInit(sessionId: string): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      await callSdk(() => (client as any).session.init({ path: { id: remoteId } }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async sessionDeleteRemote(sessionId: string): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      await callSdk(() => (client as any).session.delete({ path: { id: remoteId } }))
+      // Clear local backend state since the remote session is gone.
+      const session = this.sessions.get(sessionId)
+      if (session) {
+        delete session.backendStates['opencode']
+        await this.persistSession(session)
+      }
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  // ─── Workspace ops (Phase 7) ───────────────────────────────────
+
+  async fileList(
+    sessionId: string,
+    path: string,
+  ): Promise<{ entries?: OpenCodeFileEntry[]; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<
+        Array<{
+          path?: string
+          name?: string
+          type?: string
+          size?: number
+          modified?: number
+        }>
+      >(() => (client as any).file.list({ query: { path, directory: this.workspaceRoot } }))
+      const entries = (Array.isArray(result) ? result : []).map((e) => ({
+        path: e.path ?? '',
+        name: e.name ?? '',
+        isDirectory: e.type === 'directory' || e.type === 'dir',
+        size: e.size,
+        modified: e.modified,
+      }))
+      return { entries }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async fileRead(
+    sessionId: string,
+    path: string,
+  ): Promise<{ content?: string; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<{ content?: string } | string>(() =>
+        (client as any).file.read({ query: { path, directory: this.workspaceRoot } }),
+      )
+      if (typeof result === 'string') return { content: result }
+      return { content: result?.content }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async fileStatus(sessionId: string): Promise<{ status?: unknown; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<unknown>(() =>
+        (client as any).file.status({ query: { directory: this.workspaceRoot } }),
+      )
+      return { status: result }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async findText(
+    sessionId: string,
+    query: string,
+  ): Promise<{ results?: OpenCodeFindResult[]; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<
+        Array<{ path?: string; line?: number; column?: number; text?: string; preview?: string }>
+      >(() => (client as any).find.text({ query: { query, directory: this.workspaceRoot } }))
+      const results = (Array.isArray(result) ? result : []).map((r) => ({
+        path: r.path ?? '',
+        line: r.line,
+        column: r.column,
+        preview: r.preview ?? r.text,
+        matchText: r.text,
+      }))
+      return { results }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async findFiles(
+    sessionId: string,
+    pattern: string,
+  ): Promise<{ paths?: string[]; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<string[] | Array<{ path?: string }>>(() =>
+        (client as any).find.files({ query: { pattern, directory: this.workspaceRoot } }),
+      )
+      const arr = Array.isArray(result) ? result : []
+      const paths = arr.map((p) => (typeof p === 'string' ? p : (p.path ?? '')))
+      return { paths }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async findSymbols(
+    sessionId: string,
+    query: string,
+  ): Promise<{ symbols?: OpenCodeSymbolResult[]; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<
+        Array<{
+          name?: string
+          kind?: string | number
+          path?: string
+          line?: number
+          column?: number
+        }>
+      >(() => (client as any).find.symbols({ query: { query, directory: this.workspaceRoot } }))
+      const symbols = (Array.isArray(result) ? result : []).map((s) => ({
+        name: s.name ?? '',
+        kind: typeof s.kind === 'string' ? s.kind : String(s.kind ?? ''),
+        path: s.path ?? '',
+        line: s.line,
+        column: s.column,
+      }))
+      return { symbols }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async shellRun(
+    sessionId: string,
+    command: string,
+  ): Promise<{ result?: OpenCodeShellResult; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const remoteId = this.requireRemoteId(sessionId)
+      const result = await callSdk<{
+        exitCode?: number
+        stdout?: string
+        stderr?: string
+      }>(() =>
+        (client as any).session.shell({
+          path: { id: remoteId },
+          body: { command },
+        }),
+      )
+      return {
+        result: {
+          exitCode: result?.exitCode ?? 0,
+          stdout: result?.stdout ?? '',
+          stderr: result?.stderr ?? '',
+        },
+      }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async lspStatus(sessionId: string): Promise<{ status?: unknown; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<unknown>(() => (client as any).lsp.status())
+      return { status: result }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async formatterStatus(sessionId: string): Promise<{ status?: unknown; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<unknown>(() => (client as any).formatter.status())
+      return { status: result }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  // ─── Config / auth / providers (Phase 8) ───────────────────────
+
+  async configGet(sessionId: string): Promise<{ config?: unknown; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<unknown>(() => (client as any).config.get())
+      return { config: result }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async configUpdate(
+    sessionId: string,
+    patch: Record<string, unknown>,
+  ): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      await callSdk(() => (client as any).config.update({ body: patch }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async configProviders(sessionId: string): Promise<{ providers?: unknown; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<unknown>(() => (client as any).config.providers())
+      return { providers: result }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async authSet(
+    sessionId: string,
+    key: string,
+    value: string,
+  ): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      await callSdk(() => (client as any).auth.set({ body: { key, value } }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async providerList(sessionId: string): Promise<{ providers?: unknown; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<unknown>(() => (client as any).provider.list())
+      return { providers: result }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async providerAuth(
+    sessionId: string,
+    providerId: string,
+  ): Promise<{ methods?: OpenCodeAuthMethod[]; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<
+        Array<{ id?: string; label?: string; type?: string }>
+      >(() => (client as any).provider.auth({ query: { providerID: providerId } }))
+      const methods = (Array.isArray(result) ? result : []).map((m) => ({
+        id: m.id ?? '',
+        label: m.label,
+        type: (m.type === 'oauth' || m.type === 'apiKey' || m.type === 'env'
+          ? m.type
+          : 'unknown') as OpenCodeAuthMethod['type'],
+      }))
+      return { methods }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async providerOauthAuthorize(
+    sessionId: string,
+    providerId: string,
+  ): Promise<{ url?: string; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<{ url?: string }>(() =>
+        (client as any).provider.oauth.authorize({ query: { providerID: providerId } }),
+      )
+      return { url: result?.url }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async providerOauthCallback(
+    sessionId: string,
+    code: string,
+  ): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      await callSdk(() => (client as any).provider.oauth.callback({ query: { code } }))
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async pathGet(sessionId: string): Promise<{ paths?: OpenCodePathInfo; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const result = await callSdk<OpenCodePathInfo>(() => (client as any).path.get())
+      return { paths: result ?? {} }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  async logWrite(
+    sessionId: string,
+    message: string,
+    level?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+  ): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      await callSdk(() =>
+        (client as any).app.log({ body: { message, level: level ?? 'INFO' } }),
+      )
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  serverInfo(): OpenCodeServerInfo | null {
+    return this.openCodeHost?.getInfo() ?? null
+  }
+
+  // ─── TUI control (Phase 8) ─────────────────────────────────────
+
+  async tui(
+    sessionId: string,
+    method:
+      | 'appendPrompt'
+      | 'submitPrompt'
+      | 'clearPrompt'
+      | 'openHelp'
+      | 'openSessions'
+      | 'openThemes'
+      | 'openModels'
+      | 'executeCommand'
+      | 'showToast',
+    args?: Record<string, unknown>,
+  ): Promise<{ success?: true; error?: string }> {
+    try {
+      const client = await this.getOpenCodeClient(sessionId)
+      const tui = (client as any).tui
+      const opts = args ? { body: args } : undefined
+      switch (method) {
+        case 'appendPrompt':
+          await callSdk(() => tui.appendPrompt(opts))
+          break
+        case 'submitPrompt':
+          await callSdk(() => tui.submitPrompt())
+          break
+        case 'clearPrompt':
+          await callSdk(() => tui.clearPrompt())
+          break
+        case 'openHelp':
+          await callSdk(() => tui.openHelp())
+          break
+        case 'openSessions':
+          await callSdk(() => tui.openSessions())
+          break
+        case 'openThemes':
+          await callSdk(() => tui.openThemes())
+          break
+        case 'openModels':
+          await callSdk(() => tui.openModels())
+          break
+        case 'executeCommand':
+          await callSdk(() => tui.executeCommand(opts))
+          break
+        case 'showToast':
+          await callSdk(() => tui.showToast(opts))
+          break
+      }
+      return { success: true }
+    } catch (error) {
+      return { error: errMsg(error) }
+    }
+  }
+
+  // ─── Internals ─────────────────────────────────────────────────
 
   private toPublicSession(session: CliAgentSessionInternal): CliAgentSession {
     return {
       id: session.id,
       workspaceId: session.workspaceId,
       backend: session.backend,
+      activeBackend: session.backend,
       processStatus: session.processStatus,
       messages: session.messages,
       model: session.model,
       sessionToolNames: session.sessionToolNames,
       lastError: session.lastError,
       totalCostUsd: session.totalCostUsd,
+      totalTokens: session.totalTokens,
       worktreePath: session.worktreePath,
+      backendStates: session.backendStates,
     }
   }
 
@@ -381,18 +1197,14 @@ export class CliAgentManager {
     }
 
     if (backend === 'opencode') {
-      const executablePath = this.resolveGenericExecutable(
-        'opencode',
-        this.opencodePath,
-        this.resolvedOpenCodePath,
-      )
-      if (!executablePath) {
-        throw new Error(
-          'OpenCode CLI not found. Install opencode or set agent.opencodePath in settings.',
-        )
-      }
-      this.resolvedOpenCodePath = executablePath
-      return createOpenCodeAdapter({ executablePath })
+      const host = this.ensureOpenCodeHost()
+      return createOpenCodeAdapter({
+        host,
+        getPermissionSettings: () => ({
+          tier: this.permissionTier,
+          autoApprove: this.autoApprove,
+        }),
+      })
     }
 
     const executablePath = this.resolveGenericExecutable(
@@ -407,6 +1219,23 @@ export class CliAgentManager {
     }
     this.resolvedCodexPath = executablePath
     return createCodexAdapter({ executablePath })
+  }
+
+  private ensureOpenCodeHost(): OpenCodeServerHost {
+    if (!this.openCodeHost) {
+      this.openCodeHost = new OpenCodeServerHost({
+        workspaceRoot: this.workspaceRoot,
+        explicitPath: this.opencodePath,
+      })
+    }
+    return this.openCodeHost
+  }
+
+  private requireRemoteId(localSessionId: string): string {
+    const session = this.sessions.get(localSessionId)
+    const remote = session?.backendStates['opencode']?.sessionId
+    if (!remote) throw new Error('No remote OpenCode session id; send a message first.')
+    return remote
   }
 
   private resolveClaudeCodeExecutable(): string | null {
@@ -531,14 +1360,24 @@ export class CliAgentManager {
 
     if (event.type === 'result') {
       session.totalCostUsd += event.totalCostUsd
+      if (event.tokens) {
+        session.totalTokens = sumTokenUsage(session.totalTokens, event.tokens)
+      }
       const payload: CliAgentResultPayload = {
         workspaceId: session.workspaceId,
         sessionId: session.id,
         durationMs: event.durationMs,
         totalCostUsd: session.totalCostUsd,
+        totalTokens: session.totalTokens,
         isSuccess: event.isSuccess,
       }
       this.getWebContents()?.send(IpcChannels.CLI_AGENT_RESULT, payload)
+      this.broadcastWorkspaceCost(session.workspaceId)
+      return
+    }
+
+    if (event.type === 'permission-request') {
+      this.handlePermissionRequest(session, event.request, event.resolve)
       return
     }
 
@@ -554,6 +1393,56 @@ export class CliAgentManager {
     } else if (session.processStatus === 'rate_limited' && message.type !== 'status') {
       this.setStatus(session, 'running')
     }
+  }
+
+  /**
+   * Bridge an OpenCode permission event into the existing CHAT_TOOL_CALL
+   * approval surface so the IDE has one approval UI for both backends.
+   */
+  private handlePermissionRequest(
+    session: CliAgentSessionInternal,
+    request: import('./cliAdapters/types').CliBackendPermissionRequest,
+    resolve: (response: 'always' | 'once' | 'reject') => void,
+  ): void {
+    const toolCallId = randomUUID()
+    this.pendingPermissions.set(toolCallId, {
+      sessionId: session.id,
+      resolve,
+    })
+
+    const toolCall: ToolCall = {
+      id: toolCallId,
+      name: `opencode:${request.category}`,
+      input: {
+        title: request.title,
+        pattern: request.pattern,
+        ...(request.metadata ?? {}),
+      },
+      status: 'pending',
+    }
+
+    const payload: ChatToolCallPayload = {
+      workspaceId: session.workspaceId,
+      sessionId: session.id,
+      toolCall,
+    }
+    this.getWebContents()?.send(IpcChannels.CHAT_TOOL_CALL, payload)
+
+    // Also emit a structured CLI agent permission request payload for any
+    // surface that wants the rich form (badges, metadata).
+    const richPayload: CliAgentPermissionRequest = {
+      workspaceId: session.workspaceId,
+      sessionId: session.id,
+      toolCallId,
+      backend: 'opencode',
+      title: request.title,
+      category: request.category,
+      pattern: request.pattern,
+      metadata: request.metadata,
+      timestamp: Date.now(),
+    }
+    void richPayload // (channel reserved for future granular UI; CHAT_TOOL_CALL is the active surface)
+    this.notifyWorkloadChanged()
   }
 
   private buildTurnPrompt(session: CliAgentSessionInternal, content: string): string {
@@ -634,6 +1523,20 @@ export class CliAgentManager {
     this.getWebContents()?.send(IpcChannels.CLI_AGENT_MESSAGE, payload)
   }
 
+  private broadcastWorkspaceCost(workspaceId: string): void {
+    const summary = this.getWorkspaceCostSummary()
+    if (workspaceId) summary.workspaceId = workspaceId
+    this.getWebContents()?.send(IpcChannels.CLI_AGENT_WORKSPACE_COST, summary)
+  }
+
+  private notifyWorkloadChanged(): void {
+    try {
+      this.onWorkloadChanged?.()
+    } catch {
+      /* ignore */
+    }
+  }
+
   private async persistSession(session: CliAgentSessionInternal): Promise<void> {
     if (!this.conversationStore || session.id.startsWith('claude-native:')) return
 
@@ -643,6 +1546,8 @@ export class CliAgentManager {
       activeBackend: session.backend,
       backendStates: session.backendStates,
       claudeSessionId,
+      totalCostUsd: session.totalCostUsd,
+      totalTokens: session.totalTokens,
     } satisfies PersistedCliConversation)
 
     await this.conversationStore.updateMeta(session.id, {
@@ -682,4 +1587,28 @@ export class CliAgentManager {
       conversations: index,
     } satisfies ConversationListChangedPayload)
   }
+}
+
+// ─── SDK call helpers ──────────────────────────────────────────
+
+/**
+ * Wraps an SDK promise so we can deal with both `responseStyle: 'data'`
+ * (returns the unwrapped data) and the older `{ data, error }` shape.
+ * If `error` is set, throws.
+ */
+async function callSdk<T>(fn: () => Promise<unknown>): Promise<T | undefined> {
+  const result = await fn()
+  if (result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)) {
+    const wrapper = result as { data?: unknown; error?: unknown }
+    if (wrapper.error) {
+      const err = wrapper.error as { message?: string } | string
+      throw new Error(typeof err === 'string' ? err : (err.message ?? 'OpenCode SDK error'))
+    }
+    return wrapper.data as T | undefined
+  }
+  return result as T | undefined
+}
+
+function errMsg(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

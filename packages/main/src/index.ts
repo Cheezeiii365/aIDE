@@ -70,6 +70,7 @@ import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './git/gitDiff'
 import { AgentManager } from './chat/agentManager'
 import { CliAgentManager } from './chat/cliAgentManager'
+import { ApprovalRouter } from './chat/approvalRouter'
 import { ConversationStore } from './chat/conversationStore'
 import { ClaudeNativeSessionWatcher } from './chat/claudeNativeSessionWatcher'
 import type {
@@ -535,6 +536,7 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
   const resolved = resolveAppDefaults(store)
   const cliAgentManager = new CliAgentManager({
     workspaceRoot: rootPath,
+    workspaceId: runtime.workspaceId,
     getWebContents: () => contentView?.webContents ?? null,
     claudeCodePath: resolved['agent.claudeCodePath'],
     opencodePath: resolved['agent.opencodePath'],
@@ -542,7 +544,19 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
     conversationStore,
     loadClaudeHistory: async (claudeSessionId: string) =>
       nativeSessionWatcher.loadMessages(claudeSessionId),
+    permissionTier: permConfig.permissionTier,
+    autoApprove: permConfig.autoApprove,
+    onWorkloadChanged: () => {
+      runtime.refreshWorkload()
+    },
   })
+
+  // ApprovalRouter dispatches CHAT_TOOL_APPROVE / CHAT_TOOL_REJECT to whichever
+  // manager owns the toolCallId, so OpenCode permission prompts and built-in
+  // chat approvals share a single approval surface.
+  const approvalRouter = new ApprovalRouter()
+  approvalRouter.register(agentManager)
+  approvalRouter.register(cliAgentManager)
 
   runtime.setServices({
     conversationStore,
@@ -550,6 +564,7 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
     nativeSessionCache,
     agentManager,
     cliAgentManager,
+    approvalRouter,
   })
 
   const getWc = () => contentView?.webContents ?? null
@@ -765,20 +780,27 @@ ipcMain.handle(
 ipcMain.handle(
   IpcChannels.CHAT_TOOL_APPROVE,
   async (_event, sessionId: string, toolCallId: string) => {
-    const runtime = findRuntimeWithBuiltInSession(sessionId)
-    const agentManager = getAgentManager(runtime)
-    agentManager?.approveToolCall(sessionId, toolCallId)
-    runtime?.refreshWorkload()
+    // Find the runtime that owns this toolCallId across both managers.
+    for (const runtime of runtimeRegistry.list()) {
+      const router = runtime.services.approvalRouter as ApprovalRouter | null
+      if (router?.approve(sessionId, toolCallId)) {
+        runtime.refreshWorkload()
+        return
+      }
+    }
   },
 )
 
 ipcMain.handle(
   IpcChannels.CHAT_TOOL_REJECT,
   async (_event, sessionId: string, toolCallId: string) => {
-    const runtime = findRuntimeWithBuiltInSession(sessionId)
-    const agentManager = getAgentManager(runtime)
-    agentManager?.rejectToolCall(sessionId, toolCallId)
-    runtime?.refreshWorkload()
+    for (const runtime of runtimeRegistry.list()) {
+      const router = runtime.services.approvalRouter as ApprovalRouter | null
+      if (router?.reject(sessionId, toolCallId)) {
+        runtime.refreshWorkload()
+        return
+      }
+    }
   },
 )
 
@@ -878,6 +900,258 @@ ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
   cliAgentManager?.stop(sessionId)
   runtime?.refreshWorkload()
 })
+
+// ─── CLI Agent: per-session config + provider/agent/mode/tool listings ──
+
+function withCliManager<T>(
+  sessionId: string,
+  fn: (mgr: CliAgentManager) => Promise<T>,
+): Promise<T | { error: string }> {
+  const runtime = findRuntimeWithCliSession(sessionId)
+  const mgr = getCliAgentManager(runtime)
+  if (!mgr) return Promise.resolve({ error: 'No workspace open' } as const)
+  return fn(mgr).catch((error) => ({
+    error: error instanceof Error ? error.message : String(error),
+  }))
+}
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_UPDATE_SESSION_CONFIG,
+  async (_event, sessionId: string, patch: Record<string, unknown>) => {
+    return withCliManager(sessionId, (mgr) => mgr.updateSessionConfig(sessionId, patch))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LIST_PROVIDERS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.listOpenCodeProviders(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LIST_AGENTS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.listOpenCodeAgents(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LIST_MODES, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.listOpenCodeModes(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_LIST_TOOLS,
+  async (_event, sessionId: string, providerID: string, modelID: string) => {
+    return withCliManager(sessionId, (mgr) =>
+      mgr.listOpenCodeTools(sessionId, providerID, modelID),
+    )
+  },
+)
+
+// ─── CLI Agent: session ops ─────────────────────────────────────────────
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_SHARE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionShare(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_UNSHARE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionUnshare(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_SUMMARIZE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionSummarize(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SESSION_REVERT,
+  async (_event, sessionId: string, messageId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.sessionRevert(sessionId, messageId))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_UNREVERT, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionUnrevert(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SESSION_FORK,
+  async (_event, sessionId: string, messageId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.sessionFork(sessionId, messageId))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_ABORT, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionAbort(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_DIFF, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionDiff(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_TODO, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionTodo(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_INIT, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionInit(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_DELETE_REMOTE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionDeleteRemote(sessionId))
+})
+
+// ─── CLI Agent: workspace ops ───────────────────────────────────────────
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FILE_LIST,
+  async (_event, sessionId: string, path: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.fileList(sessionId, path))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FILE_READ,
+  async (_event, sessionId: string, path: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.fileRead(sessionId, path))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_FILE_STATUS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.fileStatus(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FIND_TEXT,
+  async (_event, sessionId: string, query: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.findText(sessionId, query))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FIND_FILES,
+  async (_event, sessionId: string, pattern: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.findFiles(sessionId, pattern))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FIND_SYMBOLS,
+  async (_event, sessionId: string, query: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.findSymbols(sessionId, query))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SHELL_RUN,
+  async (_event, sessionId: string, command: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.shellRun(sessionId, command))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LSP_STATUS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.lspStatus(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_FORMATTER_STATUS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.formatterStatus(sessionId))
+})
+
+// ─── CLI Agent: config / auth / providers ───────────────────────────────
+
+ipcMain.handle(IpcChannels.CLI_AGENT_CONFIG_GET, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.configGet(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_CONFIG_UPDATE,
+  async (_event, sessionId: string, patch: Record<string, unknown>) => {
+    return withCliManager(sessionId, (mgr) => mgr.configUpdate(sessionId, patch))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_CONFIG_PROVIDERS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.configProviders(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_AUTH_SET,
+  async (_event, sessionId: string, key: string, value: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.authSet(sessionId, key, value))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_PROVIDER_LIST, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.providerList(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_PROVIDER_AUTH,
+  async (_event, sessionId: string, providerId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.providerAuth(sessionId, providerId))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_PROVIDER_OAUTH_AUTHORIZE,
+  async (_event, sessionId: string, providerId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.providerOauthAuthorize(sessionId, providerId))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_PROVIDER_OAUTH_CALLBACK,
+  async (_event, sessionId: string, code: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.providerOauthCallback(sessionId, code))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_PATH_GET, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.pathGet(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_LOG_WRITE,
+  async (
+    _event,
+    sessionId: string,
+    message: string,
+    level?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+  ) => {
+    return withCliManager(sessionId, (mgr) => mgr.logWrite(sessionId, message, level))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SERVER_INFO, async (_event, workspaceId: string) => {
+  const runtime = runtimeRegistry.get(workspaceId)
+  const mgr = getCliAgentManager(runtime)
+  return mgr?.serverInfo() ?? null
+})
+
+// ─── CLI Agent: TUI control ─────────────────────────────────────────────
+
+const TUI_HANDLERS: Array<{
+  channel: string
+  method:
+    | 'appendPrompt'
+    | 'submitPrompt'
+    | 'clearPrompt'
+    | 'openHelp'
+    | 'openSessions'
+    | 'openThemes'
+    | 'openModels'
+    | 'executeCommand'
+    | 'showToast'
+}> = [
+  { channel: IpcChannels.CLI_AGENT_TUI_APPEND_PROMPT, method: 'appendPrompt' },
+  { channel: IpcChannels.CLI_AGENT_TUI_SUBMIT_PROMPT, method: 'submitPrompt' },
+  { channel: IpcChannels.CLI_AGENT_TUI_CLEAR_PROMPT, method: 'clearPrompt' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_HELP, method: 'openHelp' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_SESSIONS, method: 'openSessions' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_THEMES, method: 'openThemes' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_MODELS, method: 'openModels' },
+  { channel: IpcChannels.CLI_AGENT_TUI_EXECUTE_COMMAND, method: 'executeCommand' },
+  { channel: IpcChannels.CLI_AGENT_TUI_SHOW_TOAST, method: 'showToast' },
+]
+for (const { channel, method } of TUI_HANDLERS) {
+  ipcMain.handle(channel, async (_event, sessionId: string, args?: Record<string, unknown>) => {
+    return withCliManager(sessionId, (mgr) => mgr.tui(sessionId, method, args))
+  })
+}
 
 // ─── Conversation History IPC handlers ──────────────────────────
 
@@ -1100,6 +1374,12 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
     for (const runtime of runtimeRegistry.list()) {
       getAgentManager(runtime)?.updateConfig(config)
       getAgentManager(runtime)?.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+      // Mirror permission updates into the CLI agent manager so OpenCode
+      // permission decisions stay in sync with live tier changes.
+      getCliAgentManager(runtime)?.updatePermissions(
+        permConfig.permissionTier,
+        permConfig.autoApprove,
+      )
       runtime.refreshWorkload()
     }
   }

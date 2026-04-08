@@ -1,420 +1,384 @@
-import { randomUUID } from 'crypto'
-import { spawn, type ChildProcess } from 'child_process'
-import { createServer } from 'net'
-import { createOpencodeClient } from '@opencode-ai/sdk/client'
-import type { CliBackendAdapter, CliBackendRun, CliBackendTurnContext } from './types'
+/**
+ * OpenCode adapter — thin per-turn driver for the OpenCode SDK.
+ *
+ * Unlike the previous implementation, this adapter no longer spawns or owns a
+ * server process. The workspace's `OpenCodeServerHost` already runs a
+ * persistent `opencode serve` and exposes a shared SSE pump. The adapter:
+ *
+ *   1. Gets a client from the host
+ *   2. Creates an OpenCode session if one doesn't already exist
+ *   3. Subscribes to per-session SSE events via the host
+ *   4. Issues `promptAsync` with all overrides from backend state
+ *      (model / agent / system / tools)
+ *   5. Converts each part via `openCodePartConverter`
+ *   6. Aggregates cost + tokens and emits a `result` event when the session
+ *      goes idle (or fails)
+ *
+ * Permission events are forwarded to the manager via the new
+ * `permission-request` event variant — the manager bridges them to the
+ * existing CHAT_TOOL_CALL approval surface and POSTs the response back via
+ * `host.respondPermission()`.
+ */
 
-interface OpenCodeAdapterOptions {
-  executablePath: string
+import { randomUUID } from 'crypto'
+import type { CliAgentMessage, PermissionTier, ToolPermissionConfig } from '@aide/shared'
+import type { OpenCodeServerHost } from '../openCodeServerHost'
+import { decideOpenCodePermission } from './openCodePermissionBridge'
+import {
+  convertOpenCodePart,
+  createConvertContext,
+  extractTokens,
+  sumTokens,
+} from './openCodePartConverter'
+import type {
+  CliBackendAdapter,
+  CliBackendEvent,
+  CliBackendRun,
+  CliBackendTurnContext,
+} from './types'
+
+export interface OpenCodeAdapterOptions {
+  host: OpenCodeServerHost
+  /** Permission settings snapshot at the time the turn was initiated. */
+  getPermissionSettings: () => {
+    tier: PermissionTier
+    autoApprove: Record<string, boolean | ToolPermissionConfig>
+  }
 }
 
 export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBackendAdapter {
   return {
     backend: 'opencode',
     startTurn(context, emit) {
-      let serverProc: ChildProcess | null = null
-      let currentSessionId = context.backendState.sessionId
-      let closed = false
-
-      const completed = (async () => {
-        const startedAt = Date.now()
-        const port = await reservePort()
-        const url = `http://127.0.0.1:${port}`
-        logOpenCode('starting server', {
-          conversationId: context.conversationId,
-          hasSessionId: Boolean(currentSessionId),
-          cwd: context.cwd,
-          port,
-        })
-        serverProc = spawn(
-          options.executablePath,
-          ['serve', '--hostname=127.0.0.1', `--port=${port}`],
-          {
-            env: {
-              ...process.env,
-              OPENCODE_CONFIG_CONTENT: JSON.stringify({}),
-            },
-            stdio: ['ignore', 'pipe', 'pipe'],
-          },
-        )
-
-        if (!serverProc) throw new Error('Failed to start OpenCode server process')
-        await waitForOpenCodeServer(serverProc, url)
-        logOpenCode('server ready', { url, conversationId: context.conversationId })
-
-        const client = createOpencodeClient({
-          baseUrl: url,
-          directory: context.cwd,
-          responseStyle: 'data',
-          throwOnError: true,
-        })
-
-        if (!currentSessionId) {
-          const created = await client.session.create({ responseStyle: 'data', throwOnError: true })
-          currentSessionId = extractOpenCodeSessionId(created)
-          logOpenCode('session created', {
-            conversationId: context.conversationId,
-            sessionId: currentSessionId,
-          })
-          if (currentSessionId) {
-            emit({ type: 'backend-state', patch: { sessionId: currentSessionId } })
-          }
-        }
-
-        if (!currentSessionId) {
-          throw new Error('Failed to initialize OpenCode session')
-        }
-
-        const sse = await client.global.event({
-          signal: undefined,
-          onSseError(error) {
-            console.error('[OpenCodeAdapter] SSE error:', error)
-          },
-        })
-        const textByMessageId = new Map<string, string>()
-        const timestampByMessageId = new Map<string, number>()
-        const emittedAssistantIds = new Set<string>()
-        const seenToolStates = new Map<string, string>()
-        const costByMessageId = new Map<string, number>()
-        let totalCostUsd = 0
-        let failedError: string | null = null
-        let promptSubmitted = false
-
-        const streamTask = (async () => {
-          for await (const rawEvent of sse.stream) {
-            const envelope = asRecord(rawEvent)
-            const event = asRecord(envelope?.payload) ?? envelope
-            const type = typeof event?.type === 'string' ? event.type : ''
-            const props = asRecord(event?.properties)
-
-            logOpenCode('sse event', {
-              conversationId: context.conversationId,
-              sessionId: currentSessionId,
-              directory: asString(envelope?.directory),
-              type,
-            })
-
-            if (type === 'message.updated' && props?.info) {
-              const info = props.info as Record<string, any>
-              const sessionId = asString(info.sessionID)
-              if (!sessionId || sessionId !== currentSessionId) continue
-
-              const messageId = asString(info.id) ?? randomUUID()
-              if (info.role === 'assistant') {
-                const model =
-                  [asString(info.providerID), asString(info.modelID)].filter(Boolean).join('/') ||
-                  undefined
-                const createdAt =
-                  typeof info.time?.created === 'number' ? info.time.created : Date.now()
-                timestampByMessageId.set(messageId, createdAt)
-                emit({ type: 'session-meta', model })
-                emit({ type: 'backend-state', patch: { sessionId, model } })
-                logOpenCode('assistant message updated', {
-                  sessionId,
-                  messageId,
-                  model,
-                })
-
-                const nextCost = typeof info.cost === 'number' ? info.cost : 0
-                const prevCost = costByMessageId.get(messageId) ?? 0
-                totalCostUsd += Math.max(0, nextCost - prevCost)
-                costByMessageId.set(messageId, nextCost)
-
-                const errorText = renderOpenCodeError(info.error)
-                if (errorText) {
-                  failedError = errorText
-                }
-              }
-              continue
-            }
-
-            if (type === 'message.part.updated' && props?.part) {
-              const part = props.part as Record<string, any>
-              if (asString(part.sessionID) !== currentSessionId) continue
-              const partType = asString(part.type)
-
-              if (partType === 'text') {
-                const messageId = asString(part.messageID) ?? randomUUID()
-                const delta = asString(props.delta)
-                if (delta) {
-                  const prior = textByMessageId.get(messageId) ?? ''
-                  textByMessageId.set(messageId, prior + delta)
-                  emit({ type: 'stream-delta', messageId, delta })
-                  logOpenCode('assistant delta', {
-                    sessionId: currentSessionId,
-                    messageId,
-                    deltaLength: delta.length,
-                  })
-                } else {
-                  textByMessageId.set(messageId, asString(part.text) ?? '')
-                  logOpenCode('assistant part snapshot', {
-                    sessionId: currentSessionId,
-                    messageId,
-                    textLength: (asString(part.text) ?? '').length,
-                  })
-                }
-                continue
-              }
-
-              if (partType === 'tool') {
-                const partId = asString(part.id) ?? randomUUID()
-                const state = asRecord(part.state)
-                const status = asString(state?.status) ?? 'pending'
-                const priorStatus = seenToolStates.get(partId)
-                if (priorStatus === status) continue
-                seenToolStates.set(partId, status)
-
-                const toolName = asString(part.tool) ?? 'tool'
-                if (status === 'pending' || status === 'running') {
-                  emit({
-                    type: 'message',
-                    message: {
-                      id: partId,
-                      type: 'tool_use',
-                      content: `Running ${toolName}...`,
-                      timestamp: Date.now(),
-                      toolName,
-                      toolUseId: asString(part.callID),
-                    },
-                  })
-                } else if (status === 'completed') {
-                  emit({
-                    type: 'message',
-                    message: {
-                      id: partId,
-                      type: 'tool_result',
-                      content:
-                        asString(state?.output) ??
-                        asString(state?.title) ??
-                        `${toolName} completed`,
-                      timestamp: Date.now(),
-                      toolName,
-                      toolUseId: asString(part.callID),
-                    },
-                  })
-                } else if (status === 'error') {
-                  emit({
-                    type: 'message',
-                    message: {
-                      id: partId,
-                      type: 'error',
-                      content: asString(state?.error) ?? `${toolName} failed`,
-                      timestamp: Date.now(),
-                      toolName,
-                      toolUseId: asString(part.callID),
-                    },
-                  })
-                }
-              }
-              continue
-            }
-
-            if (type === 'session.error' && props) {
-              if (
-                currentSessionId &&
-                asString(props.sessionID) &&
-                asString(props.sessionID) !== currentSessionId
-              ) {
-                continue
-              }
-              failedError = renderOpenCodeError(props.error) ?? 'OpenCode session failed'
-              console.error('[OpenCodeAdapter] session.error', {
-                conversationId: context.conversationId,
-                sessionId: currentSessionId,
-                error: failedError,
-              })
-              continue
-            }
-
-            if (
-              type === 'session.idle' &&
-              asString(props?.sessionID) === currentSessionId &&
-              promptSubmitted
-            ) {
-              logOpenCode('session idle', {
-                conversationId: context.conversationId,
-                sessionId: currentSessionId,
-              })
-              break
-            }
-          }
-        })()
-
-        logOpenCode('submitting prompt', {
-          conversationId: context.conversationId,
-          sessionId: currentSessionId,
-          promptLength: context.prompt.length,
-        })
-        await client.session.promptAsync({
-          responseStyle: 'data',
-          throwOnError: true,
-          path: { id: currentSessionId },
-          body: {
-            parts: [{ type: 'text', text: context.prompt }],
-          },
-        })
-        promptSubmitted = true
-        logOpenCode('prompt submitted', {
-          conversationId: context.conversationId,
-          sessionId: currentSessionId,
-        })
-
-        await streamTask
-        logOpenCode('stream complete', {
-          conversationId: context.conversationId,
-          sessionId: currentSessionId,
-          assistantMessages: textByMessageId.size,
-          failed: Boolean(failedError),
-        })
-
-        for (const [messageId, text] of textByMessageId) {
-          if (!text || emittedAssistantIds.has(messageId)) continue
-          emittedAssistantIds.add(messageId)
-          emit({
-            type: 'message',
-            message: {
-              id: messageId,
-              type: 'assistant',
-              content: text,
-              timestamp: timestampByMessageId.get(messageId) ?? Date.now(),
-            },
-          })
-        }
-
-        if (failedError) {
-          emit({
-            type: 'message',
-            message: {
-              id: randomUUID(),
-              type: 'error',
-              content: failedError,
-              timestamp: Date.now(),
-            },
-          })
-          emit({
-            type: 'result',
-            durationMs: Date.now() - startedAt,
-            totalCostUsd,
-            isSuccess: false,
-          })
-          return
-        }
-
-        emit({
-          type: 'message',
-          message: {
-            id: randomUUID(),
-            type: 'result',
-            content: `Completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
-            timestamp: Date.now(),
-            totalCostUsd,
-            isSuccess: true,
-          },
-        })
-        emit({
-          type: 'result',
-          durationMs: Date.now() - startedAt,
-          totalCostUsd,
-          isSuccess: true,
-        })
-      })().finally(() => {
-        if (!closed) {
-          logOpenCode('stopping server', {
-            conversationId: context.conversationId,
-            sessionId: currentSessionId,
-          })
-          serverProc?.kill('SIGTERM')
-        }
-      })
-
-      return {
-        close() {
-          closed = true
-          serverProc?.kill('SIGTERM')
-        },
-        completed,
-      } satisfies CliBackendRun
+      return runOpenCodeTurn(options, context, emit)
     },
   }
 }
 
-async function reservePort(): Promise<number> {
-  return await new Promise<number>((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : null
-      server.close((error) => {
-        if (error) reject(error)
-        else if (typeof port === 'number') resolve(port)
-        else reject(new Error('Failed to reserve OpenCode port'))
-      })
+function runOpenCodeTurn(
+  options: OpenCodeAdapterOptions,
+  context: CliBackendTurnContext,
+  emit: (event: CliBackendEvent) => void,
+): CliBackendRun {
+  const startedAt = Date.now()
+  let unsubscribe: (() => void) | null = null
+  let closed = false
+  let promptSubmitted = false
+  let sessionIdRef: string | null = context.backendState.sessionId ?? null
+
+  const partCtx = createConvertContext()
+  const textByMessageId = new Map<string, string>()
+  const emittedAssistantIds = new Set<string>()
+  const seenPartFinalIds = new Set<string>()
+  const costByMessageId = new Map<string, number>()
+  const tokensByMessageId = new Map<string, ReturnType<typeof extractTokens>>()
+  let totalCostUsd = 0
+  let totalTokens: ReturnType<typeof extractTokens> = undefined
+  let failedError: string | null = null
+  let idleResolve: (() => void) | null = null
+  const idlePromise = new Promise<void>((resolve) => {
+    idleResolve = resolve
+  })
+
+  const completed = (async () => {
+    const client = await options.host.getClient()
+
+    // Ensure we have a session.
+    if (!sessionIdRef) {
+      const created = await (
+        client as unknown as {
+          session: {
+            create: (opts?: {
+              body?: { title?: string }
+              query?: { directory?: string }
+            }) => Promise<unknown>
+          }
+        }
+      ).session.create({ query: { directory: context.cwd } })
+      const id = extractSessionId(created)
+      if (!id) throw new Error('OpenCode session.create returned no id')
+      sessionIdRef = id
+      emit({ type: 'backend-state', patch: { sessionId: id } })
+    }
+    const sessionId = sessionIdRef
+    if (!sessionId) throw new Error('OpenCode session unavailable')
+
+    // Subscribe BEFORE issuing the prompt so we don't miss early events.
+    unsubscribe = options.host.subscribe(sessionId, (rawEvent) => {
+      handleEvent(rawEvent)
     })
-  })
-}
 
-async function waitForOpenCodeServer(proc: ChildProcess, url: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Timeout waiting for OpenCode server to start'))
-    }, 5000)
+    // Build the prompt body using per-session backend state overrides.
+    const state = context.backendState
+    const body: Record<string, unknown> = {
+      parts: [{ type: 'text', text: context.prompt }],
+    }
+    if (state.providerID && state.modelID) {
+      body.model = { providerID: state.providerID, modelID: state.modelID }
+    } else if (state.model && state.model.includes('/')) {
+      const [providerID, modelID] = state.model.split('/', 2)
+      body.model = { providerID, modelID }
+    }
+    if (state.agent) body.agent = state.agent
+    if (state.systemPromptOverride) body.system = state.systemPromptOverride
+    if (state.toolToggles) body.tools = state.toolToggles
 
-    let output = ''
-    const onData = (chunk: Buffer) => {
-      output += chunk.toString()
-      if (output.includes(url) || output.includes('opencode server listening')) {
-        cleanup()
-        resolve()
+    await (
+      client as unknown as {
+        session: {
+          promptAsync: (opts: {
+            path: { id: string }
+            query?: { directory?: string }
+            body: Record<string, unknown>
+          }) => Promise<unknown>
+        }
       }
-    }
-    const onExit = (code: number | null) => {
-      cleanup()
-      reject(new Error(`OpenCode server exited with code ${code}${output ? `\n${output}` : ''}`))
-    }
-    const onError = (error: Error) => {
-      cleanup()
-      reject(error)
-    }
-    const cleanup = () => {
-      clearTimeout(timeout)
-      proc.stdout?.off('data', onData)
-      proc.stderr?.off('data', onData)
-      proc.off('exit', onExit)
-      proc.off('error', onError)
+    ).session.promptAsync({
+      path: { id: sessionId },
+      query: { directory: context.cwd },
+      body,
+    })
+    promptSubmitted = true
+
+    // Wait for session.idle (or session.error which sets failedError).
+    await idlePromise
+
+    // Emit any final assistant text accumulators that weren't already emitted.
+    for (const [messageId, text] of textByMessageId) {
+      if (!text) continue
+      if (emittedAssistantIds.has(messageId)) continue
+      if (seenPartFinalIds.has(messageId)) continue
+      emittedAssistantIds.add(messageId)
+      const message: Omit<CliAgentMessage, 'backend'> = {
+        id: messageId,
+        type: 'assistant',
+        content: text,
+        timestamp: Date.now(),
+        tokens: tokensByMessageId.get(messageId),
+        costUsd: costByMessageId.get(messageId),
+      }
+      emit({ type: 'message', message })
     }
 
-    proc.stdout?.on('data', onData)
-    proc.stderr?.on('data', onData)
-    proc.once('exit', onExit)
-    proc.once('error', onError)
+    if (failedError) {
+      emit({
+        type: 'message',
+        message: {
+          id: randomUUID(),
+          type: 'error',
+          content: failedError,
+          timestamp: Date.now(),
+        },
+      })
+      emit({
+        type: 'result',
+        durationMs: Date.now() - startedAt,
+        totalCostUsd,
+        tokens: totalTokens,
+        isSuccess: false,
+      })
+      return
+    }
+
+    emit({
+      type: 'message',
+      message: {
+        id: randomUUID(),
+        type: 'result',
+        content: `Completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+        timestamp: Date.now(),
+        totalCostUsd,
+        tokens: totalTokens,
+        isSuccess: true,
+      },
+    })
+    emit({
+      type: 'result',
+      durationMs: Date.now() - startedAt,
+      totalCostUsd,
+      tokens: totalTokens,
+      isSuccess: true,
+    })
+  })().finally(() => {
+    if (unsubscribe) {
+      try {
+        unsubscribe()
+      } catch {
+        /* ignore */
+      }
+      unsubscribe = null
+    }
   })
-}
 
-function asRecord(value: unknown): Record<string, any> | null {
-  return value && typeof value === 'object' ? (value as Record<string, any>) : null
-}
+  function handleEvent(rawEvent: unknown): void {
+    if (closed) return
+    const event = rawEvent as { type?: string; properties?: Record<string, unknown> }
+    const type = typeof event.type === 'string' ? event.type : ''
+    const props = (event.properties ?? {}) as Record<string, unknown>
 
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
-}
+    if (type === 'message.updated' && (props.info as Record<string, unknown> | undefined)) {
+      const info = props.info as Record<string, unknown>
+      const role = info.role
+      const messageId = (info.id as string | undefined) ?? randomUUID()
+      if (role === 'assistant') {
+        const providerID = info.providerID as string | undefined
+        const modelID = info.modelID as string | undefined
+        const model = [providerID, modelID].filter(Boolean).join('/') || undefined
+        if (model) {
+          emit({ type: 'session-meta', model })
+          emit({ type: 'backend-state', patch: { sessionId: sessionIdRef ?? undefined, model } })
+        }
+        const cost = typeof info.cost === 'number' ? info.cost : 0
+        const prevCost = costByMessageId.get(messageId) ?? 0
+        const delta = Math.max(0, cost - prevCost)
+        totalCostUsd += delta
+        costByMessageId.set(messageId, cost)
 
-function extractOpenCodeSessionId(value: unknown): string | undefined {
-  const payload = asRecord(value)
-  return asString(payload?.id) ?? asString(asRecord(payload?.data)?.id)
-}
+        const tokens = extractTokens(info.tokens)
+        if (tokens) {
+          tokensByMessageId.set(messageId, tokens)
+          totalTokens = recomputeTotals(tokensByMessageId)
+        }
 
-function logOpenCode(message: string, data?: Record<string, unknown>): void {
-  if (data) {
-    console.log(`[OpenCodeAdapter] ${message}`, data)
-    return
+        const errorText = renderOpenCodeError(info.error)
+        if (errorText) failedError = errorText
+      }
+      return
+    }
+
+    if (type === 'message.part.updated' && props.part) {
+      const part = props.part as Record<string, unknown>
+      const messageId = (part.messageID as string | undefined) ?? randomUUID()
+      const delta = typeof props.delta === 'string' ? (props.delta as string) : undefined
+      const converted = convertOpenCodePart(part, delta, partCtx)
+
+      if (converted.isTextDelta && converted.delta) {
+        const prior = textByMessageId.get(converted.messageId ?? messageId) ?? ''
+        textByMessageId.set(converted.messageId ?? messageId, prior + converted.delta)
+        emit({
+          type: 'stream-delta',
+          messageId: converted.messageId ?? messageId,
+          delta: converted.delta,
+        })
+      }
+      for (const message of converted.messages) {
+        if (message.type === 'assistant') {
+          emittedAssistantIds.add(message.id)
+          seenPartFinalIds.add(message.id)
+        }
+        emit({ type: 'message', message })
+      }
+      return
+    }
+
+    if (type === 'permission.updated' && props) {
+      const perm = props as Record<string, unknown>
+      const permissionId = perm.id as string | undefined
+      const sessionID = perm.sessionID as string | undefined
+      if (!permissionId || !sessionID) return
+
+      const settings = options.getPermissionSettings()
+      const decision = decideOpenCodePermission(
+        {
+          category: (perm.type as string) ?? 'unknown',
+          pattern: perm.pattern as string | string[] | undefined,
+          metadata: perm.metadata as Record<string, unknown> | undefined,
+        },
+        settings.tier,
+        settings.autoApprove,
+      )
+
+      if (decision === 'always' || decision === 'reject') {
+        void options.host.respondPermission(sessionID, permissionId, decision).catch(() => {
+          // Surface as error if response fails.
+        })
+        return
+      }
+
+      // Forward to the manager via a synthetic permission-request event.
+      emit({
+        type: 'permission-request',
+        request: {
+          permissionId,
+          sessionId: sessionID,
+          category: (perm.type as string) ?? 'unknown',
+          title: (perm.title as string) ?? 'Permission required',
+          pattern: perm.pattern as string | string[] | undefined,
+          metadata: perm.metadata as Record<string, unknown> | undefined,
+        },
+        resolve: (response) => {
+          void options.host.respondPermission(sessionID, permissionId, response).catch(() => {
+            /* ignore */
+          })
+        },
+      })
+      return
+    }
+
+    if (type === 'session.error' && props) {
+      if (sessionIdRef && typeof props.sessionID === 'string' && props.sessionID !== sessionIdRef) {
+        return
+      }
+      failedError = renderOpenCodeError(props.error) ?? 'OpenCode session failed'
+      if (idleResolve) {
+        idleResolve()
+        idleResolve = null
+      }
+      return
+    }
+
+    if (type === 'session.idle' && props.sessionID === sessionIdRef && promptSubmitted) {
+      if (idleResolve) {
+        idleResolve()
+        idleResolve = null
+      }
+      return
+    }
   }
-  console.log(`[OpenCodeAdapter] ${message}`)
+
+  return {
+    close() {
+      closed = true
+      if (idleResolve) {
+        idleResolve()
+        idleResolve = null
+      }
+      if (unsubscribe) {
+        try {
+          unsubscribe()
+        } catch {
+          /* ignore */
+        }
+        unsubscribe = null
+      }
+    },
+    completed,
+  }
+}
+
+function recomputeTotals(
+  byId: Map<string, ReturnType<typeof extractTokens>>,
+): ReturnType<typeof extractTokens> {
+  let acc: ReturnType<typeof extractTokens> = undefined
+  for (const value of byId.values()) {
+    acc = sumTokens(acc, value)
+  }
+  return acc
+}
+
+function extractSessionId(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if (typeof v.id === 'string') return v.id
+  const data = v.data as Record<string, unknown> | undefined
+  if (data && typeof data.id === 'string') return data.id
+  return null
 }
 
 function renderOpenCodeError(value: unknown): string | null {
-  const error = asRecord(value)
-  const data = asRecord(error?.data)
-  const message = asString(data?.message)
+  if (!value || typeof value !== 'object') return null
+  const error = value as Record<string, unknown>
+  const data = (error.data ?? {}) as Record<string, unknown>
+  const message = typeof data.message === 'string' ? (data.message as string) : null
   return message ?? null
 }

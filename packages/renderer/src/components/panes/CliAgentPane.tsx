@@ -1,11 +1,17 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
-import type { AgentBackend, CliAgentMessage } from '@aide/shared'
+import type { AgentBackend, CliAgentBackendState, CliAgentMessage } from '@aide/shared'
 import { useCliAgent } from '../../hooks/useCliAgent'
 import { AgentStatusDot } from '../chat/AgentStatusDot'
 import { ChatInput } from '../chat/ChatInput'
 import { renderMarkdown } from '../../lib/markdownRenderer'
 import { CLI_BACKENDS, backendBadgeLabel, backendLabel } from '../../lib/agentBackend'
+import { CostTokenBadge } from '../cliAgent/CostTokenBadge'
+import { RichPartRenderer, isRichPartType } from '../cliAgent/RichPartRenderer'
+import { SessionMenu } from '../cliAgent/SessionMenu'
+import { SessionSettingsPanel } from '../cliAgent/SessionSettingsPanel'
+import { DiagnosticsPanel } from '../cliAgent/DiagnosticsPanel'
+import { TuiControlPanel } from '../cliAgent/TuiControlPanel'
 import '../../styles/cli-agent-pane.css'
 
 interface CliAgentPanelParams {
@@ -98,6 +104,31 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
     if (!ok) await agent.start(next)
   }
 
+  // Toast for session menu actions.
+  const [toast, setToast] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
+  const showToast = useCallback((text: string, variant: 'success' | 'error' = 'success') => {
+    setToast({ text, variant })
+    window.setTimeout(() => setToast(null), 3000)
+  }, [])
+
+  const handleRevertMessage = useCallback(
+    async (messageId: string) => {
+      if (!agent.sessionId) return
+      const result = await window.api.cliAgentSessionRevert(agent.sessionId, messageId)
+      if (result.error) showToast(result.error, 'error')
+      else showToast('Reverted', 'success')
+    },
+    [agent.sessionId, showToast],
+  )
+
+  const isOpenCode = headerBackend === 'opencode'
+  // Mirror the live per-backend state from the hook so the pickers reflect any
+  // overrides the user has applied (and so dependent dropdowns like the model
+  // picker re-render when the provider changes).
+  const currentBackendState: CliAgentBackendState | null = isOpenCode
+    ? agent.backendState ?? { model: agent.model ?? undefined }
+    : null
+
   return (
     <div className="cli-agent-pane" style={{ ['--panel-zoom' as string]: String(zoomFactor ?? 1) }}>
       {/* Header */}
@@ -125,7 +156,20 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
         {agent.model && (
           <span className="cli-agent-pane__model">{agent.model}</span>
         )}
+        <CostTokenBadge
+          costUsd={agent.totalCostUsd}
+          tokens={agent.totalTokens}
+          compact
+          hideCost={headerBackend === 'claude-code'}
+        />
         <div className="cli-agent-pane__header-spacer" />
+        {isOpenCode && (
+          <SessionMenu
+            sessionId={agent.sessionId}
+            disabled={isActive}
+            onMessage={(text, variant) => showToast(text, variant ?? 'success')}
+          />
+        )}
         {isActive ? (
           <button className="cli-agent-pane__btn cli-agent-pane__btn--stop" onClick={agent.stop}>
             Stop
@@ -139,6 +183,37 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
           </button>
         )}
       </div>
+
+      {/* OpenCode-only collapsible panels */}
+      {isOpenCode && currentBackendState && (
+        <div style={{ padding: '4px 8px 0 8px' }}>
+          <SessionSettingsPanel
+            sessionId={agent.sessionId}
+            backendState={currentBackendState}
+            onPatch={agent.updateSessionConfig}
+          />
+          <DiagnosticsPanel workspaceId={workspaceId ?? null} sessionId={agent.sessionId} />
+          <TuiControlPanel sessionId={agent.sessionId} />
+        </div>
+      )}
+
+      {toast && (
+        <div
+          style={{
+            margin: '4px 8px',
+            padding: '4px 8px',
+            background:
+              toast.variant === 'error'
+                ? 'rgba(255,80,80,0.15)'
+                : 'rgba(80,200,120,0.15)',
+            color: toast.variant === 'error' ? 'tomato' : undefined,
+            borderRadius: 4,
+            fontSize: 11,
+          }}
+        >
+          {toast.text}
+        </div>
+      )}
 
       {/* Error banner */}
       {agent.lastError && agent.processStatus === 'error' && (
@@ -163,6 +238,7 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
             key={msg.id}
             message={msg}
             showBackendBadge={showBackendBadges}
+            onRevertMessage={isOpenCode ? handleRevertMessage : undefined}
           />
         ))}
 
@@ -194,9 +270,11 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
 function CliAgentMessageBubble({
   message,
   showBackendBadge,
+  onRevertMessage,
 }: {
   message: CliAgentMessage
   showBackendBadge: boolean
+  onRevertMessage?: (messageId: string) => void
 }) {
   const badge =
     showBackendBadge && message.backend && message.type !== 'user' ? (
@@ -207,6 +285,11 @@ function CliAgentMessageBubble({
         {backendBadgeLabel(message.backend)}
       </span>
     ) : null
+
+  // Rich part types render via the dedicated component.
+  if (isRichPartType(message.type)) {
+    return <RichPartRenderer message={message} onRevertMessage={onRevertMessage} />
+  }
 
   if (message.type === 'user') {
     return (

@@ -523,6 +523,116 @@ const api: WindowApi = {
     ipcRenderer.on(IpcChannels.CLI_AGENT_RESULT, handler)
     return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_RESULT, handler)
   },
+  onCliAgentWorkspaceCost: (callback: (summary: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, summary: unknown) => callback(summary)
+    ipcRenderer.on(IpcChannels.CLI_AGENT_WORKSPACE_COST, handler)
+    return () => ipcRenderer.removeListener(IpcChannels.CLI_AGENT_WORKSPACE_COST, handler)
+  },
+
+  // ─── CLI Agent: per-session config + listings ──
+  cliAgentUpdateSessionConfig: (sessionId: string, patch: Record<string, unknown>) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_UPDATE_SESSION_CONFIG, sessionId, patch),
+  cliAgentListProviders: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_LIST_PROVIDERS, sessionId),
+  cliAgentListAgents: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_LIST_AGENTS, sessionId),
+  cliAgentListModes: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_LIST_MODES, sessionId),
+  cliAgentListTools: (sessionId: string, providerID: string, modelID: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_LIST_TOOLS, sessionId, providerID, modelID),
+
+  // ─── CLI Agent: session ops ────────────────────
+  cliAgentSessionShare: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_SHARE, sessionId),
+  cliAgentSessionUnshare: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_UNSHARE, sessionId),
+  cliAgentSessionSummarize: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_SUMMARIZE, sessionId),
+  cliAgentSessionRevert: (sessionId: string, messageId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_REVERT, sessionId, messageId),
+  cliAgentSessionUnrevert: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_UNREVERT, sessionId),
+  cliAgentSessionFork: (sessionId: string, messageId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_FORK, sessionId, messageId),
+  cliAgentSessionAbort: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_ABORT, sessionId),
+  cliAgentSessionDiff: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_DIFF, sessionId),
+  cliAgentSessionTodo: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_TODO, sessionId),
+  cliAgentSessionInit: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_INIT, sessionId),
+  cliAgentSessionDeleteRemote: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SESSION_DELETE_REMOTE, sessionId),
+
+  // ─── CLI Agent: workspace ops ──────────────────
+  cliAgentFileList: (sessionId: string, path: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_FILE_LIST, sessionId, path),
+  cliAgentFileRead: (sessionId: string, path: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_FILE_READ, sessionId, path),
+  cliAgentFileStatus: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_FILE_STATUS, sessionId),
+  cliAgentFindText: (sessionId: string, query: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_FIND_TEXT, sessionId, query),
+  cliAgentFindFiles: (sessionId: string, pattern: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_FIND_FILES, sessionId, pattern),
+  cliAgentFindSymbols: (sessionId: string, query: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_FIND_SYMBOLS, sessionId, query),
+  cliAgentShellRun: (sessionId: string, command: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SHELL_RUN, sessionId, command),
+  cliAgentLspStatus: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_LSP_STATUS, sessionId),
+  cliAgentFormatterStatus: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_FORMATTER_STATUS, sessionId),
+
+  // ─── CLI Agent: config / auth / providers ──────
+  cliAgentConfigGet: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_CONFIG_GET, sessionId),
+  cliAgentConfigUpdate: (sessionId: string, patch: Record<string, unknown>) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_CONFIG_UPDATE, sessionId, patch),
+  cliAgentConfigProviders: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_CONFIG_PROVIDERS, sessionId),
+  cliAgentAuthSet: (sessionId: string, key: string, value: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_AUTH_SET, sessionId, key, value),
+  cliAgentProviderList: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_PROVIDER_LIST, sessionId),
+  cliAgentProviderAuth: (sessionId: string, providerId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_PROVIDER_AUTH, sessionId, providerId),
+  cliAgentProviderOauthAuthorize: (sessionId: string, providerId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_PROVIDER_OAUTH_AUTHORIZE, sessionId, providerId),
+  cliAgentProviderOauthCallback: (sessionId: string, code: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_PROVIDER_OAUTH_CALLBACK, sessionId, code),
+  cliAgentPathGet: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_PATH_GET, sessionId),
+  cliAgentLogWrite: (
+    sessionId: string,
+    message: string,
+    level?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+  ) => ipcRenderer.invoke(IpcChannels.CLI_AGENT_LOG_WRITE, sessionId, message, level),
+  cliAgentServerInfo: (workspaceId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SERVER_INFO, workspaceId),
+
+  // ─── CLI Agent: TUI control ────────────────────
+  cliAgentTuiAppendPrompt: (sessionId: string, text: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_APPEND_PROMPT, sessionId, { text }),
+  cliAgentTuiSubmitPrompt: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_SUBMIT_PROMPT, sessionId),
+  cliAgentTuiClearPrompt: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_CLEAR_PROMPT, sessionId),
+  cliAgentTuiOpenHelp: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_OPEN_HELP, sessionId),
+  cliAgentTuiOpenSessions: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_OPEN_SESSIONS, sessionId),
+  cliAgentTuiOpenThemes: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_OPEN_THEMES, sessionId),
+  cliAgentTuiOpenModels: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_OPEN_MODELS, sessionId),
+  cliAgentTuiExecuteCommand: (sessionId: string, command: string) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_EXECUTE_COMMAND, sessionId, { command }),
+  cliAgentTuiShowToast: (
+    sessionId: string,
+    args: { title?: string; message: string; variant: string },
+  ) => ipcRenderer.invoke(IpcChannels.CLI_AGENT_TUI_SHOW_TOAST, sessionId, args),
 
   // ─── Conversation History ─────────────────────
   conversationList: (workspaceId: string): Promise<ConversationMeta[]> =>

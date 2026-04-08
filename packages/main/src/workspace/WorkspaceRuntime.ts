@@ -55,6 +55,7 @@ export class WorkspaceRuntime {
       conversationStore: null,
       nativeSessionWatcher: null,
       nativeSessionCache: null,
+      approvalRouter: null,
       fileWatcher: null,
       gitStatus: null,
       worktreeManager: null,
@@ -223,13 +224,18 @@ export class WorkspaceRuntime {
     } | null
     const cliAgentManager = this.services.cliAgentManager as {
       getRunningSessionCount?: () => number
+      getPendingApprovalCount?: () => number
     } | null
+
+    const pendingApproval =
+      (agentManager?.getPendingApprovalCount?.() ?? 0) +
+      (cliAgentManager?.getPendingApprovalCount?.() ?? 0)
 
     this.workload = {
       tasksRunning: Boolean(taskRunner?.getRunning?.().length),
       pendingUserInput: Boolean(taskRunner?.getPendingInputCount?.()),
       agentsRunning: Boolean(agentManager?.getActiveSessionCount?.() || cliAgentManager?.getRunningSessionCount?.()),
-      pendingApproval: Boolean(agentManager?.getPendingApprovalCount?.()),
+      pendingApproval: pendingApproval > 0,
     }
     this.emitSnapshotChanged()
   }

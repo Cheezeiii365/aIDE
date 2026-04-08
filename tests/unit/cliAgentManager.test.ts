@@ -192,4 +192,102 @@ describe('CliAgentManager', () => {
       expect.objectContaining({ backend: 'codex' }),
     )
   })
+
+  it('updateSessionConfig persists per-backend overrides', async () => {
+    const store = makeStore()
+    const manager = new CliAgentManager({
+      workspaceRoot: '/workspace',
+      getWebContents: () => null,
+      conversationStore: store as never,
+    })
+    const started = await manager.start('ws-1', 'opencode', 'conv-config')
+    if ('error' in started) throw new Error(started.error)
+
+    const result = await manager.updateSessionConfig(started.sessionId, {
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet-4-5',
+      agent: 'build',
+      systemPromptOverride: 'be helpful',
+      toolToggles: { web_search: false },
+    })
+
+    expect('error' in result).toBe(false)
+    const session = manager.getSessionById(started.sessionId)
+    expect(session?.backendStates?.['opencode']?.providerID).toBe('anthropic')
+    expect(session?.backendStates?.['opencode']?.modelID).toBe('claude-sonnet-4-5')
+    expect(session?.backendStates?.['opencode']?.agent).toBe('build')
+    expect(session?.backendStates?.['opencode']?.systemPromptOverride).toBe('be helpful')
+    expect(session?.backendStates?.['opencode']?.toolToggles).toEqual({ web_search: false })
+  })
+
+  it('hot-swap preserves per-backend state across switches', async () => {
+    const store = makeStore()
+    const manager = new CliAgentManager({
+      workspaceRoot: '/workspace',
+      getWebContents: () => null,
+      conversationStore: store as never,
+    })
+    const started = await manager.start('ws-1', 'opencode', 'conv-swap')
+    if ('error' in started) throw new Error(started.error)
+
+    await manager.updateSessionConfig(started.sessionId, {
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet-4-5',
+    })
+
+    // Switch to claude-code, then back.
+    await manager.switchBackend(started.sessionId, 'claude-code')
+    await manager.switchBackend(started.sessionId, 'opencode')
+
+    const session = manager.getSessionById(started.sessionId)
+    // OpenCode-specific overrides survive the round trip.
+    expect(session?.backendStates?.['opencode']?.providerID).toBe('anthropic')
+    expect(session?.backendStates?.['opencode']?.modelID).toBe('claude-sonnet-4-5')
+  })
+
+  it('updatePermissions changes the manager tier without restart', () => {
+    const manager = new CliAgentManager({
+      workspaceRoot: '/workspace',
+      getWebContents: () => null,
+      permissionTier: 'confirm',
+      autoApprove: {},
+    })
+    // No public getter; just verify the method doesn't throw and accepts both args.
+    expect(() => manager.updatePermissions('autopilot', { file_write: true })).not.toThrow()
+  })
+
+  it('getWorkspaceCostSummary aggregates across sessions', async () => {
+    const store = makeStore()
+    const manager = new CliAgentManager({
+      workspaceRoot: '/workspace',
+      workspaceId: 'ws-cost',
+      getWebContents: () => null,
+      conversationStore: store as never,
+    })
+    await manager.start('ws-cost', 'opencode', 'conv-a')
+    await manager.start('ws-cost', 'opencode', 'conv-b')
+
+    const summary = manager.getWorkspaceCostSummary()
+    expect(summary.workspaceId).toBe('ws-cost')
+    expect(summary.sessionCount).toBe(2)
+    expect(summary.totalCostUsd).toBe(0)
+    expect(summary.totalTokens).toEqual({
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    })
+  })
+
+  it('ToolApprovalOwner methods are no-ops when no permission is pending', () => {
+    const manager = new CliAgentManager({
+      workspaceRoot: '/workspace',
+      getWebContents: () => null,
+    })
+    expect(manager.ownsToolCall('nonexistent')).toBe(false)
+    expect(manager.getPendingApprovalCount()).toBe(0)
+    expect(() => manager.approveToolCall('s', 'nonexistent')).not.toThrow()
+    expect(() => manager.rejectToolCall('s', 'nonexistent')).not.toThrow()
+  })
 })

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
+import type { CliAgentTokenUsage } from '@aide/shared'
 import type {
   CliBackendAdapter,
   CliBackendEvent,
@@ -49,12 +50,16 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions): CliB
         }
 
         let totalCostUsd = 0
+        let totalTokens: CliAgentTokenUsage | undefined = undefined
         let sawResult = false
         for await (const message of queryInstance) {
           const events = normalizeClaudeMessage(message)
           for (const event of events) {
             if (event.type === 'result') {
               totalCostUsd += event.totalCostUsd
+              if (event.tokens) {
+                totalTokens = sumClaudeTokens(totalTokens, event.tokens)
+              }
               sawResult = true
             }
             emit(event)
@@ -66,6 +71,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions): CliB
             type: 'result',
             durationMs: Date.now() - startedAt,
             totalCostUsd,
+            tokens: totalTokens,
             isSuccess: true,
           })
         }
@@ -243,6 +249,7 @@ function normalizeClaudeMessage(message: any): CliBackendEvent[] {
     const sessionId = message.session_id as string | undefined
     const errors = Array.isArray(message.errors) ? (message.errors as string[]) : []
     const errorDetail = errors.length > 0 ? errors.join('\n') : ''
+    const tokens = extractClaudeTokens(message.usage)
     const events: CliBackendEvent[] = []
 
     if (sessionId) {
@@ -263,6 +270,7 @@ function normalizeClaudeMessage(message: any): CliBackendEvent[] {
         timestamp: Date.now(),
         durationMs,
         totalCostUsd,
+        tokens,
         isSuccess,
         raw: message,
       },
@@ -272,6 +280,7 @@ function normalizeClaudeMessage(message: any): CliBackendEvent[] {
       type: 'result',
       durationMs,
       totalCostUsd,
+      tokens,
       isSuccess,
     })
 
@@ -279,4 +288,41 @@ function normalizeClaudeMessage(message: any): CliBackendEvent[] {
   }
 
   return []
+}
+
+/** Extract Claude SDK usage block (input_tokens / output_tokens / cache_*) into our shared shape. */
+function extractClaudeTokens(usage: unknown): CliAgentTokenUsage | undefined {
+  if (!usage || typeof usage !== 'object') return undefined
+  const u = usage as Record<string, unknown>
+  const input = numberOr(u.input_tokens, 0)
+  const output = numberOr(u.output_tokens, 0)
+  const cacheRead = numberOr(u.cache_read_input_tokens, 0)
+  const cacheWrite = numberOr(u.cache_creation_input_tokens, 0)
+  if (input === 0 && output === 0 && cacheRead === 0 && cacheWrite === 0) return undefined
+  return {
+    input,
+    output,
+    reasoning: 0,
+    cacheRead,
+    cacheWrite,
+  }
+}
+
+function sumClaudeTokens(
+  a: CliAgentTokenUsage | undefined,
+  b: CliAgentTokenUsage | undefined,
+): CliAgentTokenUsage | undefined {
+  if (!a) return b
+  if (!b) return a
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    reasoning: a.reasoning + b.reasoning,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+  }
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' ? value : fallback
 }
