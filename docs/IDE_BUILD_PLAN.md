@@ -1294,6 +1294,8 @@ These need a decision before or during the relevant phase.
 
 Track milestone completion here. Update as you go.
 
+**2026-04-08:** OpenCode adapter fixes — `openCodeAdapter` now handles the SDK's `responseStyle: 'data'` shape for `session.create()` (direct `Session` payload instead of `{ data }`) and correctly unwraps streamed `GlobalEvent.payload` SSE envelopes, which had been causing OpenCode turns to stall without rendering assistant output. Added targeted adapter diagnostics (`[OpenCodeAdapter] ...`) plus `openCodeAdapter.test.ts` coverage for the direct-session response path and wrapped SSE event shape.
+
 **2026-03-29:** Built-in chat — `useChat` refreshes after `CHAT_STREAM_END` and tool-call IPC now call `chatGetHistory(workspaceId, sessionId)` so history stays scoped to the active tab; avoids main falling back to `getMostRecent` (multi-tab isolation + pre-persist race).
 
 **2026-04-08:** Pane focus handoff fix — `EditorPane` and `TerminalPane` now move DOM focus into CodeMirror/xterm when a Dockview panel becomes active and also when a newly-created panel finishes mounting while already active. This fixes keyboard pane/tab switching paths that selected a panel without moving the caret into the target surface.

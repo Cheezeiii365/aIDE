@@ -20,6 +20,12 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
         const startedAt = Date.now()
         const port = await reservePort()
         const url = `http://127.0.0.1:${port}`
+        logOpenCode('starting server', {
+          conversationId: context.conversationId,
+          hasSessionId: Boolean(currentSessionId),
+          cwd: context.cwd,
+          port,
+        })
         serverProc = spawn(
           options.executablePath,
           ['serve', '--hostname=127.0.0.1', `--port=${port}`],
@@ -34,6 +40,7 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
 
         if (!serverProc) throw new Error('Failed to start OpenCode server process')
         await waitForOpenCodeServer(serverProc, url)
+        logOpenCode('server ready', { url, conversationId: context.conversationId })
 
         const client = createOpencodeClient({
           baseUrl: url,
@@ -44,15 +51,26 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
 
         if (!currentSessionId) {
           const created = await client.session.create({ responseStyle: 'data', throwOnError: true })
-          currentSessionId = created.data.id
-          emit({ type: 'backend-state', patch: { sessionId: created.data.id } })
+          currentSessionId = extractOpenCodeSessionId(created)
+          logOpenCode('session created', {
+            conversationId: context.conversationId,
+            sessionId: currentSessionId,
+          })
+          if (currentSessionId) {
+            emit({ type: 'backend-state', patch: { sessionId: currentSessionId } })
+          }
         }
 
         if (!currentSessionId) {
           throw new Error('Failed to initialize OpenCode session')
         }
 
-        const sse = await client.global.event({ signal: undefined })
+        const sse = await client.global.event({
+          signal: undefined,
+          onSseError(error) {
+            console.error('[OpenCodeAdapter] SSE error:', error)
+          },
+        })
         const textByMessageId = new Map<string, string>()
         const timestampByMessageId = new Map<string, number>()
         const emittedAssistantIds = new Set<string>()
@@ -64,9 +82,17 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
 
         const streamTask = (async () => {
           for await (const rawEvent of sse.stream) {
-            const event = rawEvent as Record<string, any>
-            const type = typeof event.type === 'string' ? event.type : ''
-            const props = asRecord(event.properties)
+            const envelope = asRecord(rawEvent)
+            const event = asRecord(envelope?.payload) ?? envelope
+            const type = typeof event?.type === 'string' ? event.type : ''
+            const props = asRecord(event?.properties)
+
+            logOpenCode('sse event', {
+              conversationId: context.conversationId,
+              sessionId: currentSessionId,
+              directory: asString(envelope?.directory),
+              type,
+            })
 
             if (type === 'message.updated' && props?.info) {
               const info = props.info as Record<string, any>
@@ -83,6 +109,11 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
                 timestampByMessageId.set(messageId, createdAt)
                 emit({ type: 'session-meta', model })
                 emit({ type: 'backend-state', patch: { sessionId, model } })
+                logOpenCode('assistant message updated', {
+                  sessionId,
+                  messageId,
+                  model,
+                })
 
                 const nextCost = typeof info.cost === 'number' ? info.cost : 0
                 const prevCost = costByMessageId.get(messageId) ?? 0
@@ -109,8 +140,18 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
                   const prior = textByMessageId.get(messageId) ?? ''
                   textByMessageId.set(messageId, prior + delta)
                   emit({ type: 'stream-delta', messageId, delta })
+                  logOpenCode('assistant delta', {
+                    sessionId: currentSessionId,
+                    messageId,
+                    deltaLength: delta.length,
+                  })
                 } else {
                   textByMessageId.set(messageId, asString(part.text) ?? '')
+                  logOpenCode('assistant part snapshot', {
+                    sessionId: currentSessionId,
+                    messageId,
+                    textLength: (asString(part.text) ?? '').length,
+                  })
                 }
                 continue
               }
@@ -177,6 +218,11 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
                 continue
               }
               failedError = renderOpenCodeError(props.error) ?? 'OpenCode session failed'
+              console.error('[OpenCodeAdapter] session.error', {
+                conversationId: context.conversationId,
+                sessionId: currentSessionId,
+                error: failedError,
+              })
               continue
             }
 
@@ -185,11 +231,20 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
               asString(props?.sessionID) === currentSessionId &&
               promptSubmitted
             ) {
+              logOpenCode('session idle', {
+                conversationId: context.conversationId,
+                sessionId: currentSessionId,
+              })
               break
             }
           }
         })()
 
+        logOpenCode('submitting prompt', {
+          conversationId: context.conversationId,
+          sessionId: currentSessionId,
+          promptLength: context.prompt.length,
+        })
         await client.session.promptAsync({
           responseStyle: 'data',
           throwOnError: true,
@@ -199,8 +254,18 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
           },
         })
         promptSubmitted = true
+        logOpenCode('prompt submitted', {
+          conversationId: context.conversationId,
+          sessionId: currentSessionId,
+        })
 
         await streamTask
+        logOpenCode('stream complete', {
+          conversationId: context.conversationId,
+          sessionId: currentSessionId,
+          assistantMessages: textByMessageId.size,
+          failed: Boolean(failedError),
+        })
 
         for (const [messageId, text] of textByMessageId) {
           if (!text || emittedAssistantIds.has(messageId)) continue
@@ -254,6 +319,10 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions): CliBacke
         })
       })().finally(() => {
         if (!closed) {
+          logOpenCode('stopping server', {
+            conversationId: context.conversationId,
+            sessionId: currentSessionId,
+          })
           serverProc?.kill('SIGTERM')
         }
       })
@@ -328,6 +397,19 @@ function asRecord(value: unknown): Record<string, any> | null {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+function extractOpenCodeSessionId(value: unknown): string | undefined {
+  const payload = asRecord(value)
+  return asString(payload?.id) ?? asString(asRecord(payload?.data)?.id)
+}
+
+function logOpenCode(message: string, data?: Record<string, unknown>): void {
+  if (data) {
+    console.log(`[OpenCodeAdapter] ${message}`, data)
+    return
+  }
+  console.log(`[OpenCodeAdapter] ${message}`)
 }
 
 function renderOpenCodeError(value: unknown): string | null {
