@@ -1,62 +1,163 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import type { ThemeName } from '@aide/shared'
-import { createElement, type ReactNode } from 'react'
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import type { ReactNode } from 'react'
+import type { ThemeDefinition, ThemeId, ThemeStateSnapshot } from '@aide/shared'
 
-const VALID_THEMES: ThemeName[] = ['one-dark', 'one-light']
-const DEFAULT_THEME: ThemeName = 'one-dark'
+const FALLBACK_THEMES: ThemeDefinition[] = [
+  { id: 'one-dark', label: 'One Dark', appearance: 'dark', tokens: {}, source: 'builtin' },
+  { id: 'one-light', label: 'One Light', appearance: 'light', tokens: {}, source: 'builtin' },
+]
 
-function isValidTheme(value: unknown): value is ThemeName {
-  return typeof value === 'string' && VALID_THEMES.includes(value as ThemeName)
+const FALLBACK_SNAPSHOT: ThemeStateSnapshot = {
+  themes: FALLBACK_THEMES,
+  activeThemeId: 'one-dark',
+  defaultDarkThemeId: 'one-dark',
+  defaultLightThemeId: 'one-light',
 }
 
-function applyTheme(theme: ThemeName) {
-  document.documentElement.setAttribute('data-theme', theme)
+function getActiveTheme(snapshot: ThemeStateSnapshot): ThemeDefinition {
+  return (
+    snapshot.themes.find((theme) => theme.id === snapshot.activeThemeId) ??
+    snapshot.themes[0] ??
+    FALLBACK_THEMES[0]
+  )
+}
+
+function applyThemeTokens(theme: ThemeDefinition, previousKeys: Set<string>) {
+  const root = document.documentElement
+  const nextKeys = new Set(Object.keys(theme.tokens))
+  for (const key of previousKeys) {
+    if (!nextKeys.has(key)) {
+      root.style.removeProperty(key)
+    }
+  }
+  for (const [key, value] of Object.entries(theme.tokens)) {
+    root.style.setProperty(key, value)
+  }
+  root.setAttribute('data-theme', theme.id)
+  return nextKeys
 }
 
 interface ThemeContextValue {
-  theme: ThemeName
-  toggleTheme: () => void
+  theme: ThemeDefinition
+  themes: ThemeDefinition[]
+  activeThemeId: ThemeId
+  defaultDarkThemeId: ThemeId
+  defaultLightThemeId: ThemeId
+  setTheme: (themeId: ThemeId) => Promise<void>
+  setDefaultDarkTheme: (themeId: ThemeId) => Promise<void>
+  setDefaultLightTheme: (themeId: ThemeId) => Promise<void>
+  reloadThemes: () => Promise<void>
+  openThemesDirectory: () => Promise<void>
+  toggleTheme: () => Promise<void>
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<ThemeName>(DEFAULT_THEME)
+  const [snapshot, setSnapshot] = useState<ThemeStateSnapshot>(FALLBACK_SNAPSHOT)
+  const previousTokenKeysRef = useRef<Set<string>>(new Set())
 
-  useEffect(() => {
-    // Load persisted theme from main process
-    window.api
-      .getTheme()
-      .then((t) => {
-        const validated = isValidTheme(t) ? t : DEFAULT_THEME
-        setTheme(validated)
-        applyTheme(validated)
-      })
-      .catch((err) => {
-        console.warn('Failed to load persisted theme, using default:', err)
-        applyTheme(DEFAULT_THEME)
-      })
-
-    // Listen for theme changes from main process
-    const cleanup = window.api.onThemeChanged((t) => {
-      if (!isValidTheme(t)) return
-      setTheme(t)
-      applyTheme(t)
-    })
-
-    return cleanup
+  const applySnapshot = useCallback((nextSnapshot: ThemeStateSnapshot) => {
+    setSnapshot(nextSnapshot)
+    previousTokenKeysRef.current = applyThemeTokens(
+      getActiveTheme(nextSnapshot),
+      previousTokenKeysRef.current,
+    )
   }, [])
 
-  const toggleTheme = useCallback(() => {
-    const next: ThemeName = theme === 'one-dark' ? 'one-light' : 'one-dark'
-    applyTheme(next)
-    setTheme(next)
-    window.api.setTheme(next).catch((err) => {
-      console.warn('Failed to persist theme:', err)
-    })
-  }, [theme])
+  useEffect(() => {
+    let mounted = true
 
-  return createElement(ThemeContext.Provider, { value: { theme, toggleTheme } }, children)
+    window.api
+      .getThemeState()
+      .then((nextSnapshot) => {
+        if (!mounted) return
+        applySnapshot(nextSnapshot)
+      })
+      .catch((err) => {
+        console.warn('Failed to load theme state, using fallback theme:', err)
+        applySnapshot(FALLBACK_SNAPSHOT)
+      })
+
+    const cleanup = window.api.onThemeChanged((nextSnapshot) => {
+      if (!mounted) return
+      applySnapshot(nextSnapshot)
+    })
+
+    return () => {
+      mounted = false
+      cleanup()
+    }
+  }, [applySnapshot])
+
+  const theme = useMemo(() => getActiveTheme(snapshot), [snapshot])
+
+  const setTheme = useCallback(async (themeId: ThemeId) => {
+    await window.api.setTheme(themeId)
+  }, [])
+
+  const setDefaultDarkTheme = useCallback(async (themeId: ThemeId) => {
+    await window.api.setDefaultDarkTheme(themeId)
+  }, [])
+
+  const setDefaultLightTheme = useCallback(async (themeId: ThemeId) => {
+    await window.api.setDefaultLightTheme(themeId)
+  }, [])
+
+  const reloadThemes = useCallback(async () => {
+    const nextSnapshot = await window.api.reloadThemes()
+    applySnapshot(nextSnapshot)
+  }, [applySnapshot])
+
+  const openThemesDirectory = useCallback(async () => {
+    await window.api.openThemesDirectory()
+  }, [])
+
+  const toggleTheme = useCallback(async () => {
+    const nextThemeId =
+      theme.appearance === 'dark' ? snapshot.defaultLightThemeId : snapshot.defaultDarkThemeId
+    await window.api.setTheme(nextThemeId)
+  }, [snapshot.defaultDarkThemeId, snapshot.defaultLightThemeId, theme.appearance])
+
+  const value = useMemo<ThemeContextValue>(
+    () => ({
+      theme,
+      themes: snapshot.themes,
+      activeThemeId: snapshot.activeThemeId,
+      defaultDarkThemeId: snapshot.defaultDarkThemeId,
+      defaultLightThemeId: snapshot.defaultLightThemeId,
+      setTheme,
+      setDefaultDarkTheme,
+      setDefaultLightTheme,
+      reloadThemes,
+      openThemesDirectory,
+      toggleTheme,
+    }),
+    [
+      theme,
+      snapshot.themes,
+      snapshot.activeThemeId,
+      snapshot.defaultDarkThemeId,
+      snapshot.defaultLightThemeId,
+      setTheme,
+      setDefaultDarkTheme,
+      setDefaultLightTheme,
+      reloadThemes,
+      openThemesDirectory,
+      toggleTheme,
+    ],
+  )
+
+  return createElement(ThemeContext.Provider, { value }, children)
 }
 
 export function useTheme(): ThemeContextValue {

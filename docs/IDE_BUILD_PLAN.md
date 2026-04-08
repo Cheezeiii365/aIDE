@@ -1,7 +1,7 @@
 # Custom AI-Integrated IDE — Build Plan
 
 > **Project codename:** _aIDE_
-> **Last updated:** April 2, 2026
+> **Last updated:** April 8, 2026
 > **Status:** Active development
 
 ---
@@ -115,6 +115,14 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 - [ ] Linked workspace groups — related workspaces (e.g. frontend + backend), cross-workspace terminal, shared env references
 - [ ] Worktree color coding — assign a distinct accent color to each worktree and apply it to terminal tabs, editor tabs, and pane borders so it's immediately clear which worktree a tab belongs to (branch badge pills already implemented in 5.1e)
 - [ ] Custom user themes beyond light/dark defaults
+
+### Theme System (Implemented foundation)
+
+- Themes now load through a registry-backed manifest system instead of hardcoded `one-dark` / `one-light` checks
+- Built-in themes and user-installed themes share the same manifest shape: `id`, `label`, `appearance`, and token map
+- User themes live in the app-level themes folder under Electron user data and can be reloaded without code changes
+- App settings persist the active theme plus separate default dark and default light theme ids; the toggle switches between those configured defaults
+- Command palette actions now cover selecting the active theme, changing default dark/light themes, reloading the registry, and opening the themes folder
 - [ ] Editor minimap (community CodeMirror extension or custom build)
 - [ ] Auto-update via `electron-updater` — notify + prompt (never silent restart). Compile-from-source only for MVP
 - [ ] React `ErrorBoundary` per pane (crash in one pane doesn't kill others), graceful error state UI, opt-in crash telemetry via `electron.crashReporter` or Sentry

@@ -7,7 +7,7 @@ import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
 import type {
   AppSettings,
-  ThemeName,
+  ThemeId,
   DirEntry,
   SearchOpts,
   ReplaceOpts,
@@ -72,6 +72,7 @@ import { AgentManager } from './chat/agentManager'
 import { CliAgentManager } from './chat/cliAgentManager'
 import { ConversationStore } from './chat/conversationStore'
 import { ClaudeNativeSessionWatcher } from './chat/claudeNativeSessionWatcher'
+import { ThemeRegistry } from './themes/themeRegistry'
 import type {
   ChatMode,
   LlmProviderConfig,
@@ -85,6 +86,9 @@ import type {
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
+const themeRegistry = new ThemeRegistry(store, (snapshot) => {
+  contentView?.webContents.send(IpcChannels.THEME_CHANGED, snapshot)
+})
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -268,11 +272,19 @@ ipcMain.on(IpcChannels.WINDOW_MAXIMIZE, () => {
 ipcMain.on(IpcChannels.WINDOW_CLOSE, () => mainWindow?.close())
 
 // Theme IPC handlers
-ipcMain.handle(IpcChannels.THEME_GET, () => store.get('theme'))
-ipcMain.handle(IpcChannels.THEME_SET, (_event, theme: ThemeName) => {
-  store.set('theme', theme)
-  contentView?.webContents.send(IpcChannels.THEME_CHANGED, theme)
-})
+ipcMain.handle(IpcChannels.THEME_GET, () => themeRegistry.getSnapshot())
+ipcMain.handle(IpcChannels.THEME_LIST, () => themeRegistry.listThemes())
+ipcMain.handle(IpcChannels.THEME_SET, (_event, themeId: ThemeId) =>
+  themeRegistry.setActiveTheme(themeId),
+)
+ipcMain.handle(IpcChannels.THEME_SET_DEFAULT_DARK, (_event, themeId: ThemeId) =>
+  themeRegistry.setDefaultTheme('dark', themeId),
+)
+ipcMain.handle(IpcChannels.THEME_SET_DEFAULT_LIGHT, (_event, themeId: ThemeId) =>
+  themeRegistry.setDefaultTheme('light', themeId),
+)
+ipcMain.handle(IpcChannels.THEME_RELOAD, () => themeRegistry.reload())
+ipcMain.handle(IpcChannels.THEME_OPEN_DIRECTORY, () => themeRegistry.openThemesDirectory())
 
 // Sidebar width IPC handlers
 ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_GET, () => store.get('sidebarWidth'))
@@ -1757,6 +1769,8 @@ app.whenReady().then(async () => {
   // Detect crash from previous session
   const wasCleanShutdown = store.get('cleanShutdown')
   store.set('cleanShutdown', false)
+
+  await themeRegistry.reload()
 
   buildAppMenu()
   createWindow()

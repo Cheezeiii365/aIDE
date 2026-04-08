@@ -10,23 +10,50 @@ import {
 import { SettingRow } from './SettingRow'
 import { KeyboardShortcutsTable } from './KeyboardShortcutsTable'
 import { ToolPermissionsEditor } from './ToolPermissionsEditor'
-import type { ThemeName, ToolPermissionConfig } from '@aide/shared'
+import type { ThemeDefinition, ThemeId, ToolPermissionConfig } from '@aide/shared'
 
 interface Props {
   settings: UseSettingsReturn
   activeCategory: string
   searchQuery: string
-  theme: ThemeName
-  onThemeChange: (theme: ThemeName) => void
+  themes: ThemeDefinition[]
+  theme: ThemeDefinition
+  activeThemeId: ThemeId
+  defaultDarkThemeId: ThemeId
+  defaultLightThemeId: ThemeId
+  onThemeChange: (themeId: ThemeId) => void
+  onDefaultDarkThemeChange: (themeId: ThemeId) => void
+  onDefaultLightThemeChange: (themeId: ThemeId) => void
+  onReloadThemes: () => void
+  onOpenThemesDirectory: () => void
 }
 
-export function SettingsContent({ settings, activeCategory, searchQuery, theme, onThemeChange }: Props) {
+export function SettingsContent({
+  settings,
+  activeCategory,
+  searchQuery,
+  themes,
+  theme,
+  activeThemeId,
+  defaultDarkThemeId,
+  defaultLightThemeId,
+  onThemeChange,
+  onDefaultDarkThemeChange,
+  onDefaultLightThemeChange,
+  onReloadThemes,
+  onOpenThemesDirectory,
+}: Props) {
   const filteredSections = useMemo(() => {
     if (searchQuery) {
       return getSearchResults(searchQuery)
     }
     return getCategorySections(activeCategory)
   }, [activeCategory, searchQuery])
+  const darkThemes = useMemo(() => themes.filter((entry) => entry.appearance === 'dark'), [themes])
+  const lightThemes = useMemo(
+    () => themes.filter((entry) => entry.appearance === 'light'),
+    [themes],
+  )
 
   return (
     <div className="settings-content">
@@ -36,59 +63,140 @@ export function SettingsContent({ settings, activeCategory, searchQuery, theme, 
 
           {/* Special: Theme picker in Workbench > Appearance */}
           {section.categoryId === 'workbench.appearance' && (
-            <div className="settings-row">
-              <div className="settings-row__info">
-                <div className="settings-row__label-line">
-                  <span className="settings-row__label">Color Theme</span>
+            <>
+              <div className="settings-row">
+                <div className="settings-row__info">
+                  <div className="settings-row__label-line">
+                    <span className="settings-row__label">Color Theme</span>
+                  </div>
+                  <span className="settings-row__description">
+                    Specifies the color theme used in the workbench.
+                  </span>
                 </div>
-                <span className="settings-row__description">Specifies the color theme used in the workbench.</span>
+                <div className="settings-row__control">
+                  <select
+                    className="settings-input settings-input--select"
+                    value={activeThemeId}
+                    onChange={(e) => onThemeChange(e.target.value)}
+                  >
+                    {themes.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="settings-row__control">
-                <select
-                  className="settings-input settings-input--select"
-                  value={theme}
-                  onChange={(e) => onThemeChange(e.target.value as ThemeName)}
-                >
-                  <option value="one-dark">One Dark</option>
-                  <option value="one-light">One Light</option>
-                </select>
+
+              <div className="settings-row">
+                <div className="settings-row__info">
+                  <div className="settings-row__label-line">
+                    <span className="settings-row__label">Default Dark Theme</span>
+                  </div>
+                  <span className="settings-row__description">
+                    Used when the theme toggle switches into dark mode.
+                  </span>
+                </div>
+                <div className="settings-row__control">
+                  <select
+                    className="settings-input settings-input--select"
+                    value={defaultDarkThemeId}
+                    onChange={(e) => onDefaultDarkThemeChange(e.target.value)}
+                  >
+                    {darkThemes.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
+
+              <div className="settings-row">
+                <div className="settings-row__info">
+                  <div className="settings-row__label-line">
+                    <span className="settings-row__label">Default Light Theme</span>
+                  </div>
+                  <span className="settings-row__description">
+                    Used when the theme toggle switches into light mode.
+                  </span>
+                </div>
+                <div className="settings-row__control">
+                  <select
+                    className="settings-input settings-input--select"
+                    value={defaultLightThemeId}
+                    onChange={(e) => onDefaultLightThemeChange(e.target.value)}
+                  >
+                    {lightThemes.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="settings-row">
+                <div className="settings-row__info">
+                  <div className="settings-row__label-line">
+                    <span className="settings-row__label">Installed Themes</span>
+                  </div>
+                  <span className="settings-row__description">
+                    Themes load from your user themes folder. Current theme: {theme.label}.
+                  </span>
+                </div>
+                <div className="settings-row__control">
+                  <div className="settings-actions">
+                    <button type="button" className="settings-button" onClick={onReloadThemes}>
+                      Reload Themes
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-button"
+                      onClick={onOpenThemesDirectory}
+                    >
+                      Open Themes Folder
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
 
           {/* Special: Keyboard Shortcuts table */}
-          {section.categoryId === 'keyboardShortcuts' && (
-            <KeyboardShortcutsTable />
-          )}
+          {section.categoryId === 'keyboardShortcuts' && <KeyboardShortcutsTable />}
 
           {/* Special: Per-tool permission overrides */}
           {section.categoryId === 'agent.permissions' && (
             <ToolPermissionsEditor
-              value={(settings.getScopeValue('agent.autoApprove') as Record<string, boolean | ToolPermissionConfig>) ?? {}}
+              value={
+                (settings.getScopeValue('agent.autoApprove') as Record<
+                  string,
+                  boolean | ToolPermissionConfig
+                >) ?? {}
+              }
               onChange={(val) => settings.setValue('agent.autoApprove', val)}
             />
           )}
 
-          {section.descriptors.length > 0 ? (
-            section.descriptors.map((desc) => (
-              <SettingRow
-                key={desc.key}
-                descriptor={desc}
-                value={settings.getScopeValue(desc.key)}
-                isModified={settings.isModified(desc.key)}
-                onChange={(value) => settings.setValue(desc.key, value)}
-                onReset={() => settings.resetToDefault(desc.key)}
-              />
-            ))
-          ) : (
-            section.categoryId !== 'workbench.appearance' &&
-            section.categoryId !== 'keyboardShortcuts' &&
-            section.categoryId !== 'agent.permissions' && (
-              <div className="settings-placeholder">
-                <p>No settings available yet.</p>
-              </div>
-            )
-          )}
+          {section.descriptors.length > 0
+            ? section.descriptors.map((desc) => (
+                <SettingRow
+                  key={desc.key}
+                  descriptor={desc}
+                  value={settings.getScopeValue(desc.key)}
+                  isModified={settings.isModified(desc.key)}
+                  onChange={(value) => settings.setValue(desc.key, value)}
+                  onReset={() => settings.resetToDefault(desc.key)}
+                />
+              ))
+            : section.categoryId !== 'workbench.appearance' &&
+              section.categoryId !== 'keyboardShortcuts' &&
+              section.categoryId !== 'agent.permissions' && (
+                <div className="settings-placeholder">
+                  <p>No settings available yet.</p>
+                </div>
+              )}
         </div>
       ))}
 

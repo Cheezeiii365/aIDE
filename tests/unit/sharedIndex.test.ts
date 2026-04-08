@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { IpcChannels, adjustZoomFactor, clampZoomFactor, stepZoomFactor, zoomFactorToPercent } from '@shared/index'
+import {
+  IpcChannels,
+  adjustZoomFactor,
+  clampZoomFactor,
+  stepZoomFactor,
+  zoomFactorToPercent,
+} from '@shared/index'
 
 describe('IpcChannels', () => {
   it('defines window control channels', () => {
@@ -12,6 +18,11 @@ describe('IpcChannels', () => {
     expect(IpcChannels.THEME_GET).toBe('theme:get')
     expect(IpcChannels.THEME_SET).toBe('theme:set')
     expect(IpcChannels.THEME_CHANGED).toBe('theme:changed')
+    expect(IpcChannels.THEME_LIST).toBe('theme:list')
+    expect(IpcChannels.THEME_SET_DEFAULT_DARK).toBe('theme:set-default-dark')
+    expect(IpcChannels.THEME_SET_DEFAULT_LIGHT).toBe('theme:set-default-light')
+    expect(IpcChannels.THEME_RELOAD).toBe('theme:reload')
+    expect(IpcChannels.THEME_OPEN_DIRECTORY).toBe('theme:open-directory')
   })
 
   it('has string literal values (no accidental undefined)', () => {
