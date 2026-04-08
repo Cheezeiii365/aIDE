@@ -7,7 +7,8 @@ import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
 import type {
   AppSettings,
-  ThemeName,
+  ChatComposerSubmission,
+  ThemeId,
   DirEntry,
   SearchOpts,
   ReplaceOpts,
@@ -38,8 +39,17 @@ import {
 } from './workspace/worktreeManager'
 import { startSearch, cancelSearch } from './search/ripgrepSearch'
 import { ensureAideFolder } from './workspace/aideInit'
-import { resolveAppDefaults, resolveSettings, BUILT_IN_DEFAULTS } from './workspace/settingsResolver'
-import { auditGitignore, appendToGitignore, isAuditDismissed, dismissAudit } from './git/gitignoreAudit'
+import {
+  resolveAppDefaults,
+  resolveSettings,
+  BUILT_IN_DEFAULTS,
+} from './workspace/settingsResolver'
+import {
+  auditGitignore,
+  appendToGitignore,
+  isAuditDismissed,
+  dismissAudit,
+} from './git/gitignoreAudit'
 import { TaskRunner } from './tasks/taskRunner'
 import { detectTasks, generateTasksFile, hasTasksFile } from './tasks/taskAutoDetect'
 import { WorkspaceRegistry } from './workspace/workspaceRegistry'
@@ -51,13 +61,20 @@ import {
   resolveRepoRootForWorkspace,
   resolveWorkspaceIdForIpc,
 } from './workspace/workspaceRootResolution'
-import { saveWorkspaceState, loadWorkspaceState, saveTerminalState, loadTerminalState } from './workspace/stateSerializer'
+import {
+  saveWorkspaceState,
+  loadWorkspaceState,
+  saveTerminalState,
+  loadTerminalState,
+} from './workspace/stateSerializer'
 import { BrowserPaneManager } from './browserPaneManager'
 import { registerGitDiffHandlers } from './git/gitDiff'
 import { AgentManager } from './chat/agentManager'
 import { CliAgentManager } from './chat/cliAgentManager'
+import { ApprovalRouter } from './chat/approvalRouter'
 import { ConversationStore } from './chat/conversationStore'
 import { ClaudeNativeSessionWatcher } from './chat/claudeNativeSessionWatcher'
+import { ThemeRegistry } from './themes/themeRegistry'
 import type {
   ChatMode,
   LlmProviderConfig,
@@ -71,6 +88,9 @@ import type {
 
 const store = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
 const workspaceRegistry = new WorkspaceRegistry()
+const themeRegistry = new ThemeRegistry(store, (snapshot) => {
+  contentView?.webContents.send(IpcChannels.THEME_CHANGED, snapshot)
+})
 
 let mainWindow: BaseWindow | null = null
 let contentView: WebContentsView | null = null
@@ -223,9 +243,7 @@ function createWindow(): void {
   if (process.env.ELECTRON_RENDERER_URL) {
     contentView.webContents.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    contentView.webContents.loadFile(
-      join(__dirname, '../../renderer/dist/index.html'),
-    )
+    contentView.webContents.loadFile(join(__dirname, '../../renderer/dist/index.html'))
   }
 
   // Forward fullscreen state to renderer
@@ -256,11 +274,19 @@ ipcMain.on(IpcChannels.WINDOW_MAXIMIZE, () => {
 ipcMain.on(IpcChannels.WINDOW_CLOSE, () => mainWindow?.close())
 
 // Theme IPC handlers
-ipcMain.handle(IpcChannels.THEME_GET, () => store.get('theme'))
-ipcMain.handle(IpcChannels.THEME_SET, (_event, theme: ThemeName) => {
-  store.set('theme', theme)
-  contentView?.webContents.send(IpcChannels.THEME_CHANGED, theme)
-})
+ipcMain.handle(IpcChannels.THEME_GET, () => themeRegistry.getSnapshot())
+ipcMain.handle(IpcChannels.THEME_LIST, () => themeRegistry.listThemes())
+ipcMain.handle(IpcChannels.THEME_SET, (_event, themeId: ThemeId) =>
+  themeRegistry.setActiveTheme(themeId),
+)
+ipcMain.handle(IpcChannels.THEME_SET_DEFAULT_DARK, (_event, themeId: ThemeId) =>
+  themeRegistry.setDefaultTheme('dark', themeId),
+)
+ipcMain.handle(IpcChannels.THEME_SET_DEFAULT_LIGHT, (_event, themeId: ThemeId) =>
+  themeRegistry.setDefaultTheme('light', themeId),
+)
+ipcMain.handle(IpcChannels.THEME_RELOAD, () => themeRegistry.reload())
+ipcMain.handle(IpcChannels.THEME_OPEN_DIRECTORY, () => themeRegistry.openThemesDirectory())
 
 // Sidebar width IPC handlers
 ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_GET, () => store.get('sidebarWidth'))
@@ -268,7 +294,9 @@ ipcMain.handle(IpcChannels.SIDEBAR_WIDTH_SET, (_event, width: number) => {
   store.set('sidebarWidth', width)
 })
 
-ipcMain.handle(IpcChannels.BROWSER_ZOOM_GET, (_event, paneId: string) => browserPaneManager.getZoom(paneId))
+ipcMain.handle(IpcChannels.BROWSER_ZOOM_GET, (_event, paneId: string) =>
+  browserPaneManager.getZoom(paneId),
+)
 ipcMain.handle(IpcChannels.BROWSER_ZOOM_SET, (_event, paneId: string, zoomFactor: number) =>
   browserPaneManager.setZoom(paneId, zoomFactor),
 )
@@ -324,7 +352,9 @@ function getConversationStore(runtime: WorkspaceRuntime | null): ConversationSto
   return (runtime?.services.conversationStore as ConversationStore | null) ?? null
 }
 
-function getNativeSessionWatcher(runtime: WorkspaceRuntime | null): ClaudeNativeSessionWatcher | null {
+function getNativeSessionWatcher(
+  runtime: WorkspaceRuntime | null,
+): ClaudeNativeSessionWatcher | null {
   return (runtime?.services.nativeSessionWatcher as ClaudeNativeSessionWatcher | null) ?? null
 }
 
@@ -334,36 +364,39 @@ async function loadPreferredClaudeMessages(
   conversationId: string,
   storedData?: unknown,
 ): Promise<CliAgentMessage[]> {
-  const stored = storedData ?? await conversationStore?.loadMessages(conversationId)
+  const stored = storedData ?? (await conversationStore?.loadMessages(conversationId))
   const storedMessagesRaw =
-    stored && typeof stored === 'object'
-      ? (stored as { messages?: unknown }).messages
-      : undefined
-  const storedMessages = Array.isArray(storedMessagesRaw) ? (storedMessagesRaw as CliAgentMessage[]) : []
-  const storedComparable = storedMessages.filter((message) =>
-    message.type === 'user' ||
-    message.type === 'assistant' ||
-    message.type === 'tool_use' ||
-    message.type === 'tool_result'
+    stored && typeof stored === 'object' ? (stored as { messages?: unknown }).messages : undefined
+  const storedMessages = Array.isArray(storedMessagesRaw)
+    ? (storedMessagesRaw as CliAgentMessage[])
+    : []
+  const storedComparable = storedMessages.filter(
+    (message) =>
+      message.type === 'user' ||
+      message.type === 'assistant' ||
+      message.type === 'tool_use' ||
+      message.type === 'tool_result',
   ).length
 
   const meta = await conversationStore?.get(conversationId)
   const claudeSessionId =
     meta?.claudeSessionId ||
-    (
-      stored && typeof stored === 'object'
-        ? (stored as { claudeSessionId?: unknown }).claudeSessionId
-        : undefined
-    )
+    (stored && typeof stored === 'object'
+      ? ((stored as { claudeSessionId?: unknown }).claudeSessionId ??
+        (stored as { backendStates?: { 'claude-code'?: { sessionId?: unknown } } }).backendStates?.[
+          'claude-code'
+        ]?.sessionId)
+      : undefined)
 
   if (typeof claudeSessionId === 'string' && nativeSessionWatcher) {
     try {
       const nativeMessages = await nativeSessionWatcher.loadMessages(claudeSessionId)
-      const nativeComparable = nativeMessages.filter((message) =>
-        message.type === 'user' ||
-        message.type === 'assistant' ||
-        message.type === 'tool_use' ||
-        message.type === 'tool_result'
+      const nativeComparable = nativeMessages.filter(
+        (message) =>
+          message.type === 'user' ||
+          message.type === 'assistant' ||
+          message.type === 'tool_use' ||
+          message.type === 'tool_result',
       ).length
       if (nativeMessages.length > 0 && nativeComparable > storedComparable) {
         return nativeMessages
@@ -430,16 +463,20 @@ function loadLlmConfig(): LlmProviderConfig {
     apiKeyIsEnvRef: config.apiKey.includes('${env:'),
     baseUrl: config.baseUrl || '(default)',
     storeHasEditorDefaults: !!userDefaults,
-    storeKeys: Object.keys(userDefaults).filter(k => k.startsWith('agent.')),
+    storeKeys: Object.keys(userDefaults).filter((k) => k.startsWith('agent.')),
   })
   return config
 }
 
-function loadPermissionConfig(): { permissionTier: PermissionTier; autoApprove: Record<string, boolean | ToolPermissionConfig> } {
+function loadPermissionConfig(): {
+  permissionTier: PermissionTier
+  autoApprove: Record<string, boolean | ToolPermissionConfig>
+} {
   const userDefaults = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
   return {
     permissionTier: (userDefaults['agent.permissionTier'] as PermissionTier) || 'confirm',
-    autoApprove: (userDefaults['agent.autoApprove'] as Record<string, boolean | ToolPermissionConfig>) || {},
+    autoApprove:
+      (userDefaults['agent.autoApprove'] as Record<string, boolean | ToolPermissionConfig>) || {},
   }
 }
 
@@ -469,21 +506,24 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
       nativeSessionCache = sessions
       runtime.setServices({ nativeSessionCache })
       runtime.refreshWorkload()
-      void conversationStore.loadIndex().then((index) => {
-        const seen = new Set(index.map(c => c.id))
-        const uniqueSessions = sessions.filter(s => !seen.has(s.id))
-        contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
-          workspaceId: runtime.workspaceId,
-          conversations: [...index, ...uniqueSessions],
-          source: 'claude-native',
+      void conversationStore
+        .loadIndex()
+        .then((index) => {
+          const seen = new Set(index.map((c) => c.id))
+          const uniqueSessions = sessions.filter((s) => !seen.has(s.id))
+          contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+            workspaceId: runtime.workspaceId,
+            conversations: [...index, ...uniqueSessions],
+            source: 'claude-native',
+          })
         })
-      }).catch(() => {
-        contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
-          workspaceId: runtime.workspaceId,
-          conversations: sessions,
-          source: 'claude-native',
+        .catch(() => {
+          contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+            workspaceId: runtime.workspaceId,
+            conversations: sessions,
+            source: 'claude-native',
+          })
         })
-      })
     },
   })
   await nativeSessionWatcher.start()
@@ -509,12 +549,35 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
   const resolved = resolveAppDefaults(store)
   const cliAgentManager = new CliAgentManager({
     workspaceRoot: rootPath,
+    workspaceId: runtime.workspaceId,
     getWebContents: () => contentView?.webContents ?? null,
     claudeCodePath: resolved['agent.claudeCodePath'],
+    opencodePath: resolved['agent.opencodePath'],
     codexPath: resolved['agent.codexPath'],
     conversationStore,
-    loadClaudeHistory: async (claudeSessionId: string) => nativeSessionWatcher.loadMessages(claudeSessionId),
+    loadClaudeHistory: async (claudeSessionId: string) =>
+      nativeSessionWatcher.loadMessages(claudeSessionId),
+    permissionTier: permConfig.permissionTier,
+    autoApprove: permConfig.autoApprove,
+    opencodeDefaults: {
+      providerID: resolved['agent.opencode.defaultProvider'] || undefined,
+      modelID: resolved['agent.opencode.defaultModel'] || undefined,
+      agent: resolved['agent.opencode.defaultAgent'] || undefined,
+      mode: resolved['agent.opencode.defaultMode'] || undefined,
+      systemPromptOverride: resolved['agent.opencode.defaultSystemPrompt'] || undefined,
+      toolToggles: resolved['agent.opencode.defaultToolToggles'] ?? undefined,
+    },
+    onWorkloadChanged: () => {
+      runtime.refreshWorkload()
+    },
   })
+
+  // ApprovalRouter dispatches CHAT_TOOL_APPROVE / CHAT_TOOL_REJECT to whichever
+  // manager owns the toolCallId, so OpenCode permission prompts and built-in
+  // chat approvals share a single approval surface.
+  const approvalRouter = new ApprovalRouter()
+  approvalRouter.register(agentManager)
+  approvalRouter.register(cliAgentManager)
 
   runtime.setServices({
     conversationStore,
@@ -522,6 +585,7 @@ async function startRuntimeServices(runtime: WorkspaceRuntime): Promise<void> {
     nativeSessionCache,
     agentManager,
     cliAgentManager,
+    approvalRouter,
   })
 
   const getWc = () => contentView?.webContents ?? null
@@ -659,15 +723,18 @@ ipcMain.handle(IpcChannels.WORKSPACE_SWITCH, async (_event, id: string) => {
   await activateWorkspace(id)
 })
 
-ipcMain.handle(IpcChannels.WORKSPACE_UPDATE, (_event, id: string, patch: Partial<{ name: string; icon: string; color: string }>) => {
-  workspaceRegistry.update(id, patch)
-  const entry = workspaceRegistry.get(id)
-  if (entry) {
-    runtimeRegistry.get(id)?.syncEntry(entry)
-  }
-  broadcastWorkspaceRegistry()
-  broadcastRuntimeSnapshots()
-})
+ipcMain.handle(
+  IpcChannels.WORKSPACE_UPDATE,
+  (_event, id: string, patch: Partial<{ name: string; icon: string; color: string }>) => {
+    workspaceRegistry.update(id, patch)
+    const entry = workspaceRegistry.get(id)
+    if (entry) {
+      runtimeRegistry.get(id)?.syncEntry(entry)
+    }
+    broadcastWorkspaceRegistry()
+    broadcastRuntimeSnapshots()
+  },
+)
 
 ipcMain.handle(IpcChannels.WORKSPACE_REORDER, (_event, ids: string[]) => {
   workspaceRegistry.reorder(ids)
@@ -685,20 +752,26 @@ ipcMain.handle(IpcChannels.WORKSPACE_RUNTIME_SNAPSHOTS_GET, () => {
 
 // ─── Chat / Agent IPC handlers ─────────────────────────────────────
 
-ipcMain.handle(IpcChannels.CHAT_SEND_MESSAGE, async (_event, sessionId: string, content: string) => {
-  const runtime = findRuntimeWithBuiltInSession(sessionId)
-  const agentManager = getAgentManager(runtime)
-  if (!agentManager) return { error: 'No workspace open' }
-  const result = await agentManager.sendMessage(sessionId, content)
-  runtime?.refreshWorkload()
-  return result
-})
+ipcMain.handle(
+  IpcChannels.CHAT_SEND_MESSAGE,
+  async (_event, sessionId: string, payload: ChatComposerSubmission) => {
+    const runtime = findRuntimeWithBuiltInSession(sessionId)
+    const agentManager = getAgentManager(runtime)
+    if (!agentManager) return { error: 'No workspace open' }
+    const result = await agentManager.sendMessage(sessionId, payload)
+    runtime?.refreshWorkload()
+    return result
+  },
+)
 
-ipcMain.handle(IpcChannels.CHAT_GET_HISTORY, async (_event, workspaceId: string, conversationId?: string) => {
-  const agentManager = getAgentManager(runtimeRegistry.get(workspaceId))
-  if (!agentManager) return null
-  return agentManager.getHistory(workspaceId, conversationId)
-})
+ipcMain.handle(
+  IpcChannels.CHAT_GET_HISTORY,
+  async (_event, workspaceId: string, conversationId?: string) => {
+    const agentManager = getAgentManager(runtimeRegistry.get(workspaceId))
+    if (!agentManager) return null
+    return agentManager.getHistory(workspaceId, conversationId)
+  },
+)
 
 ipcMain.handle(IpcChannels.CHAT_PENDING_TOOL_APPROVALS_LIST, (): PendingToolApprovalInfo[] => {
   const out: PendingToolApprovalInfo[] = []
@@ -716,25 +789,41 @@ ipcMain.handle(IpcChannels.CHAT_SET_MODE, async (_event, sessionId: string, mode
   agentManager?.setMode(sessionId, mode)
 })
 
-ipcMain.handle(IpcChannels.CHAT_SET_WORKING_SET, async (_event, sessionId: string, paths: string[]) => {
-  const runtime = findRuntimeWithBuiltInSession(sessionId)
-  const agentManager = getAgentManager(runtime)
-  agentManager?.setWorkingSet(sessionId, paths)
-})
+ipcMain.handle(
+  IpcChannels.CHAT_SET_WORKING_SET,
+  async (_event, sessionId: string, paths: string[]) => {
+    const runtime = findRuntimeWithBuiltInSession(sessionId)
+    const agentManager = getAgentManager(runtime)
+    agentManager?.setWorkingSet(sessionId, paths)
+  },
+)
 
-ipcMain.handle(IpcChannels.CHAT_TOOL_APPROVE, async (_event, sessionId: string, toolCallId: string) => {
-  const runtime = findRuntimeWithBuiltInSession(sessionId)
-  const agentManager = getAgentManager(runtime)
-  agentManager?.approveToolCall(sessionId, toolCallId)
-  runtime?.refreshWorkload()
-})
+ipcMain.handle(
+  IpcChannels.CHAT_TOOL_APPROVE,
+  async (_event, sessionId: string, toolCallId: string) => {
+    // Find the runtime that owns this toolCallId across both managers.
+    for (const runtime of runtimeRegistry.list()) {
+      const router = runtime.services.approvalRouter as ApprovalRouter | null
+      if (router?.approve(sessionId, toolCallId)) {
+        runtime.refreshWorkload()
+        return
+      }
+    }
+  },
+)
 
-ipcMain.handle(IpcChannels.CHAT_TOOL_REJECT, async (_event, sessionId: string, toolCallId: string) => {
-  const runtime = findRuntimeWithBuiltInSession(sessionId)
-  const agentManager = getAgentManager(runtime)
-  agentManager?.rejectToolCall(sessionId, toolCallId)
-  runtime?.refreshWorkload()
-})
+ipcMain.handle(
+  IpcChannels.CHAT_TOOL_REJECT,
+  async (_event, sessionId: string, toolCallId: string) => {
+    for (const runtime of runtimeRegistry.list()) {
+      const router = runtime.services.approvalRouter as ApprovalRouter | null
+      if (router?.reject(sessionId, toolCallId)) {
+        runtime.refreshWorkload()
+        return
+      }
+    }
+  },
+)
 
 ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
   const runtime = findRuntimeWithBuiltInSession(sessionId)
@@ -745,34 +834,61 @@ ipcMain.on(IpcChannels.CHAT_STOP, (_event, sessionId: string) => {
 
 // ─── CLI Agent IPC handlers ─────────────────────────────────────
 
-ipcMain.handle(IpcChannels.CLI_AGENT_START, async (_event, workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) => {
-  const runtime = runtimeRegistry.get(workspaceId)
-  const cliAgentManager = getCliAgentManager(runtime)
-  if (!cliAgentManager) return { error: 'No workspace open' }
-  const result = await cliAgentManager.start(workspaceId, backend, conversationId, worktreePath)
-  runtime?.refreshWorkload()
-  return result
-})
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_START,
+  async (
+    _event,
+    workspaceId: string,
+    backend: AgentBackend,
+    conversationId?: string,
+    worktreePath?: string,
+  ) => {
+    const runtime = runtimeRegistry.get(workspaceId)
+    const cliAgentManager = getCliAgentManager(runtime)
+    if (!cliAgentManager) return { error: 'No workspace open' }
+    const result = await cliAgentManager.start(workspaceId, backend, conversationId, worktreePath)
+    runtime?.refreshWorkload()
+    return result
+  },
+)
 
-ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, content: string) => {
-  const runtime = findRuntimeWithCliSession(sessionId)
-  const cliAgentManager = getCliAgentManager(runtime)
-  if (!cliAgentManager) return { error: 'No workspace open' }
-  const result = await cliAgentManager.send(sessionId, content)
-  runtime?.refreshWorkload()
-  return result
-})
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SWITCH_BACKEND,
+  async (_event, sessionId: string, backend: AgentBackend) => {
+    const runtime = findRuntimeWithCliSession(sessionId)
+    const cliAgentManager = getCliAgentManager(runtime)
+    if (!cliAgentManager) return { error: 'No workspace open' }
+    const result = await cliAgentManager.switchBackend(sessionId, backend)
+    runtime?.refreshWorkload()
+    return result
+  },
+)
 
-ipcMain.handle(IpcChannels.CLI_AGENT_GET_SESSION, async (_event, workspaceId: string, sessionId?: string) => {
-  const cliAgentManager = getCliAgentManager(runtimeRegistry.get(workspaceId))
-  if (!cliAgentManager) return null
-  if (sessionId) {
-    const s = cliAgentManager.getSessionById(sessionId)
-    if (!s || s.workspaceId !== workspaceId) return null
-    return s
-  }
-  return cliAgentManager.getSession(workspaceId) ?? null
-})
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SEND,
+  async (_event, sessionId: string, payload: ChatComposerSubmission) => {
+    const runtime = findRuntimeWithCliSession(sessionId)
+    const cliAgentManager = getCliAgentManager(runtime)
+    if (!cliAgentManager) return { error: 'No workspace open' }
+    const result = await cliAgentManager.send(sessionId, payload)
+    runtime?.refreshWorkload()
+    return result
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_GET_SESSION,
+  async (_event, workspaceId: string, sessionId?: string) => {
+    const cliAgentManager = getCliAgentManager(runtimeRegistry.get(workspaceId))
+    if (!cliAgentManager) return null
+    if (sessionId) {
+      const s = cliAgentManager.getSessionById(sessionId)
+      if (!s || s.workspaceId !== workspaceId) return null
+      return s
+    }
+    return cliAgentManager.getSession(workspaceId) ?? null
+  },
+)
 
 ipcMain.handle(
   IpcChannels.CLI_AGENT_LOAD_MESSAGES,
@@ -784,15 +900,17 @@ ipcMain.handle(
     const nativeMeta =
       nativeSessionCache.find((c) => c.id === conversationId) ??
       nativeSessionCache.find((c) => c.claudeSessionId === conversationId)
-    if (nativeMeta?.source === 'claude-native' && nativeMeta.claudeSessionId && nativeSessionWatcher) {
+    if (
+      nativeMeta?.source === 'claude-native' &&
+      nativeMeta.claudeSessionId &&
+      nativeSessionWatcher
+    ) {
       return nativeSessionWatcher.loadMessages(nativeMeta.claudeSessionId)
     }
     const nativePrefix = 'claude-native:'
     if (conversationId.startsWith(nativePrefix) && nativeSessionWatcher) {
       const rawId = conversationId.slice(nativePrefix.length)
-      if (
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId)
-      ) {
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId)) {
         return nativeSessionWatcher.loadMessages(rawId)
       }
     }
@@ -807,13 +925,257 @@ ipcMain.on(IpcChannels.CLI_AGENT_STOP, (_event, sessionId: string) => {
   runtime?.refreshWorkload()
 })
 
+// ─── CLI Agent: per-session config + provider/agent/mode/tool listings ──
+
+function withCliManager<T>(
+  sessionId: string,
+  fn: (mgr: CliAgentManager) => Promise<T>,
+): Promise<T | { error: string }> {
+  const runtime = findRuntimeWithCliSession(sessionId)
+  const mgr = getCliAgentManager(runtime)
+  if (!mgr) return Promise.resolve({ error: 'No workspace open' } as const)
+  return fn(mgr).catch((error) => ({
+    error: error instanceof Error ? error.message : String(error),
+  }))
+}
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_UPDATE_SESSION_CONFIG,
+  async (_event, sessionId: string, patch: Record<string, unknown>) => {
+    return withCliManager(sessionId, (mgr) => mgr.updateSessionConfig(sessionId, patch))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LIST_PROVIDERS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.listOpenCodeProviders(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LIST_AGENTS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.listOpenCodeAgents(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LIST_MODES, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.listOpenCodeModes(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_LIST_TOOLS,
+  async (_event, sessionId: string, providerID: string, modelID: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.listOpenCodeTools(sessionId, providerID, modelID))
+  },
+)
+
+// ─── CLI Agent: session ops ─────────────────────────────────────────────
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_SHARE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionShare(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_UNSHARE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionUnshare(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_SUMMARIZE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionSummarize(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SESSION_REVERT,
+  async (_event, sessionId: string, messageId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.sessionRevert(sessionId, messageId))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_UNREVERT, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionUnrevert(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SESSION_FORK,
+  async (_event, sessionId: string, messageId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.sessionFork(sessionId, messageId))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_ABORT, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionAbort(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_DIFF, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionDiff(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_TODO, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionTodo(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_INIT, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionInit(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_DELETE_REMOTE, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.sessionDeleteRemote(sessionId))
+})
+
+// ─── CLI Agent: workspace ops ───────────────────────────────────────────
+
+ipcMain.handle(IpcChannels.CLI_AGENT_FILE_LIST, async (_event, sessionId: string, path: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.fileList(sessionId, path))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_FILE_READ, async (_event, sessionId: string, path: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.fileRead(sessionId, path))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_FILE_STATUS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.fileStatus(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FIND_TEXT,
+  async (_event, sessionId: string, query: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.findText(sessionId, query))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FIND_FILES,
+  async (_event, sessionId: string, pattern: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.findFiles(sessionId, pattern))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_FIND_SYMBOLS,
+  async (_event, sessionId: string, query: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.findSymbols(sessionId, query))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SHELL_RUN,
+  async (_event, sessionId: string, command: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.shellRun(sessionId, command))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_LSP_STATUS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.lspStatus(sessionId))
+})
+
+ipcMain.handle(IpcChannels.CLI_AGENT_FORMATTER_STATUS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.formatterStatus(sessionId))
+})
+
+// ─── CLI Agent: config / auth / providers ───────────────────────────────
+
+ipcMain.handle(IpcChannels.CLI_AGENT_CONFIG_GET, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.configGet(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_CONFIG_UPDATE,
+  async (_event, sessionId: string, patch: Record<string, unknown>) => {
+    return withCliManager(sessionId, (mgr) => mgr.configUpdate(sessionId, patch))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_CONFIG_PROVIDERS, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.configProviders(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_AUTH_SET,
+  async (_event, sessionId: string, key: string, value: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.authSet(sessionId, key, value))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_PROVIDER_LIST, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.providerList(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_PROVIDER_AUTH,
+  async (_event, sessionId: string, providerId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.providerAuth(sessionId, providerId))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_PROVIDER_OAUTH_AUTHORIZE,
+  async (_event, sessionId: string, providerId: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.providerOauthAuthorize(sessionId, providerId))
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_PROVIDER_OAUTH_CALLBACK,
+  async (_event, sessionId: string, code: string) => {
+    return withCliManager(sessionId, (mgr) => mgr.providerOauthCallback(sessionId, code))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_PATH_GET, async (_event, sessionId: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.pathGet(sessionId))
+})
+
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_LOG_WRITE,
+  async (
+    _event,
+    sessionId: string,
+    message: string,
+    level?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+  ) => {
+    return withCliManager(sessionId, (mgr) => mgr.logWrite(sessionId, message, level))
+  },
+)
+
+ipcMain.handle(IpcChannels.CLI_AGENT_SERVER_INFO, async (_event, workspaceId: string) => {
+  const runtime = runtimeRegistry.get(workspaceId)
+  const mgr = getCliAgentManager(runtime)
+  return mgr?.serverInfo() ?? null
+})
+
+// ─── CLI Agent: TUI control ─────────────────────────────────────────────
+
+const TUI_HANDLERS: Array<{
+  channel: string
+  method:
+    | 'appendPrompt'
+    | 'submitPrompt'
+    | 'clearPrompt'
+    | 'openHelp'
+    | 'openSessions'
+    | 'openThemes'
+    | 'openModels'
+    | 'executeCommand'
+    | 'showToast'
+}> = [
+  { channel: IpcChannels.CLI_AGENT_TUI_APPEND_PROMPT, method: 'appendPrompt' },
+  { channel: IpcChannels.CLI_AGENT_TUI_SUBMIT_PROMPT, method: 'submitPrompt' },
+  { channel: IpcChannels.CLI_AGENT_TUI_CLEAR_PROMPT, method: 'clearPrompt' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_HELP, method: 'openHelp' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_SESSIONS, method: 'openSessions' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_THEMES, method: 'openThemes' },
+  { channel: IpcChannels.CLI_AGENT_TUI_OPEN_MODELS, method: 'openModels' },
+  { channel: IpcChannels.CLI_AGENT_TUI_EXECUTE_COMMAND, method: 'executeCommand' },
+  { channel: IpcChannels.CLI_AGENT_TUI_SHOW_TOAST, method: 'showToast' },
+]
+for (const { channel, method } of TUI_HANDLERS) {
+  ipcMain.handle(channel, async (_event, sessionId: string, args?: Record<string, unknown>) => {
+    return withCliManager(sessionId, (mgr) => mgr.tui(sessionId, method, args))
+  })
+}
+
 // ─── Conversation History IPC handlers ──────────────────────────
 
 ipcMain.handle(IpcChannels.CONVERSATION_LIST, async (_event, workspaceId: string) => {
   const runtime = runtimeRegistry.get(workspaceId)
   const conversationStore = getConversationStore(runtime)
   const nativeSessionCache = getNativeSessionCache(runtime)
-  const aideConvos = await conversationStore?.loadIndex() ?? []
+  const aideConvos = (await conversationStore?.loadIndex()) ?? []
   return [...aideConvos, ...nativeSessionCache]
 })
 
@@ -831,74 +1193,101 @@ ipcMain.handle(IpcChannels.CONVERSATION_CREATE, async (_event, opts: Conversatio
   return meta
 })
 
-ipcMain.handle(IpcChannels.CONVERSATION_DELETE, async (_event, workspaceId: string, conversationId: string) => {
-  const runtime = runtimeRegistry.get(workspaceId)
-  const conversationStore = getConversationStore(runtime)
-  const agentManager = getAgentManager(runtime)
-  const cliAgentManager = getCliAgentManager(runtime)
-  if (!conversationStore) return
-  const meta = await conversationStore.get(conversationId)
-  if (meta && meta.workspaceId !== workspaceId) return
-  await conversationStore.delete(conversationId)
-  agentManager?.stop(conversationId)
-  cliAgentManager?.stop(conversationId)
-  const nativeSessionCache = getNativeSessionCache(runtime)
-  if (meta) {
-    const index = await conversationStore.loadIndex()
-    contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
-      workspaceId,
-      conversations: [...index, ...nativeSessionCache],
-    })
-  }
-})
-
-ipcMain.handle(IpcChannels.CONVERSATION_RENAME, async (_event, workspaceId: string, conversationId: string, title: string) => {
-  const runtime = runtimeRegistry.get(workspaceId)
-  const conversationStore = getConversationStore(runtime)
-  if (!conversationStore) return
-  const existing = await conversationStore.get(conversationId)
-  if (!existing || existing.workspaceId !== workspaceId) return
-  await conversationStore.updateMeta(conversationId, { title, autoTitled: false, updatedAt: Date.now() })
-  const meta = await conversationStore.get(conversationId)
-  if (meta) {
-    const index = await conversationStore.loadIndex()
+ipcMain.handle(
+  IpcChannels.CONVERSATION_DELETE,
+  async (_event, workspaceId: string, conversationId: string) => {
+    const runtime = runtimeRegistry.get(workspaceId)
+    const conversationStore = getConversationStore(runtime)
+    const agentManager = getAgentManager(runtime)
+    const cliAgentManager = getCliAgentManager(runtime)
+    if (!conversationStore) return
+    const meta = await conversationStore.get(conversationId)
+    if (meta && meta.workspaceId !== workspaceId) return
+    await conversationStore.delete(conversationId)
+    agentManager?.stop(conversationId)
+    cliAgentManager?.stop(conversationId)
     const nativeSessionCache = getNativeSessionCache(runtime)
-    contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
-      workspaceId,
-      conversations: [...index, ...nativeSessionCache],
-    })
-  }
-})
+    if (meta) {
+      const index = await conversationStore.loadIndex()
+      contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+        workspaceId,
+        conversations: [...index, ...nativeSessionCache],
+      })
+    }
+  },
+)
 
-ipcMain.handle(IpcChannels.CONVERSATION_GET, async (_event, workspaceId: string, conversationId: string) => {
-  const runtime = runtimeRegistry.get(workspaceId)
-  const conversationStore = getConversationStore(runtime)
-  const meta = await conversationStore?.get(conversationId)
-  if (meta && meta.workspaceId !== workspaceId) return null
-  return meta ?? null
-})
+ipcMain.handle(
+  IpcChannels.CONVERSATION_RENAME,
+  async (_event, workspaceId: string, conversationId: string, title: string) => {
+    const runtime = runtimeRegistry.get(workspaceId)
+    const conversationStore = getConversationStore(runtime)
+    if (!conversationStore) return
+    const existing = await conversationStore.get(conversationId)
+    if (!existing || existing.workspaceId !== workspaceId) return
+    await conversationStore.updateMeta(conversationId, {
+      title,
+      autoTitled: false,
+      updatedAt: Date.now(),
+    })
+    const meta = await conversationStore.get(conversationId)
+    if (meta) {
+      const index = await conversationStore.loadIndex()
+      const nativeSessionCache = getNativeSessionCache(runtime)
+      contentView?.webContents.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
+        workspaceId,
+        conversations: [...index, ...nativeSessionCache],
+      })
+    }
+  },
+)
+
+ipcMain.handle(
+  IpcChannels.CONVERSATION_GET,
+  async (_event, workspaceId: string, conversationId: string) => {
+    const runtime = runtimeRegistry.get(workspaceId)
+    const conversationStore = getConversationStore(runtime)
+    const meta = await conversationStore?.get(conversationId)
+    if (meta && meta.workspaceId !== workspaceId) return null
+    return meta ?? null
+  },
+)
 
 // State persistence IPC handlers
-ipcMain.handle(IpcChannels.STATE_SAVE, async (_event, rootPath: string, state: import('@aide/shared').AideLocalState) => {
-  await saveWorkspaceState(rootPath, state)
-})
+ipcMain.handle(
+  IpcChannels.STATE_SAVE,
+  async (_event, rootPath: string, state: import('@aide/shared').AideLocalState) => {
+    await saveWorkspaceState(rootPath, state)
+  },
+)
 
 ipcMain.handle(IpcChannels.STATE_LOAD, async (_event, rootPath: string) => {
   return loadWorkspaceState(rootPath)
 })
 
-ipcMain.handle(IpcChannels.STATE_SAVE_TERMINALS, async (_event, rootPath: string, state: import('@aide/shared').AideLocalTerminals) => {
-  await saveTerminalState(rootPath, state)
-})
+ipcMain.handle(
+  IpcChannels.STATE_SAVE_TERMINALS,
+  async (_event, rootPath: string, state: import('@aide/shared').AideLocalTerminals) => {
+    await saveTerminalState(rootPath, state)
+  },
+)
 
 ipcMain.handle(IpcChannels.STATE_LOAD_TERMINALS, async (_event, rootPath: string) => {
   return loadTerminalState(rootPath)
 })
 
 // Browser pane IPC handlers
-ipcMain.handle(IpcChannels.BROWSER_CREATE, (_event, paneId: string, workspaceId: string, sessionMode: import('@aide/shared').BrowserSessionMode) => {
-  return browserPaneManager.create(paneId, workspaceId, sessionMode)
-})
+ipcMain.handle(
+  IpcChannels.BROWSER_CREATE,
+  (
+    _event,
+    paneId: string,
+    workspaceId: string,
+    sessionMode: import('@aide/shared').BrowserSessionMode,
+  ) => {
+    return browserPaneManager.create(paneId, workspaceId, sessionMode)
+  },
+)
 
 ipcMain.on(IpcChannels.BROWSER_DESTROY, (_event, paneId: string) => {
   browserPaneManager.destroy(paneId)
@@ -924,9 +1313,12 @@ ipcMain.on(IpcChannels.BROWSER_RELOAD, (_event, paneId: string) => {
   browserPaneManager.reload(paneId)
 })
 
-ipcMain.on(IpcChannels.BROWSER_HOST_UPDATE, (_event, update: import('@aide/shared').BrowserHostUpdate) => {
-  browserPaneManager.handleHostUpdate(update)
-})
+ipcMain.on(
+  IpcChannels.BROWSER_HOST_UPDATE,
+  (_event, update: import('@aide/shared').BrowserHostUpdate) => {
+    browserPaneManager.handleHostUpdate(update)
+  },
+)
 
 ipcMain.on(IpcChannels.BROWSER_SUPPRESS_OVERLAYS, () => {
   browserPaneManager.suppressOverlays()
@@ -966,11 +1358,14 @@ ipcMain.handle(IpcChannels.AIDE_INIT, async (_event, workspaceId?: string | null
 })
 
 // .aide settings IPC handler
-ipcMain.handle(IpcChannels.AIDE_GET_RESOLVED_SETTINGS, async (_event, workspaceId?: string | null) => {
-  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
-  if (!rootPath) return resolveAppDefaults(store)
-  return resolveSettings(rootPath, store)
-})
+ipcMain.handle(
+  IpcChannels.AIDE_GET_RESOLVED_SETTINGS,
+  async (_event, workspaceId?: string | null) => {
+    const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
+    if (!rootPath) return resolveAppDefaults(store)
+    return resolveSettings(rootPath, store)
+  },
+)
 
 // Settings IPC handlers
 ipcMain.handle(IpcChannels.SETTINGS_GET_DEFAULTS, () => BUILT_IN_DEFAULTS)
@@ -982,9 +1377,7 @@ ipcMain.handle(IpcChannels.SETTINGS_GET_USER, () => {
 ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value: unknown) => {
   let current = (store.get('editorDefaults') ?? {}) as Record<string, unknown>
   if (value === undefined || value === null) {
-    current = Object.fromEntries(
-      Object.entries(current).filter(([entryKey]) => entryKey !== key),
-    )
+    current = Object.fromEntries(Object.entries(current).filter(([entryKey]) => entryKey !== key))
   } else {
     current[key] = value
   }
@@ -994,26 +1387,44 @@ ipcMain.handle(IpcChannels.SETTINGS_SET_USER, async (_event, key: string, value:
   if (key.startsWith('agent.')) {
     const config = loadLlmConfig()
     const permConfig = loadPermissionConfig()
+    const appDefs = resolveAppDefaults(store)
     for (const runtime of runtimeRegistry.list()) {
       getAgentManager(runtime)?.updateConfig(config)
       getAgentManager(runtime)?.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+      // Mirror permission updates into the CLI agent manager so OpenCode
+      // permission decisions stay in sync with live tier changes.
+      const cm = getCliAgentManager(runtime)
+      cm?.updatePermissions(permConfig.permissionTier, permConfig.autoApprove)
+      // Refresh OpenCode session-default seeds whenever any opencode default
+      // is touched. New sessions started afterwards inherit the new values;
+      // existing sessions retain their per-session overrides.
+      cm?.updateOpencodeDefaults({
+        providerID: appDefs['agent.opencode.defaultProvider'] || undefined,
+        modelID: appDefs['agent.opencode.defaultModel'] || undefined,
+        agent: appDefs['agent.opencode.defaultAgent'] || undefined,
+        mode: appDefs['agent.opencode.defaultMode'] || undefined,
+        systemPromptOverride: appDefs['agent.opencode.defaultSystemPrompt'] || undefined,
+        toolToggles: appDefs['agent.opencode.defaultToolToggles'] ?? undefined,
+      })
       runtime.refreshWorkload()
     }
   }
 
   // Push CLI agent path updates
-  if (key === 'agent.claudeCodePath' || key === 'agent.codexPath') {
+  if (key === 'agent.claudeCodePath' || key === 'agent.opencodePath' || key === 'agent.codexPath') {
     const appDefs = resolveAppDefaults(store)
     for (const runtime of runtimeRegistry.list()) {
-      getCliAgentManager(runtime)?.updatePaths(appDefs['agent.claudeCodePath'], appDefs['agent.codexPath'])
+      getCliAgentManager(runtime)?.updatePaths(
+        appDefs['agent.claudeCodePath'],
+        appDefs['agent.opencodePath'],
+        appDefs['agent.codexPath'],
+      )
     }
   }
 
   // Phase 8: only allowlisted implicit-active use — merged project settings for the focused workspace
   const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, undefined)
-  const resolved = rootPath
-    ? await resolveSettings(rootPath, store)
-    : resolveAppDefaults(store)
+  const resolved = rootPath ? await resolveSettings(rootPath, store) : resolveAppDefaults(store)
   contentView?.webContents.send(IpcChannels.SETTINGS_CHANGED, resolved)
 })
 
@@ -1030,51 +1441,57 @@ ipcMain.handle(IpcChannels.SETTINGS_GET_WORKSPACE, async (_event, workspaceId?: 
   }
 })
 
-ipcMain.handle(IpcChannels.SETTINGS_SET_WORKSPACE, async (_event, key: string, value: unknown, workspaceId?: string | null) => {
-  // Block sensitive agent keys from being written to project-level settings
-  if (SENSITIVE_AGENT_KEYS.has(key)) return
+ipcMain.handle(
+  IpcChannels.SETTINGS_SET_WORKSPACE,
+  async (_event, key: string, value: unknown, workspaceId?: string | null) => {
+    // Block sensitive agent keys from being written to project-level settings
+    if (SENSITIVE_AGENT_KEYS.has(key)) return
 
-  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
-  if (!rootPath) return
+    const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
+    if (!rootPath) return
 
-  const settingsPath = join(rootPath, '.aide', 'settings.json')
+    const settingsPath = join(rootPath, '.aide', 'settings.json')
 
-  // Ensure .aide directory exists
-  const aideDir = join(rootPath, '.aide')
-  if (!existsSync(aideDir)) await mkdir(aideDir, { recursive: true })
+    // Ensure .aide directory exists
+    const aideDir = join(rootPath, '.aide')
+    if (!existsSync(aideDir)) await mkdir(aideDir, { recursive: true })
 
-  // Read existing settings
-  let current: Record<string, unknown> = {}
-  if (existsSync(settingsPath)) {
-    try {
-      const raw = await readFile(settingsPath, 'utf-8')
-      current = JSON.parse(raw)
-    } catch {
-      current = {}
+    // Read existing settings
+    let current: Record<string, unknown> = {}
+    if (existsSync(settingsPath)) {
+      try {
+        const raw = await readFile(settingsPath, 'utf-8')
+        current = JSON.parse(raw)
+      } catch {
+        current = {}
+      }
     }
-  }
 
-  if (value === undefined || value === null) {
-    current = Object.fromEntries(
-      Object.entries(current).filter(([entryKey]) => entryKey !== key),
-    )
-  } else {
-    current[key] = value
-  }
+    if (value === undefined || value === null) {
+      current = Object.fromEntries(Object.entries(current).filter(([entryKey]) => entryKey !== key))
+    } else {
+      current[key] = value
+    }
 
-  await fsWriteFile(settingsPath, JSON.stringify(current, null, 2) + '\n', 'utf-8')
+    await fsWriteFile(settingsPath, JSON.stringify(current, null, 2) + '\n', 'utf-8')
 
-  // Broadcast resolved settings
-  const resolved = await resolveSettings(rootPath, store)
-  contentView?.webContents.send(IpcChannels.SETTINGS_CHANGED, resolved)
-})
+    // Broadcast resolved settings
+    const resolved = await resolveSettings(rootPath, store)
+    contentView?.webContents.send(IpcChannels.SETTINGS_CHANGED, resolved)
+  },
+)
 
 // Keybinding overrides IPC handlers
 // Migrate old Record<commandId, keybinding> format to KeybindingRule[] on first read
-function migrateKeybindingOverrides(stored: unknown): { key: string; command: string; when?: string }[] {
+function migrateKeybindingOverrides(
+  stored: unknown,
+): { key: string; command: string; when?: string }[] {
   if (Array.isArray(stored)) return stored
   if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
-    const migrated = Object.entries(stored as Record<string, string>).map(([command, key]) => ({ key, command }))
+    const migrated = Object.entries(stored as Record<string, string>).map(([command, key]) => ({
+      key,
+      command,
+    }))
     store.set('keybindingOverrides', migrated)
     return migrated
   }
@@ -1085,10 +1502,13 @@ ipcMain.handle(IpcChannels.KEYBINDINGS_GET, () => {
   return migrateKeybindingOverrides(store.get('keybindingOverrides'))
 })
 
-ipcMain.handle(IpcChannels.KEYBINDINGS_SET, async (_event, rules: { key: string; command: string; when?: string }[]) => {
-  store.set('keybindingOverrides', rules)
-  contentView?.webContents.send(IpcChannels.KEYBINDINGS_CHANGED, rules)
-})
+ipcMain.handle(
+  IpcChannels.KEYBINDINGS_SET,
+  async (_event, rules: { key: string; command: string; when?: string }[]) => {
+    store.set('keybindingOverrides', rules)
+    contentView?.webContents.send(IpcChannels.KEYBINDINGS_CHANGED, rules)
+  },
+)
 
 // Gitignore security audit IPC handlers
 ipcMain.handle(IpcChannels.GITIGNORE_AUDIT, async (_event, workspaceId?: string | null) => {
@@ -1097,11 +1517,14 @@ ipcMain.handle(IpcChannels.GITIGNORE_AUDIT, async (_event, workspaceId?: string 
   return auditGitignore(rootPath)
 })
 
-ipcMain.handle(IpcChannels.GITIGNORE_APPEND, async (_event, patterns: string[], workspaceId?: string | null) => {
-  const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
-  if (!rootPath) return
-  await appendToGitignore(rootPath, patterns)
-})
+ipcMain.handle(
+  IpcChannels.GITIGNORE_APPEND,
+  async (_event, patterns: string[], workspaceId?: string | null) => {
+    const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
+    if (!rootPath) return
+    await appendToGitignore(rootPath, patterns)
+  },
+)
 
 ipcMain.handle(IpcChannels.GITIGNORE_DISMISS, async (_event, workspaceId?: string | null) => {
   const rootPath = resolveRepoRootForWorkspace(workspaceRegistry, workspaceId)
@@ -1226,25 +1649,28 @@ ipcMain.handle(IpcChannels.TASK_LIST_RUNNING, async (_event, workspaceId: string
   return taskRunner?.getRunning() ?? []
 })
 
-ipcMain.handle(IpcChannels.TASK_RUN, async (_event, workspaceId: string, taskId: string, context?: TaskRunContext) => {
-  const runtime = runtimeRegistry.get(workspaceId)
-  const taskRunner = getTaskRunner(runtime)
-  if (!taskRunner) return { error: 'No workspace open' }
-  const rootPath = runtime?.rootPath ?? null
-  if (!rootPath) return { error: 'No workspace open' }
+ipcMain.handle(
+  IpcChannels.TASK_RUN,
+  async (_event, workspaceId: string, taskId: string, context?: TaskRunContext) => {
+    const runtime = runtimeRegistry.get(workspaceId)
+    const taskRunner = getTaskRunner(runtime)
+    if (!taskRunner) return { error: 'No workspace open' }
+    const rootPath = runtime?.rootPath ?? null
+    if (!rootPath) return { error: 'No workspace open' }
 
-  const eff = getEffectiveWorkspaceRoot(workspaceId, rootPath) ?? rootPath
-  const ctx = {
-    workspaceRoot: eff,
-    workspaceName: eff.split('/').pop() ?? eff,
-    activeFile: context?.activeFile,
-    selectedText: context?.selectedText,
-    lineNumber: context?.lineNumber,
-  }
-  const result = await taskRunner.run(taskId, ctx)
-  runtime?.refreshWorkload()
-  return result
-})
+    const eff = getEffectiveWorkspaceRoot(workspaceId, rootPath) ?? rootPath
+    const ctx = {
+      workspaceRoot: eff,
+      workspaceName: eff.split('/').pop() ?? eff,
+      activeFile: context?.activeFile,
+      selectedText: context?.selectedText,
+      lineNumber: context?.lineNumber,
+    }
+    const result = await taskRunner.run(taskId, ctx)
+    runtime?.refreshWorkload()
+    return result
+  },
+)
 
 ipcMain.on(IpcChannels.TASK_KILL, (_event, workspaceId: string, executionId: string) => {
   const runtime = runtimeRegistry.get(workspaceId)
@@ -1258,12 +1684,15 @@ ipcMain.handle(IpcChannels.TASK_RELOAD, async (_event, workspaceId: string) => {
   await taskRunner?.loadTasks()
 })
 
-ipcMain.on(IpcChannels.TASK_PROVIDE_INPUT, (_event, workspaceId: string, requestId: string, value: string | null) => {
-  const runtime = runtimeRegistry.get(workspaceId)
-  const taskRunner = getTaskRunner(runtime)
-  taskRunner?.provideInput(requestId, value)
-  runtime?.refreshWorkload()
-})
+ipcMain.on(
+  IpcChannels.TASK_PROVIDE_INPUT,
+  (_event, workspaceId: string, requestId: string, value: string | null) => {
+    const runtime = runtimeRegistry.get(workspaceId)
+    const taskRunner = getTaskRunner(runtime)
+    taskRunner?.provideInput(requestId, value)
+    runtime?.refreshWorkload()
+  },
+)
 
 ipcMain.handle(IpcChannels.TASK_GENERATE, async (_event, workspaceId: string) => {
   const entry = workspaceRegistry.get(workspaceId)
@@ -1324,120 +1753,152 @@ ipcMain.on(IpcChannels.TASK_FILE_SAVED, (_event, filePath: string) => {
 // Filesystem IPC handlers
 const HIDDEN_FILES = new Set(['.DS_Store', 'Thumbs.db'])
 
-ipcMain.handle(IpcChannels.FS_READ_DIR, async (_event, dirPath: string): Promise<DirEntry[] | { error: string }> => {
-  try {
-    const entries = await readdir(dirPath, { withFileTypes: true })
-    const mapped: DirEntry[] = entries
-      .filter((e) => !HIDDEN_FILES.has(e.name))
-      .map((e) => ({
-        name: e.name,
-        path: join(dirPath, e.name),
-        isDirectory: e.isDirectory(),
-      }))
-    // Sort: directories first, then alphabetical (case-insensitive)
-    mapped.sort((a, b) => {
-      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    })
-    return mapped
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error reading directory'
-    return { error: message }
-  }
-})
+ipcMain.handle(
+  IpcChannels.FS_READ_DIR,
+  async (_event, dirPath: string): Promise<DirEntry[] | { error: string }> => {
+    try {
+      const entries = await readdir(dirPath, { withFileTypes: true })
+      const mapped: DirEntry[] = entries
+        .filter((e) => !HIDDEN_FILES.has(e.name))
+        .map((e) => ({
+          name: e.name,
+          path: join(dirPath, e.name),
+          isDirectory: e.isDirectory(),
+        }))
+      // Sort: directories first, then alphabetical (case-insensitive)
+      mapped.sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      })
+      return mapped
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error reading directory'
+      return { error: message }
+    }
+  },
+)
 
 // Read file IPC handler — enforces 10 MB limit, rejects binary files
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 
-ipcMain.handle(IpcChannels.FS_READ_FILE, async (_event, filePath: string): Promise<{ content: string } | { error: string }> => {
-  try {
-    const info = await stat(filePath)
-    if (!info.isFile()) return { error: 'Not a file' }
-    if (info.size > MAX_FILE_SIZE) return { error: `File too large (${(info.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.` }
+ipcMain.handle(
+  IpcChannels.FS_READ_FILE,
+  async (_event, filePath: string): Promise<{ content: string } | { error: string }> => {
+    try {
+      const info = await stat(filePath)
+      if (!info.isFile()) return { error: 'Not a file' }
+      if (info.size > MAX_FILE_SIZE)
+        return {
+          error: `File too large (${(info.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.`,
+        }
 
-    const content = await readFile(filePath, 'utf-8')
+      const content = await readFile(filePath, 'utf-8')
 
-    // Check for binary content (null bytes in first 8 KB)
-    const sample = content.slice(0, 8192)
-    if (sample.includes('\0')) return { error: 'Binary file — cannot display' }
+      // Check for binary content (null bytes in first 8 KB)
+      const sample = content.slice(0, 8192)
+      if (sample.includes('\0')) return { error: 'Binary file — cannot display' }
 
-    return { content }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error reading file'
-    return { error: message }
-  }
-})
+      return { content }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error reading file'
+      return { error: message }
+    }
+  },
+)
 
 // Write file IPC handler
-ipcMain.handle(IpcChannels.FS_WRITE_FILE, async (_event, filePath: string, content: string): Promise<{ success: true } | { error: string }> => {
-  try {
-    await fsWriteFile(filePath, content, 'utf-8')
-    return { success: true }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error writing file'
-    return { error: message }
-  }
-})
+ipcMain.handle(
+  IpcChannels.FS_WRITE_FILE,
+  async (
+    _event,
+    filePath: string,
+    content: string,
+  ): Promise<{ success: true } | { error: string }> => {
+    try {
+      await fsWriteFile(filePath, content, 'utf-8')
+      return { success: true }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error writing file'
+      return { error: message }
+    }
+  },
+)
 
 // Create file IPC handler
-ipcMain.handle(IpcChannels.FS_CREATE_FILE, async (_event, filePath: string): Promise<{ success: true } | { error: string }> => {
-  try {
-    // Check if already exists
+ipcMain.handle(
+  IpcChannels.FS_CREATE_FILE,
+  async (_event, filePath: string): Promise<{ success: true } | { error: string }> => {
     try {
-      await stat(filePath)
-      return { error: 'File already exists' }
-    } catch {
-      // Expected — file doesn't exist yet
+      // Check if already exists
+      try {
+        await stat(filePath)
+        return { error: 'File already exists' }
+      } catch {
+        // Expected — file doesn't exist yet
+      }
+      // Ensure parent directory exists
+      await mkdir(dirname(filePath), { recursive: true })
+      await fsWriteFile(filePath, '', 'utf-8')
+      return { success: true }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error creating file'
+      return { error: message }
     }
-    // Ensure parent directory exists
-    await mkdir(dirname(filePath), { recursive: true })
-    await fsWriteFile(filePath, '', 'utf-8')
-    return { success: true }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error creating file'
-    return { error: message }
-  }
-})
+  },
+)
 
 // Create directory IPC handler
-ipcMain.handle(IpcChannels.FS_CREATE_DIR, async (_event, dirPath: string): Promise<{ success: true } | { error: string }> => {
-  try {
-    await mkdir(dirPath)
-    return { success: true }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error creating directory'
-    return { error: message }
-  }
-})
+ipcMain.handle(
+  IpcChannels.FS_CREATE_DIR,
+  async (_event, dirPath: string): Promise<{ success: true } | { error: string }> => {
+    try {
+      await mkdir(dirPath)
+      return { success: true }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error creating directory'
+      return { error: message }
+    }
+  },
+)
 
 // Delete file or directory IPC handler
-ipcMain.handle(IpcChannels.FS_DELETE, async (_event, entryPath: string): Promise<{ success: true } | { error: string }> => {
-  try {
-    await rm(entryPath, { recursive: true })
-    return { success: true }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error deleting'
-    return { error: message }
-  }
-})
+ipcMain.handle(
+  IpcChannels.FS_DELETE,
+  async (_event, entryPath: string): Promise<{ success: true } | { error: string }> => {
+    try {
+      await rm(entryPath, { recursive: true })
+      return { success: true }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error deleting'
+      return { error: message }
+    }
+  },
+)
 
 // Rename file or directory IPC handler
-ipcMain.handle(IpcChannels.FS_RENAME, async (_event, oldPath: string, newPath: string): Promise<{ success: true } | { error: string }> => {
-  try {
-    // Check if target already exists
+ipcMain.handle(
+  IpcChannels.FS_RENAME,
+  async (
+    _event,
+    oldPath: string,
+    newPath: string,
+  ): Promise<{ success: true } | { error: string }> => {
     try {
-      await stat(newPath)
-      return { error: 'A file or folder with that name already exists' }
-    } catch {
-      // Expected — target doesn't exist
+      // Check if target already exists
+      try {
+        await stat(newPath)
+        return { error: 'A file or folder with that name already exists' }
+      } catch {
+        // Expected — target doesn't exist
+      }
+      await rename(oldPath, newPath)
+      return { success: true }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error renaming'
+      return { error: message }
     }
-    await rename(oldPath, newPath)
-    return { success: true }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error renaming'
-    return { error: message }
-  }
-})
+  },
+)
 
 // Reveal in Finder / file manager
 ipcMain.on(IpcChannels.FS_REVEAL_IN_FINDER, (_event, filePath: string) => {
@@ -1446,11 +1907,7 @@ ipcMain.on(IpcChannels.FS_REVEAL_IN_FINDER, (_event, filePath: string) => {
 
 ipcMain.handle(
   IpcChannels.OPEN_IN_VSCODE,
-  async (
-    _event,
-    rootPath: string,
-    files?: Array<{ path: string; line: number; col: number }>,
-  ) => {
+  async (_event, rootPath: string, files?: Array<{ path: string; line: number; col: number }>) => {
     const runCode = (args: string[]) =>
       new Promise<void>((resolve, reject) => {
         execFile('code', args, (err) => {
@@ -1474,50 +1931,62 @@ ipcMain.handle(
 )
 
 // List all files (quick open) — uses `git ls-files` for speed, falls back to recursive readdir
-ipcMain.handle(IpcChannels.FS_LIST_ALL_FILES, async (_event, rootPath: string): Promise<string[]> => {
-  // Try git ls-files first (fast, respects .gitignore)
-  if (existsSync(join(rootPath, '.git'))) {
-    try {
-      const files = await new Promise<string[]>((resolve, reject) => {
-        execFile('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: rootPath, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
-          if (err) return reject(err)
-          resolve(stdout.trim().split('\n').filter(Boolean))
+ipcMain.handle(
+  IpcChannels.FS_LIST_ALL_FILES,
+  async (_event, rootPath: string): Promise<string[]> => {
+    // Try git ls-files first (fast, respects .gitignore)
+    if (existsSync(join(rootPath, '.git'))) {
+      try {
+        const files = await new Promise<string[]>((resolve, reject) => {
+          execFile(
+            'git',
+            ['ls-files', '--cached', '--others', '--exclude-standard'],
+            { cwd: rootPath, maxBuffer: 10 * 1024 * 1024 },
+            (err, stdout) => {
+              if (err) return reject(err)
+              resolve(stdout.trim().split('\n').filter(Boolean))
+            },
+          )
         })
-      })
-      return files
-    } catch {
-      // fall through to readdir
-    }
-  }
-
-  // Fallback: recursive readdir
-  const SKIP = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'out', '__pycache__'])
-  const results: string[] = []
-
-  /**
-   * Recursively traverses `dir` and appends discovered file paths (relative to `rootPath`) to the module-level `results` array.
-   *
-   * The walk skips entries whose names are in `SKIP` or that start with a dot. If `dir` cannot be read, the function returns without side effects.
-   *
-   * @param dir - The directory path to traverse
-   */
-  function walk(dir: string) {
-    let entries
-    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
-    for (const entry of entries) {
-      if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue
-      const full = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        walk(full)
-      } else {
-        results.push(relative(rootPath, full))
+        return files
+      } catch {
+        // fall through to readdir
       }
     }
-  }
 
-  walk(rootPath)
-  return results
-})
+    // Fallback: recursive readdir
+    const SKIP = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'out', '__pycache__'])
+    const results: string[] = []
+
+    /**
+     * Recursively traverses `dir` and appends discovered file paths (relative to `rootPath`) to the module-level `results` array.
+     *
+     * The walk skips entries whose names are in `SKIP` or that start with a dot. If `dir` cannot be read, the function returns without side effects.
+     *
+     * @param dir - The directory path to traverse
+     */
+    function walk(dir: string) {
+      let entries
+      try {
+        entries = readdirSync(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          walk(full)
+        } else {
+          results.push(relative(rootPath, full))
+        }
+      }
+    }
+
+    walk(rootPath)
+    return results
+  },
+)
 
 // Search (find in files) — ripgrep-backed
 ipcMain.handle(IpcChannels.SEARCH_START, async (_event, opts: SearchOpts) => {
@@ -1554,12 +2023,21 @@ ipcMain.handle(IpcChannels.SEARCH_REPLACE, async (_event, opts: ReplaceOpts) => 
 
     for (const rep of sorted) {
       const lineIdx = rep.line - 1
-      if (lineIdx < 0 || lineIdx >= lines.length) { skipped++; continue }
+      if (lineIdx < 0 || lineIdx >= lines.length) {
+        skipped++
+        continue
+      }
       const line = lines[lineIdx]
       const colIdx = rep.column - 1
-      if (colIdx < 0 || colIdx > line.length) { skipped++; continue }
+      if (colIdx < 0 || colIdx > line.length) {
+        skipped++
+        continue
+      }
       const actual = line.slice(colIdx, colIdx + rep.matchText.length)
-      if (actual !== rep.matchText) { skipped++; continue }
+      if (actual !== rep.matchText) {
+        skipped++
+        continue
+      }
       const before = line.slice(0, colIdx)
       const after = line.slice(colIdx + rep.matchText.length)
       lines[lineIdx] = before + rep.replaceText + after
@@ -1586,14 +2064,19 @@ app.whenReady().then(async () => {
   const wasCleanShutdown = store.get('cleanShutdown')
   store.set('cleanShutdown', false)
 
+  await themeRegistry.reload()
+
   buildAppMenu()
   createWindow()
-  registerPtyHandlers(() => contentView?.webContents ?? null, (workspaceId) => {
-    const entry = workspaceRegistry.get(workspaceId)
-    const root = entry?.rootPath ?? null
-    if (!root) return null
-    return getEffectiveWorkspaceRoot(workspaceId, root)
-  })
+  registerPtyHandlers(
+    () => contentView?.webContents ?? null,
+    (workspaceId) => {
+      const entry = workspaceRegistry.get(workspaceId)
+      const root = entry?.rootPath ?? null
+      if (!root) return null
+      return getEffectiveWorkspaceRoot(workspaceId, root)
+    },
+  )
   registerFileWatcherHandlers(() => contentView?.webContents ?? null)
 
   const getWebContents = () => contentView?.webContents ?? null
@@ -1652,7 +2135,9 @@ app.on('before-quit', (event) => {
     wc.send(IpcChannels.LIFECYCLE_REQUEST_SAVE)
 
     // Wait for renderer to confirm save, or timeout after 2s
-    const saveTimeout = setTimeout(() => { void finishQuit() }, 2000)
+    const saveTimeout = setTimeout(() => {
+      void finishQuit()
+    }, 2000)
 
     ipcMain.once(IpcChannels.LIFECYCLE_SAVE_COMPLETE, () => {
       clearTimeout(saveTimeout)

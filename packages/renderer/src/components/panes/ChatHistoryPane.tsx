@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { IDockviewPanelProps } from 'dockview-react'
-import type { ConversationMeta, AgentBackend } from '@aide/shared'
+import type { AgentBackend, ConversationMeta } from '@aide/shared'
 import { useConversationHistory } from '../../hooks/useConversationHistory'
+import { CLI_BACKENDS, backendBadgeLabel, backendLabel, isCliBackend } from '../../lib/agentBackend'
 import '../../styles/chat-history-pane.css'
 
 interface ChatHistoryPanelParams {
@@ -18,6 +19,7 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; meta: ConversationMeta } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
   const filterRef = useRef<HTMLInputElement>(null)
   /** Dedupe double-click (two click events + dblclick) opening multiple tabs. */
   const lastActivateRef = useRef<{ id: string; t: number } | null>(null)
@@ -78,13 +80,43 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
       {/* Header */}
       <div className="chat-history-pane__header">
         <span className="chat-history-pane__title">Conversations</span>
-        <button
-          className="chat-history-pane__new-btn"
-          onClick={() => handleNewChat('built-in')}
-          title="New conversation"
-        >
-          +
-        </button>
+        <div className="chat-history-pane__new-wrap">
+          <button
+            className="chat-history-pane__new-btn"
+            onClick={() => handleNewChat('built-in')}
+            title="New built-in conversation"
+          >
+            +
+          </button>
+          <button
+            className="chat-history-pane__new-caret"
+            onClick={(e) => { e.stopPropagation(); setNewMenuOpen((v) => !v) }}
+            title="New conversation with backend…"
+            aria-label="Choose backend"
+          >
+            {'\u25BE'}
+          </button>
+          {newMenuOpen && (
+            <div className="chat-history-pane__new-menu" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="chat-history-pane__new-menu-item"
+                onClick={() => { setNewMenuOpen(false); void handleNewChat('built-in') }}
+              >
+                {backendLabel('built-in')}
+              </button>
+              <div className="chat-history-pane__new-menu-sep" />
+              {CLI_BACKENDS.map((b) => (
+                <button
+                  key={b}
+                  className="chat-history-pane__new-menu-item"
+                  onClick={() => { setNewMenuOpen(false); void handleNewChat(b) }}
+                >
+                  {backendLabel(b)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filter */}
@@ -147,7 +179,7 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
                 <span className="chat-history-pane__item-badge chat-history-pane__item-badge--cli">CLI</span>
               )}
               <span className={`chat-history-pane__item-badge chat-history-pane__item-badge--${meta.backend}`}>
-                {backendLabel(meta.backend)}
+                {backendBadgeLabel(meta.backend)}
               </span>
             </div>
           </div>
@@ -182,19 +214,6 @@ export function ChatHistoryPane({ params }: IDockviewPanelProps<ChatHistoryPanel
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function isCliBackend(backend: AgentBackend): boolean {
-  return backend === 'claude-code' || backend === 'codex'
-}
-
-function backendLabel(backend: AgentBackend): string {
-  switch (backend) {
-    case 'built-in': return 'built-in'
-    case 'claude-code': return 'claude'
-    case 'codex': return 'codex'
-    default: return backend
-  }
-}
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp

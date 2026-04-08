@@ -57,6 +57,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       { id: 'agent.backend', label: 'Backend' },
       { id: 'agent.llm', label: 'LLM Configuration' },
       { id: 'agent.permissions', label: 'Permissions' },
+      { id: 'agent.opencode', label: 'OpenCode Defaults' },
     ],
   },
   { id: 'extensions', label: 'Extensions' },
@@ -129,11 +130,12 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
   {
     key: 'agent.backend',
     label: 'Agent Backend',
-    description: 'Which agent backend to use. Built-in uses the integrated LLM agent. Claude Code and Codex wrap external CLI tools.',
+    description: 'Default agent backend for new chats. Built-in uses the integrated LLM agent. Claude Code, OpenCode, and Codex wrap external CLI tools — these can be hot-swapped per conversation from the agent pane.',
     type: 'enum',
     enumValues: [
       { value: 'built-in', label: 'Built-in' },
       { value: 'claude-code', label: 'Claude Code' },
+      { value: 'opencode', label: 'OpenCode' },
       { value: 'codex', label: 'Codex' },
     ],
     category: 'agent.backend',
@@ -143,6 +145,14 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     key: 'agent.claudeCodePath',
     label: 'Claude Code Path',
     description: 'Path to the Claude Code CLI binary. Leave empty to auto-detect from node_modules or PATH.',
+    type: 'string',
+    category: 'agent.backend',
+    scope: 'user',
+  },
+  {
+    key: 'agent.opencodePath',
+    label: 'OpenCode Path',
+    description: 'Path to the OpenCode CLI binary, or leave empty to use the bundled @opencode-ai/sdk and let aIDE manage the OpenCode server process.',
     type: 'string',
     category: 'agent.backend',
     scope: 'user',
@@ -226,6 +236,51 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
       { value: 'autopilot', label: 'Autopilot (no prompts)' },
     ],
     category: 'agent.permissions',
+    scope: 'user',
+  },
+
+  // Agent > OpenCode Defaults
+  // Seed values applied to new OpenCode sessions. Per-session overrides
+  // (set from the chat pane's gear menu) take precedence and never modify
+  // these. Leave any of them blank to let OpenCode pick its own default.
+  {
+    key: 'agent.opencode.defaultProvider',
+    label: 'Default Provider',
+    description: "OpenCode provider id used when starting a new chat (e.g. 'anthropic', 'openai', 'openrouter'). Leave blank to use OpenCode's own default.",
+    type: 'string',
+    category: 'agent.opencode',
+    scope: 'user',
+  },
+  {
+    key: 'agent.opencode.defaultModel',
+    label: 'Default Model',
+    description: "Model id paired with the default provider (e.g. 'claude-sonnet-4-5'). Both provider and model must be set together.",
+    type: 'string',
+    category: 'agent.opencode',
+    scope: 'user',
+  },
+  {
+    key: 'agent.opencode.defaultAgent',
+    label: 'Default Agent',
+    description: "OpenCode agent name applied to new chats (e.g. 'build', 'plan'). Leave blank for the workspace agent.",
+    type: 'string',
+    category: 'agent.opencode',
+    scope: 'user',
+  },
+  {
+    key: 'agent.opencode.defaultMode',
+    label: 'Default Mode',
+    description: "OpenCode mode used to scope agent execution (e.g. 'primary', 'subagent', 'all'). Leave blank for the agent's mode.",
+    type: 'string',
+    category: 'agent.opencode',
+    scope: 'user',
+  },
+  {
+    key: 'agent.opencode.defaultSystemPrompt',
+    label: 'Default System Prompt',
+    description: 'A system prompt applied on top of the chosen agent. Leave blank to use the agent default. Per-chat overrides are still possible from the chat pane.',
+    type: 'string',
+    category: 'agent.opencode',
     scope: 'user',
   },
 ]

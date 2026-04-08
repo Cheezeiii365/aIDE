@@ -22,12 +22,17 @@ import { NewBrowserPaneModal } from '../modals/NewBrowserPaneModal'
 import { loadKeybindings } from '../../commands/KeybindingService'
 import { defaultKeybindings } from '../../commands/defaultKeybindings'
 import { useTasks } from '../../hooks/useTasks'
+import { useTheme } from '../../hooks/useTheme'
 import { useWorkspaces } from '../../hooks/useWorkspaces'
 import { useRuntimeGlobalNotifications } from '../../hooks/useRuntimeGlobalNotifications'
-import { autoSave, switchWorkspace as doSwitchWorkspace } from '../../lib/workspace/workspaceSwitcher'
+import {
+  autoSave,
+  switchWorkspace as doSwitchWorkspace,
+} from '../../lib/workspace/workspaceSwitcher'
 import { createTerminalPanelParams, getTerminalParams } from '../../lib/terminal/terminalState'
 import { createBrowserPanelParams, getBrowserParams } from '../../lib/browserState'
 import { getPanelZoomFactor, updatePanelZoomParams } from '../../lib/panelZoom'
+import { backendLabel, isCliBackend } from '../../lib/agentBackend'
 import { DockviewNavigation } from '../../lib/dockviewNavigation'
 import {
   captureWorkspaceRuntimeSnapshot,
@@ -51,6 +56,7 @@ import {
 } from '../../lib/workspace/taskInputInboxStore'
 import { scopedTo } from '../../lib/workspace/workspaceScopedListener'
 import { adjustZoomFactor, resetZoomFactor } from '@aide/shared'
+import type { SearchPanelItem } from './SearchPanel'
 
 /**
  * Top-level application shell coordinating workspace lifecycle, Dockview panels, keyboard commands, and primary UI.
@@ -79,10 +85,15 @@ export function AppShell() {
   const [gitignoreAudit, setGitignoreAudit] = useState<GitignoreAuditResult | null>(null)
   const [gitignoreModalOpen, setGitignoreModalOpen] = useState(false)
   const [taskInputRequest, setTaskInputRequest] = useState<TaskInputRequest | null>(null)
-  const [wsContextMenu, setWsContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [wsContextMenu, setWsContextMenu] = useState<{ id: string; x: number; y: number } | null>(
+    null,
+  )
   const [newBrowserPaneOpen, setNewBrowserPaneOpen] = useState(false)
   const [taskPickerItems, setTaskPickerItems] = useState<TaskPickerItem[] | null>(null)
-  const [terminatePickerExecutions, setTerminatePickerExecutions] = useState<TaskExecution[] | null>(null)
+  const [terminatePickerExecutions, setTerminatePickerExecutions] = useState<
+    TaskExecution[] | null
+  >(null)
+  const [themePickerMode, setThemePickerMode] = useState<null | 'active' | 'dark' | 'light'>(null)
   const [activeBrowserPaneId, setActiveBrowserPaneId] = useState<string | null>(null)
   const [activePanelId, setActivePanelId] = useState<string | null>(null)
   const commandContextRef = useRef<CommandContext | null>(null)
@@ -116,10 +127,26 @@ export function AppShell() {
     clearDiagnostics: clearAllDiagnostics,
   } = useTasks(activeWorkspaceId)
 
+  const {
+    themes,
+    activeThemeId,
+    defaultDarkThemeId,
+    defaultLightThemeId,
+    setTheme,
+    setDefaultDarkTheme,
+    setDefaultLightTheme,
+    toggleTheme,
+    reloadThemes,
+    openThemesDirectory,
+  } = useTheme()
+
   // Single-window shell: file tree, worktrees, and task runner UI follow the focused workspace.
   // Multi-workspace backend state uses workspace ids elsewhere (snapshots, document store, inbox).
   const workspaceRoot = activeWorkspace?.rootPath ?? null
-  const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(workspaceRoot, activeWorkspaceId)
+  const { worktrees, activeWorktree, activeRoot, switchWorktree } = useWorktrees(
+    workspaceRoot,
+    activeWorkspaceId,
+  )
 
   useEffect(() => {
     if (activeWorkspaceId) {
@@ -131,28 +158,33 @@ export function AppShell() {
     activeWorkspaceIdRef.current = activeWorkspaceId
   }, [activeWorkspaceId])
 
-  const persistWorkspaceRuntime = useCallback((
-    workspaceId: string | null = activeWorkspaceId,
-    rootPath: string | null = workspaceRoot,
-    activeWt: string | null = activeWorktree,
-  ) => {
-    const api = dockviewApiRef.current
-    if (!api || !workspaceId) return
+  const persistWorkspaceRuntime = useCallback(
+    (
+      workspaceId: string | null = activeWorkspaceId,
+      rootPath: string | null = workspaceRoot,
+      activeWt: string | null = activeWorktree,
+    ) => {
+      const api = dockviewApiRef.current
+      if (!api || !workspaceId) return
 
-    const snapshot = saveWorkspaceRuntimeSnapshot(captureWorkspaceRuntimeSnapshot(
-      api,
-      workspaceId,
-      rootPath,
-      sidebarWidthRef.current,
-      sidebarCollapsed,
-      activeWt,
-    ))
+      const snapshot = saveWorkspaceRuntimeSnapshot(
+        captureWorkspaceRuntimeSnapshot(
+          api,
+          workspaceId,
+          rootPath,
+          sidebarWidthRef.current,
+          sidebarCollapsed,
+          activeWt,
+        ),
+      )
 
-    if (snapshot.rootPath) {
-      window.api.saveWorkspaceState(snapshot.rootPath, snapshot.state).catch(() => {})
-      window.api.saveTerminalState(snapshot.rootPath, snapshot.terminals).catch(() => {})
-    }
-  }, [activeWorkspaceId, activeWorktree, sidebarCollapsed, workspaceRoot])
+      if (snapshot.rootPath) {
+        window.api.saveWorkspaceState(snapshot.rootPath, snapshot.state).catch(() => {})
+        window.api.saveTerminalState(snapshot.rootPath, snapshot.terminals).catch(() => {})
+      }
+    },
+    [activeWorkspaceId, activeWorktree, sidebarCollapsed, workspaceRoot],
+  )
 
   const handleOpenFolder = useCallback(async () => {
     // If in a blank workspace (no rootPath), set root instead of creating new
@@ -170,29 +202,39 @@ export function AppShell() {
     await window.api.createBlankWorkspace()
   }, [])
 
-  const handleCloseWorkspace = useCallback(async (id: string) => {
-    const workspace = workspaces.find((entry) => entry.id === id)
-    destroyedWorkspaceIdsRef.current.add(id)
-    clearWorkspaceRuntimeSnapshot(id)
-    window.api.browserDestroyWorkspace(id)
-    if (workspace?.rootPath) {
-      window.api.saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null }).catch(() => {})
-    }
-    window.api.ptyKillWorkspace(id)
-    await closeWorkspace(id)
-  }, [closeWorkspace, workspaces])
+  const handleCloseWorkspace = useCallback(
+    async (id: string) => {
+      const workspace = workspaces.find((entry) => entry.id === id)
+      destroyedWorkspaceIdsRef.current.add(id)
+      clearWorkspaceRuntimeSnapshot(id)
+      window.api.browserDestroyWorkspace(id)
+      if (workspace?.rootPath) {
+        window.api
+          .saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null })
+          .catch(() => {})
+      }
+      window.api.ptyKillWorkspace(id)
+      await closeWorkspace(id)
+    },
+    [closeWorkspace, workspaces],
+  )
 
-  const handleRemoveWorkspace = useCallback(async (id: string) => {
-    const workspace = workspaces.find((entry) => entry.id === id)
-    destroyedWorkspaceIdsRef.current.add(id)
-    clearWorkspaceRuntimeSnapshot(id)
-    window.api.browserDestroyWorkspace(id)
-    if (workspace?.rootPath) {
-      window.api.saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null }).catch(() => {})
-    }
-    window.api.ptyKillWorkspace(id)
-    await removeWorkspace(id)
-  }, [removeWorkspace, workspaces])
+  const handleRemoveWorkspace = useCallback(
+    async (id: string) => {
+      const workspace = workspaces.find((entry) => entry.id === id)
+      destroyedWorkspaceIdsRef.current.add(id)
+      clearWorkspaceRuntimeSnapshot(id)
+      window.api.browserDestroyWorkspace(id)
+      if (workspace?.rootPath) {
+        window.api
+          .saveTerminalState(workspace.rootPath, { terminals: [], activeTerminalId: null })
+          .catch(() => {})
+      }
+      window.api.ptyKillWorkspace(id)
+      await removeWorkspace(id)
+    },
+    [removeWorkspace, workspaces],
+  )
 
   const showWelcomeLayout = useCallback((api: DockviewApi) => {
     const panels = [...api.panels]
@@ -212,7 +254,9 @@ export function AppShell() {
     if (!api) return
     const prevRoot = prevWorkspaceRootRef.current
     const prevWorkspaceId = prevWorkspaceIdRef.current
-    const wasDestroyed = prevWorkspaceId ? destroyedWorkspaceIdsRef.current.has(prevWorkspaceId) : false
+    const wasDestroyed = prevWorkspaceId
+      ? destroyedWorkspaceIdsRef.current.has(prevWorkspaceId)
+      : false
 
     if (!activeWorkspaceId) {
       if (prevWorkspaceId && !wasDestroyed) {
@@ -273,7 +317,7 @@ export function AppShell() {
       currentWorkspaceId: prevWorkspaceId,
       currentRootPath: prevRoot,
       currentActiveWorktreePath: prevWorkspaceId
-        ? worktreeByWsRef.current.get(prevWorkspaceId) ?? null
+        ? (worktreeByWsRef.current.get(prevWorkspaceId) ?? null)
         : null,
       targetWorkspaceId: activeWorkspaceId ?? '',
       targetRootPath: workspaceRoot,
@@ -300,7 +344,13 @@ export function AppShell() {
     if (prevWorkspaceId) destroyedWorkspaceIdsRef.current.delete(prevWorkspaceId)
     prevWorkspaceRootRef.current = workspaceRoot
     prevWorkspaceIdRef.current = activeWorkspaceId
-  }, [activeWorkspaceId, persistWorkspaceRuntime, showWelcomeLayout, sidebarCollapsed, workspaceRoot])
+  }, [
+    activeWorkspaceId,
+    persistWorkspaceRuntime,
+    showWelcomeLayout,
+    sidebarCollapsed,
+    workspaceRoot,
+  ])
 
   const presentGitignoreAudit = useCallback((result: GitignoreAuditResult) => {
     setGitignoreAudit(result)
@@ -310,9 +360,12 @@ export function AppShell() {
     )
   }, [])
 
-  const onGitignoreAuditFromMain = useCallback(scopedTo<GitignoreAuditIpcPayload>(activeWorkspaceId, (payload) => {
-    presentGitignoreAudit(payload.result)
-  }), [activeWorkspaceId, presentGitignoreAudit])
+  const onGitignoreAuditFromMain = useCallback(
+    scopedTo<GitignoreAuditIpcPayload>(activeWorkspaceId, (payload) => {
+      presentGitignoreAudit(payload.result)
+    }),
+    [activeWorkspaceId, presentGitignoreAudit],
+  )
 
   useEffect(() => {
     const unsub = window.api.onGitignoreAuditResult(onGitignoreAuditFromMain)
@@ -350,112 +403,120 @@ export function AppShell() {
 
   // Listen for task auto-detect results (offer to generate tasks.json)
   useEffect(() => {
-    const unsub = window.api.onTaskAutoDetect(scopedTo(activeWorkspaceId, (payload) => {
-      const { tasks } = payload
-      showToast(
-        `Detected ${tasks.length} task${tasks.length !== 1 ? 's' : ''} from project config`,
-        {
-          label: 'Generate tasks.json',
-          onClick: async () => {
-            const wid = activeWorkspaceId
-            if (!wid) return
-            const result = await window.api.generateTasks(wid)
-            if ('error' in result) {
-              showToast(result.error)
-            } else {
-              showToast('Generated .aide/tasks.json')
-            }
+    const unsub = window.api.onTaskAutoDetect(
+      scopedTo(activeWorkspaceId, (payload) => {
+        const { tasks } = payload
+        showToast(
+          `Detected ${tasks.length} task${tasks.length !== 1 ? 's' : ''} from project config`,
+          {
+            label: 'Generate tasks.json',
+            onClick: async () => {
+              const wid = activeWorkspaceId
+              if (!wid) return
+              const result = await window.api.generateTasks(wid)
+              if ('error' in result) {
+                showToast(result.error)
+              } else {
+                showToast('Generated .aide/tasks.json')
+              }
+            },
           },
-        },
-      )
-    }))
+        )
+      }),
+    )
     return unsub
   }, [activeWorkspaceId])
 
   // Terminal routing for task executions
   useEffect(() => {
-    const unsub = window.api.onTaskStatusChanged(scopedTo<TaskExecution>(activeWorkspaceId, (execution) => {
-      const api = dockviewApiRef.current
-      if (!api) return
+    const unsub = window.api.onTaskStatusChanged(
+      scopedTo<TaskExecution>(activeWorkspaceId, (execution) => {
+        const api = dockviewApiRef.current
+        if (!api) return
 
-      if (execution.status === 'running' && execution.ptyId) {
-        const policy = execution.panelPolicy ?? 'shared'
-        let panelId: string
+        if (execution.status === 'running' && execution.ptyId) {
+          const policy = execution.panelPolicy ?? 'shared'
+          let panelId: string
 
-        if (policy === 'shared') {
-          panelId = 'task-terminal-shared'
-        } else if (policy === 'dedicated') {
-          panelId = `task-terminal-${execution.taskId}`
-        } else {
-          panelId = `task-terminal-${execution.executionId}`
-        }
+          if (policy === 'shared') {
+            panelId = 'task-terminal-shared'
+          } else if (policy === 'dedicated') {
+            panelId = `task-terminal-${execution.taskId}`
+          } else {
+            panelId = `task-terminal-${execution.executionId}`
+          }
 
-        // Track mapping for cleanup
-        taskTerminalMapRef.current.set(execution.executionId, panelId)
+          // Track mapping for cleanup
+          taskTerminalMapRef.current.set(execution.executionId, panelId)
 
-        const existing = api.panels.find((p) => p.id === panelId)
-        if (existing) {
-          // Reuse: update the ptyId to the new execution's PTY
-          existing.api.updateParameters({
-            ...existing.params,
-            taskPtyId: execution.ptyId,
-            taskExecutionId: execution.executionId,
-            taskId: execution.taskId,
-            title: `Task: ${execution.taskLabel}`,
-          })
-          existing.api.setActive()
-        } else {
-          // Create new task terminal panel
-          const existingTerminal = api.panels.find(
-            (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
-          )
-          api.addPanel({
-            id: panelId,
-            component: 'terminalPane',
-            title: `Task: ${execution.taskLabel}`,
-            params: {
-              terminalId: panelId,
-              workspaceId: execution.workspaceId,
+          const existing = api.panels.find((p) => p.id === panelId)
+          if (existing) {
+            // Reuse: update the ptyId to the new execution's PTY
+            existing.api.updateParameters({
+              ...existing.params,
               taskPtyId: execution.ptyId,
               taskExecutionId: execution.executionId,
               taskId: execution.taskId,
               title: `Task: ${execution.taskLabel}`,
-              zoomFactor: 1,
-            },
-            position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
-          })
-        }
-      }
-
-      // Handle close-on-exit for 'new' policy terminals
-      if (
-        execution.status === 'succeeded'
-        && execution.closeOnExit
-        && execution.panelPolicy === 'new'
-      ) {
-        const termPanelId = taskTerminalMapRef.current.get(execution.executionId)
-        if (termPanelId && api) {
-          const panel = api.panels.find((p) => p.id === termPanelId)
-          if (panel) {
-            setTimeout(() => panel.api.close(), 500)
+            })
+            existing.api.setActive()
+          } else {
+            // Create new task terminal panel
+            const existingTerminal = api.panels.find(
+              (p) => p.id === 'terminal' || p.id.startsWith('terminal-'),
+            )
+            api.addPanel({
+              id: panelId,
+              component: 'terminalPane',
+              title: `Task: ${execution.taskLabel}`,
+              params: {
+                terminalId: panelId,
+                workspaceId: execution.workspaceId,
+                taskPtyId: execution.ptyId,
+                taskExecutionId: execution.executionId,
+                taskId: execution.taskId,
+                title: `Task: ${execution.taskLabel}`,
+                zoomFactor: 1,
+              },
+              position: existingTerminal ? { referencePanel: existingTerminal } : undefined,
+            })
           }
         }
-        taskTerminalMapRef.current.delete(execution.executionId)
-      }
-    }))
+
+        // Handle close-on-exit for 'new' policy terminals
+        if (
+          execution.status === 'succeeded' &&
+          execution.closeOnExit &&
+          execution.panelPolicy === 'new'
+        ) {
+          const termPanelId = taskTerminalMapRef.current.get(execution.executionId)
+          if (termPanelId && api) {
+            const panel = api.panels.find((p) => p.id === termPanelId)
+            if (panel) {
+              setTimeout(() => panel.api.close(), 500)
+            }
+          }
+          taskTerminalMapRef.current.delete(execution.executionId)
+        }
+      }),
+    )
     return unsub
   }, [activeWorkspaceId])
 
   // Listen for task trigger results (auto-run outcomes) and show toasts
   useEffect(() => {
-    const unsub = window.api.onTaskTriggerResult(scopedTo<TaskTriggerResult>(activeWorkspaceId, (result) => {
-      if (result.outcome === 'failed') {
-        showToast(`Task "${result.taskLabel}" failed to start: ${result.message ?? 'unknown error'}`)
-      } else if (result.outcome === 'skipped') {
-        // Silently skip - no toast needed for already-running tasks
-      }
-      // 'started' is normal, no toast needed
-    }))
+    const unsub = window.api.onTaskTriggerResult(
+      scopedTo<TaskTriggerResult>(activeWorkspaceId, (result) => {
+        if (result.outcome === 'failed') {
+          showToast(
+            `Task "${result.taskLabel}" failed to start: ${result.message ?? 'unknown error'}`,
+          )
+        } else if (result.outcome === 'skipped') {
+          // Silently skip - no toast needed for already-running tasks
+        }
+        // 'started' is normal, no toast needed
+      }),
+    )
     return unsub
   }, [activeWorkspaceId])
 
@@ -470,7 +531,8 @@ export function AppShell() {
     } else if (taskDiagnostics.length > 0) {
       // Open the Problems panel on first diagnostics
       const existingTerminal = api.panels.find(
-        (p) => p.id === 'terminal' || p.id.startsWith('terminal-') || p.id.startsWith('task-terminal-'),
+        (p) =>
+          p.id === 'terminal' || p.id.startsWith('terminal-') || p.id.startsWith('task-terminal-'),
       )
       api.addPanel({
         id: 'problems',
@@ -494,13 +556,14 @@ export function AppShell() {
 
   useEffect(() => {
     const shouldSuppress =
-      commandPaletteOpen
-      || quickOpenOpen
-      || gitignoreModalOpen
-      || !!taskInputRequest
-      || newBrowserPaneOpen
-      || !!taskPickerItems
-      || !!terminatePickerExecutions
+      commandPaletteOpen ||
+      quickOpenOpen ||
+      gitignoreModalOpen ||
+      !!taskInputRequest ||
+      newBrowserPaneOpen ||
+      !!taskPickerItems ||
+      !!terminatePickerExecutions ||
+      themePickerMode !== null
     if (shouldSuppress) {
       window.api.browserSuppressOverlays()
     } else {
@@ -513,55 +576,108 @@ export function AppShell() {
     quickOpenOpen,
     taskInputRequest,
     taskPickerItems,
+    themePickerMode,
     terminatePickerExecutions,
   ])
 
-  useEffect(() => {
-    const unsub = window.api.onBrowserFocusChanged(scopedTo(activeWorkspaceId, ({ paneId, focused }) => {
-      if (focused) {
-        setActiveBrowserPaneId(paneId)
-        setContext('browserFocused', true)
-      } else {
-        setActiveBrowserPaneId((current) => {
-          const next = current === paneId ? null : current
-          setContext('browserFocused', next !== null)
-          return next
+  const openThemePicker = useCallback((mode: 'active' | 'dark' | 'light') => {
+    setCommandPaletteOpen(false)
+    setQuickOpenOpen(false)
+    setThemePickerMode(mode)
+  }, [])
+
+  const themePickerItems: SearchPanelItem[] =
+    themePickerMode === null
+      ? []
+      : (themePickerMode === 'dark'
+          ? themes.filter((theme) => theme.appearance === 'dark')
+          : themePickerMode === 'light'
+            ? themes.filter((theme) => theme.appearance === 'light')
+            : themes
+        ).map((theme) => {
+          const selectedThemeId =
+            themePickerMode === 'dark'
+              ? defaultDarkThemeId
+              : themePickerMode === 'light'
+                ? defaultLightThemeId
+                : activeThemeId
+
+          return {
+            id: theme.id,
+            label: theme.label,
+            description: `${theme.appearance}${theme.id === selectedThemeId ? ' • current' : ''}`,
+            searchText: `${theme.label} ${theme.id} ${theme.appearance} ${theme.source}`,
+          }
         })
+
+  const handleThemePickerSelect = useCallback(
+    (id: string) => {
+      if (themePickerMode === 'dark') {
+        void setDefaultDarkTheme(id)
+      } else if (themePickerMode === 'light') {
+        void setDefaultLightTheme(id)
+      } else {
+        void setTheme(id)
       }
-    }))
+      setThemePickerMode(null)
+    },
+    [setDefaultDarkTheme, setDefaultLightTheme, setTheme, themePickerMode],
+  )
+
+  useEffect(() => {
+    const unsub = window.api.onBrowserFocusChanged(
+      scopedTo(activeWorkspaceId, ({ paneId, focused }) => {
+        if (focused) {
+          setActiveBrowserPaneId(paneId)
+          setContext('browserFocused', true)
+        } else {
+          setActiveBrowserPaneId((current) => {
+            const next = current === paneId ? null : current
+            setContext('browserFocused', next !== null)
+            return next
+          })
+        }
+      }),
+    )
     return unsub
   }, [activeWorkspaceId])
 
-  const updateActivePanelZoom = useCallback(async (nextZoom: number) => {
-    const api = dockviewApiRef.current
-    if (!api || !activePanelId) return
-    const activePanel = api.panels.find((panel) => panel.id === activePanelId)
-    if (!activePanel) return
+  const updateActivePanelZoom = useCallback(
+    async (nextZoom: number) => {
+      const api = dockviewApiRef.current
+      if (!api || !activePanelId) return
+      const activePanel = api.panels.find((panel) => panel.id === activePanelId)
+      if (!activePanel) return
 
-    const browserParams = getBrowserParams(activePanel)
-    if (browserParams) {
-      const appliedZoom = await window.api.setBrowserZoom(browserParams.paneId, nextZoom)
-      activePanel.api.updateParameters({ ...browserParams, zoomFactor: appliedZoom })
+      const browserParams = getBrowserParams(activePanel)
+      if (browserParams) {
+        const appliedZoom = await window.api.setBrowserZoom(browserParams.paneId, nextZoom)
+        activePanel.api.updateParameters({ ...browserParams, zoomFactor: appliedZoom })
+        persistWorkspaceRuntime()
+        return
+      }
+
+      activePanel.api.updateParameters(
+        updatePanelZoomParams(activePanel.params as Record<string, unknown> | undefined, nextZoom),
+      )
       persistWorkspaceRuntime()
-      return
-    }
+    },
+    [activePanelId, persistWorkspaceRuntime],
+  )
 
-    activePanel.api.updateParameters(updatePanelZoomParams(
-      (activePanel.params as Record<string, unknown> | undefined),
-      nextZoom,
-    ))
-    persistWorkspaceRuntime()
-  }, [activePanelId, persistWorkspaceRuntime])
-
-  const handleZoomCommand = useCallback((action: 'in' | 'out' | 'reset') => {
-    const activePanel = dockviewApiRef.current?.panels.find((panel) => panel.id === activePanelId)
-    if (!activePanel) return
-    const currentZoom = getPanelZoomFactor(activePanel.params)
-    const nextZoom = action === 'reset'
-      ? resetZoomFactor()
-      : adjustZoomFactor(currentZoom, action === 'in' ? 0.1 : -0.1)
-    void updateActivePanelZoom(nextZoom)
-  }, [activePanelId, updateActivePanelZoom])
+  const handleZoomCommand = useCallback(
+    (action: 'in' | 'out' | 'reset') => {
+      const activePanel = dockviewApiRef.current?.panels.find((panel) => panel.id === activePanelId)
+      if (!activePanel) return
+      const currentZoom = getPanelZoomFactor(activePanel.params)
+      const nextZoom =
+        action === 'reset'
+          ? resetZoomFactor()
+          : adjustZoomFactor(currentZoom, action === 'in' ? 0.1 : -0.1)
+      void updateActivePanelZoom(nextZoom)
+    },
+    [activePanelId, updateActivePanelZoom],
+  )
 
   useEffect(() => {
     return window.api.onZoomCommand(({ action, target }) => {
@@ -605,7 +721,9 @@ export function AppShell() {
   // Handle crash recovery notification
   useEffect(() => {
     const unsub = window.api.onCrashDetected(() => {
-      showToast('aIDE recovered from an unexpected shutdown. Some recent changes may not have been saved.')
+      showToast(
+        'aIDE recovered from an unexpected shutdown. Some recent changes may not have been saved.',
+      )
     })
     return unsub
   }, [])
@@ -629,9 +747,7 @@ export function AppShell() {
       component: 'markdownPreview',
       title: `Preview: ${name}`,
       params: { filePath },
-      position: editorPanel
-        ? { referencePanel: editorPanel, direction: 'right' }
-        : undefined,
+      position: editorPanel ? { referencePanel: editorPanel, direction: 'right' } : undefined,
     })
   }, [])
 
@@ -672,6 +788,12 @@ export function AppShell() {
         setQuickOpenOpen(false)
         setNewBrowserPaneOpen(true)
       },
+      openThemePicker,
+      toggleTheme: () => {
+        void toggleTheme()
+      },
+      reloadThemes,
+      openThemesDirectory,
       persistWorkspaceRuntime,
       presentGitignoreAudit,
       openTaskPicker: (items) => setTaskPickerItems(items),
@@ -701,11 +823,15 @@ export function AppShell() {
     handleNewBlankWorkspace,
     handleOpenFolder,
     killTask,
+    openThemePicker,
     openMarkdownPreview,
+    openThemesDirectory,
     persistWorkspaceRuntime,
     presentGitignoreAudit,
+    reloadThemes,
     reloadTasks,
     runTask,
+    toggleTheme,
     switchWorkspace,
     workspaceRoot,
     workspaces,
@@ -715,112 +841,120 @@ export function AppShell() {
     registerAppCommands(() => commandContextRef.current!)
   }, [])
 
-  const onApiReady = useCallback((api: DockviewApi) => {
-    dockviewApiRef.current = api
-    dockviewNavigationRef.current = new DockviewNavigation(api)
+  const onApiReady = useCallback(
+    (api: DockviewApi) => {
+      dockviewApiRef.current = api
+      dockviewNavigationRef.current = new DockviewNavigation(api)
 
-    // Auto-close preview pane when its source editor is closed
-    api.onDidRemovePanel((event) => {
-      const previewId = `preview:${event.id}`
-      const preview = api.panels.find((p) => p.id === previewId)
-      if (preview) preview.api.close()
+      // Auto-close preview pane when its source editor is closed
+      api.onDidRemovePanel((event) => {
+        const previewId = `preview:${event.id}`
+        const preview = api.panels.find((p) => p.id === previewId)
+        if (preview) preview.api.close()
 
-      const terminalParams = getTerminalParams(event)
-      if (terminalParams?.terminalId) {
-        const shouldPreserve = preservedTerminalIdsRef.current.has(terminalParams.terminalId)
-        if (!shouldPreserve) {
-          window.api.ptyKill(terminalParams.terminalId)
+        const terminalParams = getTerminalParams(event)
+        if (terminalParams?.terminalId) {
+          const shouldPreserve = preservedTerminalIdsRef.current.has(terminalParams.terminalId)
+          if (!shouldPreserve) {
+            window.api.ptyKill(terminalParams.terminalId)
+            persistWorkspaceRuntime()
+          }
+        }
+
+        const browserParams = getBrowserParams(event)
+        if (browserParams && !isSwitchingWorkspaceRef.current) {
+          setActiveBrowserPaneId((current) => (current === browserParams.paneId ? null : current))
+          setContext('browserFocused', false)
+          window.api.browserDestroy(browserParams.paneId)
           persistWorkspaceRuntime()
         }
-      }
+      })
 
-      const browserParams = getBrowserParams(event)
-      if (browserParams && !isSwitchingWorkspaceRef.current) {
-        setActiveBrowserPaneId((current) => (current === browserParams.paneId ? null : current))
-        setContext('browserFocused', false)
-        window.api.browserDestroy(browserParams.paneId)
-        persistWorkspaceRuntime()
-      }
-    })
+      // Track which pane type is focused
+      api.onDidActivePanelChange((panel) => {
+        if (!panel) {
+          setActivePanelId(null)
+          setContext('editorFocused', false)
+          setContext('terminalFocused', false)
+          setContext('browserFocused', false)
+          return
+        }
+        const id = panel.id
+        setActivePanelId(id)
+        const isTerminal = id === 'terminal' || id.startsWith('terminal-')
+        const browserParams = getBrowserParams(panel)
+        const isBrowser = !!browserParams
+        setActiveBrowserPaneId(browserParams?.paneId ?? null)
+        setContext('terminalFocused', isTerminal)
+        setContext('browserFocused', isBrowser)
+        setContext('editorFocused', !isTerminal && !isBrowser)
+      })
 
-    // Track which pane type is focused
-    api.onDidActivePanelChange((panel) => {
-      if (!panel) {
-        setActivePanelId(null)
-        setContext('editorFocused', false)
-        setContext('terminalFocused', false)
-        setContext('browserFocused', false)
+      // Initialize keybinding service: load defaults, then layer user overrides
+      window.api
+        .getKeybindingOverrides()
+        .then((overrides) => {
+          loadKeybindings(defaultKeybindings, overrides)
+        })
+        .catch((err) => {
+          console.error('Failed to load keybinding overrides:', err)
+          loadKeybindings(defaultKeybindings, [])
+        })
+    },
+    [persistWorkspaceRuntime],
+  )
+
+  const onFileOpen = useCallback(
+    (filePath: string, opts?: OpenFileOpts) => {
+      const api = dockviewApiRef.current
+      if (!api) return
+
+      // If panel already exists, focus it and optionally jump to line
+      const existing = api.panels.find((p) => p.id === filePath)
+      if (existing) {
+        existing.api.setActive()
+        if (opts?.line) {
+          existing.api.updateParameters({
+            ...existing.params,
+            jumpToLine: opts.line,
+            jumpToColumn: opts.column,
+          })
+        }
         return
       }
-      const id = panel.id
-      setActivePanelId(id)
-      const isTerminal = id === 'terminal' || id.startsWith('terminal-')
-      const browserParams = getBrowserParams(panel)
-      const isBrowser = !!browserParams
-      setActiveBrowserPaneId(browserParams?.paneId ?? null)
-      setContext('terminalFocused', isTerminal)
-      setContext('browserFocused', isBrowser)
-      setContext('editorFocused', !isTerminal && !isBrowser)
-    })
 
-    // Initialize keybinding service: load defaults, then layer user overrides
-    window.api
-      .getKeybindingOverrides()
-      .then((overrides) => {
-        loadKeybindings(defaultKeybindings, overrides)
+      // Extract filename for tab title
+      const name = filePath.split('/').pop() ?? filePath
+
+      // Find the editor group (first group, or wherever the welcome panel lives)
+      const welcomePanel = api.panels.find((p) => p.id === 'editor')
+      const position = welcomePanel ? { referencePanel: welcomePanel } : undefined
+
+      api.addPanel({
+        id: filePath,
+        component: 'editorPane',
+        tabComponent: 'editorTab',
+        title: name,
+        params: {
+          filePath,
+          workspaceRoot,
+          workspaceId: activeWorkspaceId ?? undefined,
+          jumpToLine: opts?.line,
+          jumpToColumn: opts?.column,
+        },
+        position,
       })
-      .catch((err) => {
-        console.error('Failed to load keybinding overrides:', err)
-        loadKeybindings(defaultKeybindings, [])
-      })
-  }, [persistWorkspaceRuntime])
 
-  const onFileOpen = useCallback((filePath: string, opts?: OpenFileOpts) => {
-    const api = dockviewApiRef.current
-    if (!api) return
-
-    // If panel already exists, focus it and optionally jump to line
-    const existing = api.panels.find((p) => p.id === filePath)
-    if (existing) {
-      existing.api.setActive()
-      if (opts?.line) {
-        existing.api.updateParameters({ ...existing.params, jumpToLine: opts.line, jumpToColumn: opts.column })
+      // Suggest preview for markdown files
+      if (filePath.endsWith('.md')) {
+        showToast('Markdown file detected', {
+          label: 'Open Preview',
+          onClick: () => openMarkdownPreview(filePath),
+        })
       }
-      return
-    }
-
-    // Extract filename for tab title
-    const name = filePath.split('/').pop() ?? filePath
-
-    // Find the editor group (first group, or wherever the welcome panel lives)
-    const welcomePanel = api.panels.find((p) => p.id === 'editor')
-    const position = welcomePanel
-      ? { referencePanel: welcomePanel }
-      : undefined
-
-    api.addPanel({
-      id: filePath,
-      component: 'editorPane',
-      tabComponent: 'editorTab',
-      title: name,
-      params: {
-        filePath,
-        workspaceRoot,
-        workspaceId: activeWorkspaceId ?? undefined,
-        jumpToLine: opts?.line,
-        jumpToColumn: opts?.column,
-      },
-      position,
-    })
-
-    // Suggest preview for markdown files
-    if (filePath.endsWith('.md')) {
-      showToast('Markdown file detected', {
-        label: 'Open Preview',
-        onClick: () => openMarkdownPreview(filePath),
-      })
-    }
-  }, [activeWorkspaceId, openMarkdownPreview, workspaceRoot])
+    },
+    [activeWorkspaceId, openMarkdownPreview, workspaceRoot],
+  )
 
   // Register app-wide action dispatch layer — re-register when onFileOpen changes
   // so workspace root stays current after workspace switches.
@@ -831,22 +965,25 @@ export function AppShell() {
     })
   }, [onFileOpen])
 
-  const handleCreateBrowserPane = useCallback((sessionMode: BrowserSessionMode, url: string) => {
-    const api = dockviewApiRef.current
-    if (!api || !activeWorkspaceId) return
+  const handleCreateBrowserPane = useCallback(
+    (sessionMode: BrowserSessionMode, url: string) => {
+      const api = dockviewApiRef.current
+      if (!api || !activeWorkspaceId) return
 
-    const activePanel = api.activePanel
-    const params = createBrowserPanelParams(activeWorkspaceId, sessionMode, url.trim())
-    api.addPanel({
-      id: params.paneId,
-      component: 'browserPane',
-      title: 'Browser',
-      params,
-      position: activePanel ? { referencePanel: activePanel, direction: 'right' } : undefined,
-    })
-    setNewBrowserPaneOpen(false)
-    persistWorkspaceRuntime()
-  }, [activeWorkspaceId, persistWorkspaceRuntime])
+      const activePanel = api.activePanel
+      const params = createBrowserPanelParams(activeWorkspaceId, sessionMode, url.trim())
+      api.addPanel({
+        id: params.paneId,
+        component: 'browserPane',
+        title: 'Browser',
+        params,
+        position: activePanel ? { referencePanel: activePanel, direction: 'right' } : undefined,
+      })
+      setNewBrowserPaneOpen(false)
+      persistWorkspaceRuntime()
+    },
+    [activeWorkspaceId, persistWorkspaceRuntime],
+  )
 
   return (
     <div className="app-shell">
@@ -906,7 +1043,9 @@ export function AppShell() {
                     const branch = worktrees.find((w) => w.path === worktreePath)?.branch
 
                     const editorPanel = api.panels.find(
-                      (p) => p.id === 'editor' || (p.params as Record<string, unknown> | undefined)?.filePath,
+                      (p) =>
+                        p.id === 'editor' ||
+                        (p.params as Record<string, unknown> | undefined)?.filePath,
                     )
 
                     // Capture workspace identity at click time so async IPC
@@ -914,160 +1053,173 @@ export function AppShell() {
                     // wrong Dockview or persist runtime under a stale id.
                     const initialWorkspaceId = activeWorkspaceId
                     const isStillCurrent = () =>
-                      dockviewApiRef.current === api && activeWorkspaceIdRef.current === initialWorkspaceId
+                      dockviewApiRef.current === api &&
+                      activeWorkspaceIdRef.current === initialWorkspaceId
 
-                    window.api.getResolvedSettings(activeWorkspaceId).then((resolved) => {
-                      if (!isStillCurrent()) return
-                      const backend = resolved['agent.backend'] ?? 'built-in'
+                    window.api
+                      .getResolvedSettings(activeWorkspaceId)
+                      .then((resolved) => {
+                        if (!isStillCurrent()) return
+                        const backend = resolved['agent.backend'] ?? 'built-in'
 
-                      if (backend === 'claude-code' || backend === 'codex') {
-                        void window.api.conversationCreate({
-                          workspaceId: activeWorkspaceId,
-                          backend,
-                          worktreePath,
-                          worktreeBranch: branch,
-                        }).then((meta) => {
-                          if (!isStillCurrent()) return
-                          api.addPanel({
-                            id: `agent-${Date.now()}`,
-                            component: 'cliAgentPane',
-                            tabComponent: 'agentTab',
-                            title: branch
-                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
-                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
-                            params: {
+                        if (isCliBackend(backend)) {
+                          void window.api
+                            .conversationCreate({
                               workspaceId: activeWorkspaceId,
-                              workspaceRoot: workspaceRoot ?? undefined,
-                              backend,
-                              conversationId: meta.id,
-                              worktreePath,
-                              worktreeBranch: branch,
-                            },
-                            position: editorPanel
-                              ? { referencePanel: editorPanel, direction: 'right' }
-                              : undefined,
-                            initialWidth: 400,
-                          })
-                          persistWorkspaceRuntime()
-                        }).catch(() => {
-                          if (!isStillCurrent()) return
-                          api.addPanel({
-                            id: `agent-${Date.now()}`,
-                            component: 'cliAgentPane',
-                            tabComponent: 'agentTab',
-                            title: branch
-                              ? `${backend === 'claude-code' ? 'Claude Code' : 'Codex'} (${branch})`
-                              : backend === 'claude-code' ? 'Claude Code' : 'Codex',
-                            params: {
-                              workspaceId: activeWorkspaceId,
-                              workspaceRoot: workspaceRoot ?? undefined,
                               backend,
                               worktreePath,
                               worktreeBranch: branch,
-                            },
-                            position: editorPanel
-                              ? { referencePanel: editorPanel, direction: 'right' }
-                              : undefined,
-                            initialWidth: 400,
-                          })
-                          persistWorkspaceRuntime()
-                        })
-                      } else {
-                        void window.api.conversationCreate({
-                          workspaceId: activeWorkspaceId,
-                          backend: 'built-in',
-                          worktreePath,
-                          worktreeBranch: branch,
-                        }).then((meta) => {
-                          if (!isStillCurrent()) return
-                          api.addPanel({
-                            id: `agent-${Date.now()}`,
-                            component: 'chatPane',
-                            tabComponent: 'agentTab',
-                            title: branch ? `Agent (${branch})` : 'Agent',
-                            params: {
+                            })
+                            .then((meta) => {
+                              if (!isStillCurrent()) return
+                              api.addPanel({
+                                id: `agent-${Date.now()}`,
+                                component: 'cliAgentPane',
+                                tabComponent: 'agentTab',
+                                title: branch
+                                  ? `${backendLabel(backend)} (${branch})`
+                                  : backendLabel(backend),
+                                params: {
+                                  workspaceId: activeWorkspaceId,
+                                  workspaceRoot: workspaceRoot ?? undefined,
+                                  backend,
+                                  conversationId: meta.id,
+                                  worktreePath,
+                                  worktreeBranch: branch,
+                                },
+                                position: editorPanel
+                                  ? { referencePanel: editorPanel, direction: 'right' }
+                                  : undefined,
+                                initialWidth: 400,
+                              })
+                              persistWorkspaceRuntime()
+                            })
+                            .catch(() => {
+                              if (!isStillCurrent()) return
+                              api.addPanel({
+                                id: `agent-${Date.now()}`,
+                                component: 'cliAgentPane',
+                                tabComponent: 'agentTab',
+                                title: branch
+                                  ? `${backendLabel(backend)} (${branch})`
+                                  : backendLabel(backend),
+                                params: {
+                                  workspaceId: activeWorkspaceId,
+                                  workspaceRoot: workspaceRoot ?? undefined,
+                                  backend,
+                                  worktreePath,
+                                  worktreeBranch: branch,
+                                },
+                                position: editorPanel
+                                  ? { referencePanel: editorPanel, direction: 'right' }
+                                  : undefined,
+                                initialWidth: 400,
+                              })
+                              persistWorkspaceRuntime()
+                            })
+                        } else {
+                          void window.api
+                            .conversationCreate({
                               workspaceId: activeWorkspaceId,
-                              workspaceRoot: workspaceRoot ?? undefined,
-                              conversationId: meta.id,
+                              backend: 'built-in',
                               worktreePath,
                               worktreeBranch: branch,
-                            },
-                            position: editorPanel
-                              ? { referencePanel: editorPanel, direction: 'right' }
-                              : undefined,
-                            initialWidth: 350,
-                          })
-                          persistWorkspaceRuntime()
-                        }).catch(() => {
-                          if (!isStillCurrent()) return
-                          api.addPanel({
-                            id: `agent-${Date.now()}`,
-                            component: 'chatPane',
-                            tabComponent: 'agentTab',
-                            title: branch ? `Agent (${branch})` : 'Agent',
-                            params: {
-                              workspaceId: activeWorkspaceId,
-                              workspaceRoot: workspaceRoot ?? undefined,
-                              worktreePath,
-                              worktreeBranch: branch,
-                            },
-                            position: editorPanel
-                              ? { referencePanel: editorPanel, direction: 'right' }
-                              : undefined,
-                            initialWidth: 350,
-                          })
-                          persistWorkspaceRuntime()
-                        })
-                      }
-                    }).catch(() => {
-                      if (!isStillCurrent()) return
-                      // Fallback to built-in
-                      void window.api.conversationCreate({
-                        workspaceId: activeWorkspaceId,
-                        backend: 'built-in',
-                        worktreePath,
-                        worktreeBranch: branch,
-                      }).then((meta) => {
-                        if (!isStillCurrent()) return
-                        api.addPanel({
-                          id: `agent-${Date.now()}`,
-                          component: 'chatPane',
-                          tabComponent: 'agentTab',
-                          title: branch ? `Agent (${branch})` : 'Agent',
-                          params: {
-                            workspaceId: activeWorkspaceId,
-                            workspaceRoot: workspaceRoot ?? undefined,
-                            conversationId: meta.id,
-                            worktreePath,
-                            worktreeBranch: branch,
-                          },
-                          position: editorPanel
-                            ? { referencePanel: editorPanel, direction: 'right' }
-                            : undefined,
-                          initialWidth: 350,
-                        })
-                        persistWorkspaceRuntime()
-                      }).catch(() => {
-                        if (!isStillCurrent()) return
-                        api.addPanel({
-                          id: `agent-${Date.now()}`,
-                          component: 'chatPane',
-                          tabComponent: 'agentTab',
-                          title: branch ? `Agent (${branch})` : 'Agent',
-                          params: {
-                            workspaceId: activeWorkspaceId,
-                            workspaceRoot: workspaceRoot ?? undefined,
-                            worktreePath,
-                            worktreeBranch: branch,
-                          },
-                          position: editorPanel
-                            ? { referencePanel: editorPanel, direction: 'right' }
-                            : undefined,
-                          initialWidth: 350,
-                        })
-                        persistWorkspaceRuntime()
+                            })
+                            .then((meta) => {
+                              if (!isStillCurrent()) return
+                              api.addPanel({
+                                id: `agent-${Date.now()}`,
+                                component: 'chatPane',
+                                tabComponent: 'agentTab',
+                                title: branch ? `Agent (${branch})` : 'Agent',
+                                params: {
+                                  workspaceId: activeWorkspaceId,
+                                  workspaceRoot: workspaceRoot ?? undefined,
+                                  conversationId: meta.id,
+                                  worktreePath,
+                                  worktreeBranch: branch,
+                                },
+                                position: editorPanel
+                                  ? { referencePanel: editorPanel, direction: 'right' }
+                                  : undefined,
+                                initialWidth: 350,
+                              })
+                              persistWorkspaceRuntime()
+                            })
+                            .catch(() => {
+                              if (!isStillCurrent()) return
+                              api.addPanel({
+                                id: `agent-${Date.now()}`,
+                                component: 'chatPane',
+                                tabComponent: 'agentTab',
+                                title: branch ? `Agent (${branch})` : 'Agent',
+                                params: {
+                                  workspaceId: activeWorkspaceId,
+                                  workspaceRoot: workspaceRoot ?? undefined,
+                                  worktreePath,
+                                  worktreeBranch: branch,
+                                },
+                                position: editorPanel
+                                  ? { referencePanel: editorPanel, direction: 'right' }
+                                  : undefined,
+                                initialWidth: 350,
+                              })
+                              persistWorkspaceRuntime()
+                            })
+                        }
                       })
-                    })
+                      .catch(() => {
+                        if (!isStillCurrent()) return
+                        // Fallback to built-in
+                        void window.api
+                          .conversationCreate({
+                            workspaceId: activeWorkspaceId,
+                            backend: 'built-in',
+                            worktreePath,
+                            worktreeBranch: branch,
+                          })
+                          .then((meta) => {
+                            if (!isStillCurrent()) return
+                            api.addPanel({
+                              id: `agent-${Date.now()}`,
+                              component: 'chatPane',
+                              tabComponent: 'agentTab',
+                              title: branch ? `Agent (${branch})` : 'Agent',
+                              params: {
+                                workspaceId: activeWorkspaceId,
+                                workspaceRoot: workspaceRoot ?? undefined,
+                                conversationId: meta.id,
+                                worktreePath,
+                                worktreeBranch: branch,
+                              },
+                              position: editorPanel
+                                ? { referencePanel: editorPanel, direction: 'right' }
+                                : undefined,
+                              initialWidth: 350,
+                            })
+                            persistWorkspaceRuntime()
+                          })
+                          .catch(() => {
+                            if (!isStillCurrent()) return
+                            api.addPanel({
+                              id: `agent-${Date.now()}`,
+                              component: 'chatPane',
+                              tabComponent: 'agentTab',
+                              title: branch ? `Agent (${branch})` : 'Agent',
+                              params: {
+                                workspaceId: activeWorkspaceId,
+                                workspaceRoot: workspaceRoot ?? undefined,
+                                worktreePath,
+                                worktreeBranch: branch,
+                              },
+                              position: editorPanel
+                                ? { referencePanel: editorPanel, direction: 'right' }
+                                : undefined,
+                              initialWidth: 350,
+                            })
+                            persistWorkspaceRuntime()
+                          })
+                      })
                   }}
                 />
               </SidebarSection>
@@ -1080,14 +1232,9 @@ export function AppShell() {
       </div>
       <StatusBar workspaceId={activeWorkspaceId} runningTasks={runningTasks} />
       <ToastContainer />
-      {commandPaletteOpen && (
-        <CommandPalette onClose={() => setCommandPaletteOpen(false)} />
-      )}
+      {commandPaletteOpen && <CommandPalette onClose={() => setCommandPaletteOpen(false)} />}
       {quickOpenOpen && (
-        <QuickOpen
-          onClose={() => setQuickOpenOpen(false)}
-          workspaceRoot={activeRoot}
-        />
+        <QuickOpen onClose={() => setQuickOpenOpen(false)} workspaceRoot={activeRoot} />
       )}
       {gitignoreModalOpen && gitignoreAudit && activeWorkspaceId && (
         <GitignoreReviewModal
@@ -1100,10 +1247,7 @@ export function AppShell() {
         />
       )}
       {taskInputRequest && (
-        <TaskInputModal
-          request={taskInputRequest}
-          onClose={dismissTaskInputModal}
-        />
+        <TaskInputModal request={taskInputRequest} onClose={dismissTaskInputModal} />
       )}
       {taskPickerItems && (
         <TaskSelectModal
@@ -1131,6 +1275,21 @@ export function AppShell() {
           }))}
           onSelect={(id) => killTask(id)}
           onClose={() => setTerminatePickerExecutions(null)}
+        />
+      )}
+      {themePickerMode && (
+        <TaskSelectModal
+          title={
+            themePickerMode === 'dark'
+              ? 'Default dark theme'
+              : themePickerMode === 'light'
+                ? 'Default light theme'
+                : 'Color theme'
+          }
+          placeholder="Select a theme…"
+          items={themePickerItems}
+          onSelect={handleThemePickerSelect}
+          onClose={() => setThemePickerMode(null)}
         />
       )}
       {newBrowserPaneOpen && (

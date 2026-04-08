@@ -10,11 +10,14 @@ function stubWindowApi(overrides: Record<string, unknown> = {}) {
     cliAgentStart: vi.fn().mockResolvedValue({ sessionId: 'started-session' }),
     cliAgentSend: vi.fn().mockResolvedValue({ success: true as const }),
     cliAgentStop: vi.fn(),
+    cliAgentSwitchBackend: vi.fn().mockResolvedValue({ success: true as const }),
+    cliAgentUpdateSessionConfig: vi.fn().mockResolvedValue({ success: true as const }),
     conversationGet: vi.fn().mockResolvedValue(null),
     onConversationListChanged: vi.fn().mockReturnValue(() => {}),
     onCliAgentStreamDelta: vi.fn().mockReturnValue(() => {}),
     onCliAgentMessage: vi.fn().mockReturnValue(() => {}),
     onCliAgentStatus: vi.fn().mockReturnValue(() => {}),
+    onCliAgentResult: vi.fn().mockReturnValue(() => {}),
     ...overrides,
   }
   Object.defineProperty(window, 'api', { value: api, writable: true, configurable: true })

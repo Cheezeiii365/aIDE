@@ -11,7 +11,14 @@ import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type Store from 'electron-store'
-import type { AppSettings, AideProjectSettings, ResolvedSettings, PermissionTier, ToolPermissionConfig, AgentBackend } from '@aide/shared'
+import type {
+  AppSettings,
+  AideProjectSettings,
+  ResolvedSettings,
+  PermissionTier,
+  ToolPermissionConfig,
+  AgentBackend,
+} from '@aide/shared'
 
 export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   tabSize: 2,
@@ -39,7 +46,16 @@ export const BUILT_IN_DEFAULTS: ResolvedSettings = {
   // Agent / Backend defaults
   'agent.backend': 'built-in' as AgentBackend,
   'agent.claudeCodePath': '',
+  'agent.opencodePath': '',
   'agent.codexPath': '',
+
+  // OpenCode-specific session defaults
+  'agent.opencode.defaultProvider': '',
+  'agent.opencode.defaultModel': '',
+  'agent.opencode.defaultAgent': '',
+  'agent.opencode.defaultMode': '',
+  'agent.opencode.defaultSystemPrompt': '',
+  'agent.opencode.defaultToolToggles': {} as Record<string, boolean>,
 }
 
 /**
@@ -48,9 +64,7 @@ export const BUILT_IN_DEFAULTS: ResolvedSettings = {
  * @param store - Electron store used to read the saved `editorDefaults` entry
  * @returns A ResolvedSettings object where each scalar setting is the user value if present, otherwise the built-in default; `filesExclude` and `searchExclude` are shallow-merged so user entries override built-in entries
  */
-export function resolveAppDefaults(
-  store: Store<AppSettings>,
-): ResolvedSettings {
+export function resolveAppDefaults(store: Store<AppSettings>): ResolvedSettings {
   const userDefaults = (store.get('editorDefaults') ?? {}) as Partial<AideProjectSettings>
 
   return {
@@ -79,7 +93,8 @@ export function resolveAppDefaults(
     'agent.maxTokens': userDefaults['agent.maxTokens'] ?? BUILT_IN_DEFAULTS['agent.maxTokens'],
 
     // Agent / Permissions
-    'agent.permissionTier': userDefaults['agent.permissionTier'] ?? BUILT_IN_DEFAULTS['agent.permissionTier'],
+    'agent.permissionTier':
+      userDefaults['agent.permissionTier'] ?? BUILT_IN_DEFAULTS['agent.permissionTier'],
     'agent.autoApprove': {
       ...BUILT_IN_DEFAULTS['agent.autoApprove'],
       ...(userDefaults['agent.autoApprove'] ?? {}),
@@ -87,8 +102,32 @@ export function resolveAppDefaults(
 
     // Agent / Backend
     'agent.backend': userDefaults['agent.backend'] ?? BUILT_IN_DEFAULTS['agent.backend'],
-    'agent.claudeCodePath': userDefaults['agent.claudeCodePath'] ?? BUILT_IN_DEFAULTS['agent.claudeCodePath'],
+    'agent.claudeCodePath':
+      userDefaults['agent.claudeCodePath'] ?? BUILT_IN_DEFAULTS['agent.claudeCodePath'],
+    'agent.opencodePath':
+      userDefaults['agent.opencodePath'] ?? BUILT_IN_DEFAULTS['agent.opencodePath'],
     'agent.codexPath': userDefaults['agent.codexPath'] ?? BUILT_IN_DEFAULTS['agent.codexPath'],
+
+    // OpenCode session defaults
+    'agent.opencode.defaultProvider':
+      userDefaults['agent.opencode.defaultProvider'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultProvider'],
+    'agent.opencode.defaultModel':
+      userDefaults['agent.opencode.defaultModel'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultModel'],
+    'agent.opencode.defaultAgent':
+      userDefaults['agent.opencode.defaultAgent'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultAgent'],
+    'agent.opencode.defaultMode':
+      userDefaults['agent.opencode.defaultMode'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultMode'],
+    'agent.opencode.defaultSystemPrompt':
+      userDefaults['agent.opencode.defaultSystemPrompt'] ??
+      BUILT_IN_DEFAULTS['agent.opencode.defaultSystemPrompt'],
+    'agent.opencode.defaultToolToggles': {
+      ...BUILT_IN_DEFAULTS['agent.opencode.defaultToolToggles'],
+      ...(userDefaults['agent.opencode.defaultToolToggles'] ?? {}),
+    },
   }
 }
 
@@ -158,6 +197,15 @@ export async function resolveSettings(
     // Agent / Backend (user-only — executable paths must not come from untrusted repos)
     'agent.backend': appDefaults['agent.backend'],
     'agent.claudeCodePath': appDefaults['agent.claudeCodePath'],
+    'agent.opencodePath': appDefaults['agent.opencodePath'],
     'agent.codexPath': appDefaults['agent.codexPath'],
+
+    // OpenCode session defaults (user-only — see SENSITIVE_AGENT_KEYS)
+    'agent.opencode.defaultProvider': appDefaults['agent.opencode.defaultProvider'],
+    'agent.opencode.defaultModel': appDefaults['agent.opencode.defaultModel'],
+    'agent.opencode.defaultAgent': appDefaults['agent.opencode.defaultAgent'],
+    'agent.opencode.defaultMode': appDefaults['agent.opencode.defaultMode'],
+    'agent.opencode.defaultSystemPrompt': appDefaults['agent.opencode.defaultSystemPrompt'],
+    'agent.opencode.defaultToolToggles': appDefaults['agent.opencode.defaultToolToggles'],
   }
 }

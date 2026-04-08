@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type {
+  ChatComposerSubmission,
   ChatSession,
   ChatMessage,
   ChatMode,
@@ -21,7 +22,7 @@ export interface UseChatReturn {
   streamingMessageId: string | null
   streamingContent: string
   conversationTitle: string
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (payload: ChatComposerSubmission) => Promise<void>
   setMode: (mode: ChatMode) => void
   setWorkingSet: (paths: string[]) => void
   approveToolCall: (toolCallId: string) => void
@@ -60,109 +61,126 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
 
       // Load conversation title from store
       if (session.id) {
-        window.api.conversationGet(workspaceId, session.id).then(meta => {
-          if (!cancelled && meta) {
-            setConversationTitle(meta.title)
-          }
-        }).catch(() => {})
+        window.api
+          .conversationGet(workspaceId, session.id)
+          .then((meta) => {
+            if (!cancelled && meta) {
+              setConversationTitle(meta.title)
+            }
+          })
+          .catch(() => {})
       }
     })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [workspaceId, conversationId, tick])
 
   // Subscribe to conversation list changes (for title updates)
   useEffect(() => {
-    const unsub = window.api.onConversationListChanged(scopedTo<ConversationListChangedPayload>(workspaceId, (payload) => {
-      const sid = sessionIdRef.current
-      if (!sid) return
-      const meta = payload.conversations.find(c => c.id === sid)
-      if (meta) {
-        setConversationTitle(meta.title)
-      }
-    }))
+    const unsub = window.api.onConversationListChanged(
+      scopedTo<ConversationListChangedPayload>(workspaceId, (payload) => {
+        const sid = sessionIdRef.current
+        if (!sid) return
+        const meta = payload.conversations.find((c) => c.id === sid)
+        if (meta) {
+          setConversationTitle(meta.title)
+        }
+      }),
+    )
     return unsub
   }, [workspaceId])
 
   // Subscribe to stream chunks
   useEffect(() => {
-    const unsub = window.api.onChatStreamChunk(scopedTo<ChatStreamChunk>(workspaceId, (chunk) => {
-      if (chunk.sessionId !== sessionIdRef.current) return
+    const unsub = window.api.onChatStreamChunk(
+      scopedTo<ChatStreamChunk>(workspaceId, (chunk) => {
+        if (chunk.sessionId !== sessionIdRef.current) return
 
-      setStreamingMessageId(chunk.messageId)
-      streamingContentRef.current += chunk.delta
-      setStatus('thinking')
+        setStreamingMessageId(chunk.messageId)
+        streamingContentRef.current += chunk.delta
+        setStatus('thinking')
 
-      // Throttle renders to rAF
-      if (rafRef.current === null) {
-        rafRef.current = requestAnimationFrame(() => {
-          rafRef.current = null
-          setStreamingContent(streamingContentRef.current)
-        })
-      }
-    }))
+        // Throttle renders to rAF
+        if (rafRef.current === null) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null
+            setStreamingContent(streamingContentRef.current)
+          })
+        }
+      }),
+    )
     return unsub
   }, [workspaceId])
 
   // Subscribe to stream end
   useEffect(() => {
-    const unsub = window.api.onChatStreamEnd(scopedTo<ChatStreamEnd>(workspaceId, (end) => {
-      if (end.sessionId !== sessionIdRef.current) return
+    const unsub = window.api.onChatStreamEnd(
+      scopedTo<ChatStreamEnd>(workspaceId, (end) => {
+        if (end.sessionId !== sessionIdRef.current) return
 
-      // Finalize the streaming message into the messages array
-      if (streamingContentRef.current) {
-        const finalMsg: ChatMessage = {
-          id: end.messageId,
-          role: 'assistant',
-          content: streamingContentRef.current,
-          timestamp: Date.now(),
+        // Finalize the streaming message into the messages array
+        if (streamingContentRef.current) {
+          const finalMsg: ChatMessage = {
+            id: end.messageId,
+            role: 'assistant',
+            content: streamingContentRef.current,
+            timestamp: Date.now(),
+          }
+          // Check if the message already exists (appended by backend via getHistory)
+          const existing = messagesRef.current.find((m) => m.id === end.messageId)
+          if (!existing) {
+            messagesRef.current = [...messagesRef.current, finalMsg]
+          }
         }
-        // Check if the message already exists (appended by backend via getHistory)
-        const existing = messagesRef.current.find((m) => m.id === end.messageId)
-        if (!existing) {
-          messagesRef.current = [...messagesRef.current, finalMsg]
+
+        // Reset streaming state
+        streamingContentRef.current = ''
+        setStreamingContent('')
+        setStreamingMessageId(null)
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
         }
-      }
 
-      // Reset streaming state
-      streamingContentRef.current = ''
-      setStreamingContent('')
-      setStreamingMessageId(null)
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
-      }
-
-      // Refresh session to get full message history with tool results
-      if (sessionIdRef.current) {
-        window.api.chatGetHistory(workspaceId!, end.sessionId).then((session: ChatSession | null) => {
-          if (!session) return
-          messagesRef.current = session.messages
-          setStatus(session.status)
+        // Refresh session to get full message history with tool results
+        if (sessionIdRef.current) {
+          window.api
+            .chatGetHistory(workspaceId!, end.sessionId)
+            .then((session: ChatSession | null) => {
+              if (!session) return
+              messagesRef.current = session.messages
+              setStatus(session.status)
+              tick()
+            })
+        } else {
+          setStatus('idle')
           tick()
-        })
-      } else {
-        setStatus('idle')
-        tick()
-      }
-    }))
+        }
+      }),
+    )
     return unsub
   }, [workspaceId, tick])
 
   // Subscribe to tool calls
   useEffect(() => {
-    const unsub = window.api.onChatToolCall(scopedTo<ChatToolCallPayload>(workspaceId, (payload) => {
-      if (payload.sessionId !== sessionIdRef.current) return
-      setStatus('awaiting_approval')
+    const unsub = window.api.onChatToolCall(
+      scopedTo<ChatToolCallPayload>(workspaceId, (payload) => {
+        if (payload.sessionId !== sessionIdRef.current) return
+        setStatus('awaiting_approval')
 
-      // Find the assistant message and add the tool call, or refresh from backend
-      window.api.chatGetHistory(workspaceId!, payload.sessionId).then((session: ChatSession | null) => {
-        if (!session) return
-        messagesRef.current = session.messages
-        setStatus(session.status)
-        tick()
-      })
-    }))
+        // Find the assistant message and add the tool call, or refresh from backend
+        window.api
+          .chatGetHistory(workspaceId!, payload.sessionId)
+          .then((session: ChatSession | null) => {
+            if (!session) return
+            messagesRef.current = session.messages
+            setStatus(session.status)
+            tick()
+          })
+      }),
+    )
     return unsub
   }, [workspaceId, tick])
 
@@ -173,29 +191,35 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
     }
   }, [])
 
-  const sendMessage = useCallback(async (content: string) => {
-    const sid = sessionIdRef.current
-    if (!sid || !content.trim()) return
+  const sendMessage = useCallback(
+    async (payload: ChatComposerSubmission) => {
+      const sid = sessionIdRef.current
+      if (!sid || (!payload.text.trim() && payload.mentionedFiles.length === 0)) return
 
-    // Optimistic: add user message locally
-    const userMsg: ChatMessage = {
-      id: `local-${Date.now()}`,
-      role: 'user',
-      content: content.trim(),
-      timestamp: Date.now(),
-    }
-    messagesRef.current = [...messagesRef.current, userMsg]
-    setStatus('thinking')
-    streamingContentRef.current = ''
-    setStreamingContent('')
-    tick()
-
-    const result = await window.api.chatSendMessage(sid, content.trim())
-    if ('error' in result) {
-      setStatus('idle')
+      // Optimistic: add user message locally
+      const userMsg: ChatMessage = {
+        id: `local-${Date.now()}`,
+        role: 'user',
+        content: payload.rawText?.trim() || payload.text.trim(),
+        contextualContent: payload.text.trim(),
+        mentionedFiles: payload.mentionedFiles,
+        commandId: payload.commandId,
+        timestamp: Date.now(),
+      }
+      messagesRef.current = [...messagesRef.current, userMsg]
+      setStatus('thinking')
+      streamingContentRef.current = ''
+      setStreamingContent('')
       tick()
-    }
-  }, [tick])
+
+      const result = await window.api.chatSendMessage(sid, payload)
+      if ('error' in result) {
+        setStatus('idle')
+        tick()
+      }
+    },
+    [tick],
+  )
 
   const setMode = useCallback((newMode: ChatMode) => {
     const sid = sessionIdRef.current
@@ -211,22 +235,28 @@ export function useChat(workspaceId: string | undefined, conversationId?: string
     window.api.chatSetWorkingSet(sid, paths)
   }, [])
 
-  const approveToolCall = useCallback((toolCallId: string) => {
-    const sid = sessionIdRef.current
-    const wid = workspaceId
-    if (!sid || !wid) return
-    void window.api.chatToolApprove(sid, toolCallId)
-    approvalInboxRemove(wid, sid, toolCallId)
-    setStatus('tool_running')
-  }, [workspaceId])
+  const approveToolCall = useCallback(
+    (toolCallId: string) => {
+      const sid = sessionIdRef.current
+      const wid = workspaceId
+      if (!sid || !wid) return
+      void window.api.chatToolApprove(sid, toolCallId)
+      approvalInboxRemove(wid, sid, toolCallId)
+      setStatus('tool_running')
+    },
+    [workspaceId],
+  )
 
-  const rejectToolCall = useCallback((toolCallId: string) => {
-    const sid = sessionIdRef.current
-    const wid = workspaceId
-    if (!sid || !wid) return
-    void window.api.chatToolReject(sid, toolCallId)
-    approvalInboxRemove(wid, sid, toolCallId)
-  }, [workspaceId])
+  const rejectToolCall = useCallback(
+    (toolCallId: string) => {
+      const sid = sessionIdRef.current
+      const wid = workspaceId
+      if (!sid || !wid) return
+      void window.api.chatToolReject(sid, toolCallId)
+      approvalInboxRemove(wid, sid, toolCallId)
+    },
+    [workspaceId],
+  )
 
   const stop = useCallback(() => {
     const sid = sessionIdRef.current

@@ -15,6 +15,7 @@ import { ChatPane } from '../panes/ChatPane'
 import { CliAgentPane } from '../panes/CliAgentPane'
 import { ChatHistoryPane } from '../panes/ChatHistoryPane'
 import { ProblemsPane } from '../panes/ProblemsPane'
+import { OpenCodeToolsPane } from '../panes/OpenCodeToolsPane'
 import 'dockview/dist/styles/dockview.css'
 import '../../styles/dockview-theme.css'
 
@@ -31,6 +32,7 @@ const components = {
   cliAgentPane: CliAgentPane,
   chatHistoryPane: ChatHistoryPane,
   problemsPane: ProblemsPane,
+  openCodeToolsPane: OpenCodeToolsPane,
 }
 
 const tabComponents = {

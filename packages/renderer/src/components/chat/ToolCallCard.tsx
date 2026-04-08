@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import type { ToolCall } from '@aide/shared'
+import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
 
 interface ToolCallCardProps {
   toolCall: ToolCall
@@ -18,11 +20,16 @@ const TOOL_ICONS: Record<string, string> = {
   browser_read: '◎',
 }
 
-const STATUS_META: Record<string, { label: string; className: string }> = {
-  pending: { label: 'awaiting', className: 'pending' },
-  approved: { label: 'approved', className: 'approved' },
-  rejected: { label: 'denied', className: 'rejected' },
-  completed: { label: 'done', className: 'completed' },
+type BadgeVariant = 'neutral' | 'success' | 'warning' | 'error' | 'info'
+
+const STATUS_META: Record<
+  string,
+  { label: string; className: string; variant: BadgeVariant }
+> = {
+  pending: { label: 'awaiting', className: 'pending', variant: 'warning' },
+  approved: { label: 'approved', className: 'approved', variant: 'success' },
+  rejected: { label: 'denied', className: 'rejected', variant: 'error' },
+  completed: { label: 'done', className: 'completed', variant: 'success' },
 }
 
 function formatToolInput(input: Record<string, unknown>): string {
@@ -63,12 +70,6 @@ function getToolSummary(name: string, input: Record<string, unknown>): string {
 
 export function ToolCallCard({ toolCall, onApprove, onReject }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false)
-  const [animateIn, setAnimateIn] = useState(false)
-  const cardRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    requestAnimationFrame(() => setAnimateIn(true))
-  }, [])
 
   const meta = STATUS_META[toolCall.status] ?? STATUS_META.pending
   const icon = TOOL_ICONS[toolCall.name] ?? '⬡'
@@ -77,74 +78,50 @@ export function ToolCallCard({ toolCall, onApprove, onReject }: ToolCallCardProp
   const isDone = toolCall.status === 'completed' || toolCall.status === 'approved'
 
   return (
-    <div
-      ref={cardRef}
-      className={`tc-card tc-card--${meta.className}${animateIn ? ' tc-card--visible' : ''}${isPending ? ' tc-card--awaiting' : ''}`}
-    >
-      {/* Tier glow bar */}
-      <div className="tc-card__glow" />
-
-      <div className="tc-card__main">
-        {/* Tool icon + name row */}
-        <div className="tc-card__header">
-          <span className="tc-card__icon">{icon}</span>
-          <div className="tc-card__title-group">
-            <span className="tc-card__name">{toolCall.name}</span>
-            {summary && <span className="tc-card__summary">{summary}</span>}
-          </div>
-          <div className="tc-card__status-area">
-            <span className={`tc-card__dot tc-card__dot--${meta.className}`} />
-            <span className="tc-card__status-label">{meta.label}</span>
-            {toolCall.autoApproved && (
-              <span className="tc-card__auto-tag">auto</span>
-            )}
-          </div>
+    <div className={`tc-card tc-card--${meta.className}`}>
+      <div className="tc-card__header">
+        <span className="tc-card__icon">{icon}</span>
+        <span className="tc-card__name">{toolCall.name}</span>
+        {summary && (
+          <>
+            <span className="tc-card__sep">·</span>
+            <span className="tc-card__summary">{summary}</span>
+          </>
+        )}
+        <div className="tc-card__status-area">
+          {toolCall.autoApproved && <Badge variant="info">auto</Badge>}
+          <Badge variant={meta.variant}>{meta.label}</Badge>
         </div>
-
-        {/* Expandable input detail */}
-        <button
-          className="tc-card__expand-btn"
-          onClick={() => setExpanded(!expanded)}
-          aria-expanded={expanded}
-        >
-          <span className={`tc-card__chevron${expanded ? ' tc-card__chevron--open' : ''}`}>▸</span>
-          {expanded ? 'Hide details' : 'Show details'}
-        </button>
-
-        {expanded && (
-          <pre className="tc-card__detail">
-            {formatToolInput(toolCall.input)}
-          </pre>
-        )}
-
-        {/* Approval buttons */}
-        {isPending && !toolCall.autoApproved && (
-          <div className="tc-card__actions">
-            <button
-              className="tc-card__btn tc-card__btn--allow"
-              onClick={() => onApprove(toolCall.id)}
-            >
-              <span className="tc-card__btn-icon">✓</span>
-              Allow
-            </button>
-            <button
-              className="tc-card__btn tc-card__btn--deny"
-              onClick={() => onReject(toolCall.id)}
-            >
-              <span className="tc-card__btn-icon">✕</span>
-              Deny
-            </button>
-          </div>
-        )}
-
-        {/* Completed state — subtle checkmark */}
-        {isDone && !toolCall.autoApproved && (
-          <div className="tc-card__resolved">
-            <span className="tc-card__resolved-icon">✓</span>
-            executed
-          </div>
-        )}
       </div>
+
+      <button
+        className="tc-card__expand-btn"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+      >
+        <span className={`tc-card__chevron${expanded ? ' tc-card__chevron--open' : ''}`}>▸</span>
+        {expanded ? 'Hide details' : 'Show details'}
+      </button>
+
+      {expanded && <pre className="tc-card__detail">{formatToolInput(toolCall.input)}</pre>}
+
+      {isPending && !toolCall.autoApproved && (
+        <div className="tc-card__actions">
+          <Button variant="outline" size="sm" onClick={() => onApprove(toolCall.id)}>
+            ✓ Allow
+          </Button>
+          <Button variant="danger" size="sm" onClick={() => onReject(toolCall.id)}>
+            ✕ Deny
+          </Button>
+        </div>
+      )}
+
+      {isDone && !toolCall.autoApproved && (
+        <div className="tc-card__resolved">
+          <span className="tc-card__resolved-icon">✓</span>
+          executed
+        </div>
+      )}
     </div>
   )
 }

@@ -1,0 +1,172 @@
+/* --- Shared UI primitives --------------------------------------- */
+
+/* Button */
+
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--motion-base), color var(--motion-base),
+    border-color var(--motion-base);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.ui-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.ui-btn--sm {
+  height: 22px;
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+.ui-btn--md {
+  height: 28px;
+  padding: 0 var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+/* ghost — default */
+.ui-btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.ui-btn--ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* outline */
+.ui-btn--outline {
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+.ui-btn--outline:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+/* accent */
+.ui-btn--accent {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-weight: 600;
+}
+.ui-btn--accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+}
+
+/* danger */
+.ui-btn--danger {
+  color: var(--text-error);
+  border-color: color-mix(in srgb, var(--text-error) 35%, transparent);
+  background: transparent;
+  font-weight: 600;
+}
+.ui-btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-error) 12%, transparent);
+  border-color: var(--text-error);
+}
+
+/* Badge */
+
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 1px var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ui-badge__icon {
+  font-size: var(--font-size-sm);
+  line-height: 1;
+}
+
+.ui-badge--neutral {
+  color: var(--text-muted);
+}
+.ui-badge--success {
+  color: var(--text-success);
+  border-color: color-mix(in srgb, var(--text-success) 30%, transparent);
+}
+.ui-badge--warning {
+  color: var(--text-warning);
+  border-color: color-mix(in srgb, var(--text-warning) 30%, transparent);
+}
+.ui-badge--error {
+  color: var(--text-error);
+  border-color: color-mix(in srgb, var(--text-error) 30%, transparent);
+}
+.ui-badge--info {
+  color: var(--text-info);
+  border-color: color-mix(in srgb, var(--text-info) 30%, transparent);
+}
+
+/* Segmented control */
+
+.ui-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  height: 22px;
+  background: var(--bg-sunken);
+}
+
+.ui-segmented--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.ui-segmented__btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 0 var(--space-3);
+  transition: background var(--motion-base), color var(--motion-base);
+}
+
+.ui-segmented__btn + .ui-segmented__btn {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.ui-segmented__btn:hover:not([aria-selected='true']) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.ui-segmented__btn--active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-primary);
+}

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { Button } from '../ui/Button'
 
 interface WorkingSetPickerProps {
   workingSet: string[]
@@ -62,23 +63,26 @@ export function WorkingSetPicker({ workingSet, onWorkingSetChange, workspaceRoot
 
   return (
     <div className="chat-working-set">
+      <span className="chat-working-set__label">Working set</span>
       {workingSet.map((path) => (
         <span key={path} className="chat-working-set__chip" title={path}>
           {basename(path)}
           <button
             className="chat-working-set__chip-remove"
             onClick={() => removeFile(path)}
+            aria-label={`Remove ${basename(path)}`}
           >
             &times;
           </button>
         </span>
       ))}
-      <button
-        className="chat-working-set__add"
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={() => setDropdownOpen(!dropdownOpen)}
       >
-        +
-      </button>
+        + Add
+      </Button>
 
       {dropdownOpen && (
         <div className="chat-working-set__dropdown">

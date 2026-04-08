@@ -124,7 +124,7 @@ export class ConversationStore {
   async ensure(conversationId: string, opts: ConversationCreateOpts): Promise<ConversationMeta> {
     return this.withIndexLock(async () => {
       const index = await this.loadIndex()
-      const existing = index.find(c => c.id === conversationId)
+      const existing = index.find((c) => c.id === conversationId)
       if (existing) return existing
 
       const now = Date.now()
@@ -150,7 +150,7 @@ export class ConversationStore {
   async delete(conversationId: string): Promise<void> {
     await this.withIndexLock(async () => {
       const index = await this.loadIndex()
-      const filtered = index.filter(c => c.id !== conversationId)
+      const filtered = index.filter((c) => c.id !== conversationId)
       await this.saveIndex(filtered)
     })
 
@@ -165,16 +165,28 @@ export class ConversationStore {
 
   async get(conversationId: string): Promise<ConversationMeta | null> {
     const index = await this.loadIndex()
-    return index.find(c => c.id === conversationId) ?? null
+    return index.find((c) => c.id === conversationId) ?? null
   }
 
   async updateMeta(
     conversationId: string,
-    patch: Partial<Pick<ConversationMeta, 'title' | 'autoTitled' | 'updatedAt' | 'messageCount' | 'firstMessage' | 'claudeSessionId' | 'worktreePath'>>,
+    patch: Partial<
+      Pick<
+        ConversationMeta,
+        | 'backend'
+        | 'title'
+        | 'autoTitled'
+        | 'updatedAt'
+        | 'messageCount'
+        | 'firstMessage'
+        | 'claudeSessionId'
+        | 'worktreePath'
+      >
+    >,
   ): Promise<void> {
     await this.withIndexLock(async () => {
       const index = await this.loadIndex()
-      const entry = index.find(c => c.id === conversationId)
+      const entry = index.find((c) => c.id === conversationId)
       if (!entry) return
 
       Object.assign(entry, patch)
@@ -190,9 +202,9 @@ export class ConversationStore {
     const index = await this.loadIndex()
     // Index is sorted newest-first
     if (backend) {
-      return index.find(c => c.workspaceId === workspaceId && c.backend === backend) ?? null
+      return index.find((c) => c.workspaceId === workspaceId && c.backend === backend) ?? null
     }
-    return index.find(c => c.workspaceId === workspaceId) ?? null
+    return index.find((c) => c.workspaceId === workspaceId) ?? null
   }
 
   // ─── Message Data ────────────────────────────
@@ -239,7 +251,7 @@ export class ConversationStore {
       }
 
       const messages = oldSession.messages ?? []
-      const firstUserMsg = messages.find(m => m.role === 'user')
+      const firstUserMsg = messages.find((m) => m.role === 'user')
 
       const meta: ConversationMeta = {
         id: oldSession.id,

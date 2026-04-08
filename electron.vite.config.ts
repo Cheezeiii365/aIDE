@@ -25,7 +25,12 @@ function stripDockviewStyleInject(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ include: ['node-pty', '@vscode/ripgrep'] })],
+    plugins: [
+      externalizeDepsPlugin({
+        include: ['node-pty', '@vscode/ripgrep'],
+        exclude: ['@opencode-ai/sdk'],
+      }),
+    ],
     build: {
       outDir: 'packages/main/dist',
       lib: {

@@ -5,41 +5,117 @@
 
 export type { CommandDefinition, KeybindingRule } from './commands'
 export type {
-  ChatMode, ChatSessionStatus, ToolCallStatus,
-  ToolCall, ToolResult, ChatMessage, ChatSession,
-  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
+  ThemeAppearance,
+  ThemeDefinition,
+  ThemeId,
+  ThemeManifest,
+  ThemeStateSnapshot,
+} from './themes'
+export type {
+  ChatMode,
+  ChatSessionStatus,
+  ToolCallStatus,
+  ToolCall,
+  ToolResult,
+  ChatComposerSubmission,
+  ChatMessage,
+  ChatSession,
+  ChatStreamChunk,
+  ChatStreamEnd,
+  ChatToolCallPayload,
+  PendingToolApprovalInfo,
   ToolDefinition,
-  McpServerConfig, McpServerConnectionStatus, McpServerStatus,
-  PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
+  McpServerConfig,
+  McpServerConnectionStatus,
+  McpServerStatus,
+  PermissionTier,
+  ToolPermissionConfig,
+  AgentPermissionSettings,
   LlmProviderConfig,
 } from './agentTypes'
 export type {
-  AgentBackend, CliAgentProcessStatus,
-  CliAgentMessage, CliAgentStreamDelta, CliAgentSession,
-  CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
+  AgentBackend,
+  ExternalCliBackend,
+  CliAgentBackendState,
+  CliAgentBackendStateMap,
+  CliAgentProcessStatus,
+  CliAgentTokenUsage,
+  CliAgentMessageType,
+  CliAgentMessage,
+  CliAgentPermissionRequest,
+  CliAgentStreamDelta,
+  CliAgentSession,
+  CliAgentWorkspaceCostSummary,
+  CliAgentStatusPayload,
+  CliAgentResultPayload,
+  CliAgentMessagePayload,
+  OpenCodeProviderSummary,
+  OpenCodeAgentSummary,
+  OpenCodeToolSummary,
+  OpenCodeFileEntry,
+  OpenCodeFindResult,
+  OpenCodeSymbolResult,
+  OpenCodeShellResult,
+  OpenCodeServerInfo,
+  OpenCodePathInfo,
+  OpenCodeTodoItem,
+  OpenCodeAuthMethod,
 } from './cliAgentTypes'
 export type {
-  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+  ConversationMeta,
+  ConversationCreateOpts,
+  ConversationListChangedPayload,
 } from './conversationTypes'
 export { deriveTitle } from './conversationTypes'
 export type {
-  LlmMessage, LlmContentBlock, LlmToolDefinition, LlmUsage,
-  LlmStreamEvent, StreamParams, LlmProvider, SseEvent,
-  AnthropicRequest, AnthropicMessage, AnthropicContentBlock, AnthropicTool, AnthropicStreamEvent,
-  OpenAiRequest, OpenAiMessage, OpenAiToolCall, OpenAiTool, OpenAiStreamChunk, OpenAiStreamToolCall,
+  LlmMessage,
+  LlmContentBlock,
+  LlmToolDefinition,
+  LlmUsage,
+  LlmStreamEvent,
+  StreamParams,
+  LlmProvider,
+  SseEvent,
+  AnthropicRequest,
+  AnthropicMessage,
+  AnthropicContentBlock,
+  AnthropicTool,
+  AnthropicStreamEvent,
+  OpenAiRequest,
+  OpenAiMessage,
+  OpenAiToolCall,
+  OpenAiTool,
+  OpenAiStreamChunk,
+  OpenAiStreamToolCall,
 } from './llmTypes'
 import type {
-  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
-  McpServerStatus, ToolDefinition,
-  PermissionTier, ToolPermissionConfig,
+  ChatMode,
+  ChatComposerSubmission,
+  ChatSession,
+  ChatStreamChunk,
+  ChatStreamEnd,
+  ChatToolCallPayload,
+  PendingToolApprovalInfo,
+  McpServerStatus,
+  ToolDefinition,
+  PermissionTier,
+  ToolPermissionConfig,
 } from './agentTypes'
 import type {
-  AgentBackend, CliAgentStreamDelta, CliAgentMessage,
-  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
+  AgentBackend,
+  CliAgentStreamDelta,
+  CliAgentMessage,
+  CliAgentSession,
+  CliAgentStatusPayload,
+  CliAgentResultPayload,
+  CliAgentMessagePayload,
 } from './cliAgentTypes'
 import type {
-  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+  ConversationMeta,
+  ConversationCreateOpts,
+  ConversationListChangedPayload,
 } from './conversationTypes'
+import type { ThemeId, ThemeStateSnapshot } from './themes'
 export {
   adjustZoomFactor,
   clampZoomFactor,
@@ -63,6 +139,11 @@ export const IpcChannels = {
   THEME_GET: 'theme:get',
   THEME_SET: 'theme:set',
   THEME_CHANGED: 'theme:changed',
+  THEME_LIST: 'theme:list',
+  THEME_SET_DEFAULT_DARK: 'theme:set-default-dark',
+  THEME_SET_DEFAULT_LIGHT: 'theme:set-default-light',
+  THEME_RELOAD: 'theme:reload',
+  THEME_OPEN_DIRECTORY: 'theme:open-directory',
 
   // Fullscreen
   FULLSCREEN_CHANGED: 'fullscreen:changed',
@@ -236,6 +317,7 @@ export const IpcChannels = {
 
   // ─── CLI Agent ───────────────────────────────
   CLI_AGENT_START: 'cli-agent:start',
+  CLI_AGENT_SWITCH_BACKEND: 'cli-agent:switch-backend',
   CLI_AGENT_STOP: 'cli-agent:stop',
   CLI_AGENT_SEND: 'cli-agent:send',
   CLI_AGENT_GET_SESSION: 'cli-agent:get-session',
@@ -244,6 +326,62 @@ export const IpcChannels = {
   CLI_AGENT_MESSAGE: 'cli-agent:message',
   CLI_AGENT_STATUS: 'cli-agent:status',
   CLI_AGENT_RESULT: 'cli-agent:result',
+  CLI_AGENT_WORKSPACE_COST: 'cli-agent:workspace-cost',
+
+  // ─── CLI Agent: per-session config ───────────
+  CLI_AGENT_UPDATE_SESSION_CONFIG: 'cli-agent:update-session-config',
+  CLI_AGENT_LIST_PROVIDERS: 'cli-agent:list-providers',
+  CLI_AGENT_LIST_AGENTS: 'cli-agent:list-agents',
+  CLI_AGENT_LIST_MODES: 'cli-agent:list-modes',
+  CLI_AGENT_LIST_TOOLS: 'cli-agent:list-tools',
+
+  // ─── CLI Agent: session ops (OpenCode) ───────
+  CLI_AGENT_SESSION_SHARE: 'cli-agent:session-share',
+  CLI_AGENT_SESSION_UNSHARE: 'cli-agent:session-unshare',
+  CLI_AGENT_SESSION_SUMMARIZE: 'cli-agent:session-summarize',
+  CLI_AGENT_SESSION_REVERT: 'cli-agent:session-revert',
+  CLI_AGENT_SESSION_UNREVERT: 'cli-agent:session-unrevert',
+  CLI_AGENT_SESSION_FORK: 'cli-agent:session-fork',
+  CLI_AGENT_SESSION_ABORT: 'cli-agent:session-abort',
+  CLI_AGENT_SESSION_DIFF: 'cli-agent:session-diff',
+  CLI_AGENT_SESSION_TODO: 'cli-agent:session-todo',
+  CLI_AGENT_SESSION_INIT: 'cli-agent:session-init',
+  CLI_AGENT_SESSION_DELETE_REMOTE: 'cli-agent:session-delete-remote',
+
+  // ─── CLI Agent: workspace ops (OpenCode) ─────
+  CLI_AGENT_FILE_LIST: 'cli-agent:file-list',
+  CLI_AGENT_FILE_READ: 'cli-agent:file-read',
+  CLI_AGENT_FILE_STATUS: 'cli-agent:file-status',
+  CLI_AGENT_FIND_TEXT: 'cli-agent:find-text',
+  CLI_AGENT_FIND_FILES: 'cli-agent:find-files',
+  CLI_AGENT_FIND_SYMBOLS: 'cli-agent:find-symbols',
+  CLI_AGENT_SHELL_RUN: 'cli-agent:shell-run',
+  CLI_AGENT_LSP_STATUS: 'cli-agent:lsp-status',
+  CLI_AGENT_FORMATTER_STATUS: 'cli-agent:formatter-status',
+
+  // ─── CLI Agent: config / auth / providers ────
+  CLI_AGENT_CONFIG_GET: 'cli-agent:config-get',
+  CLI_AGENT_CONFIG_UPDATE: 'cli-agent:config-update',
+  CLI_AGENT_CONFIG_PROVIDERS: 'cli-agent:config-providers',
+  CLI_AGENT_AUTH_SET: 'cli-agent:auth-set',
+  CLI_AGENT_PROVIDER_LIST: 'cli-agent:provider-list',
+  CLI_AGENT_PROVIDER_AUTH: 'cli-agent:provider-auth',
+  CLI_AGENT_PROVIDER_OAUTH_AUTHORIZE: 'cli-agent:provider-oauth-authorize',
+  CLI_AGENT_PROVIDER_OAUTH_CALLBACK: 'cli-agent:provider-oauth-callback',
+  CLI_AGENT_PATH_GET: 'cli-agent:path-get',
+  CLI_AGENT_LOG_WRITE: 'cli-agent:log-write',
+  CLI_AGENT_SERVER_INFO: 'cli-agent:server-info',
+
+  // ─── CLI Agent: TUI control (OpenCode) ───────
+  CLI_AGENT_TUI_APPEND_PROMPT: 'cli-agent:tui-append-prompt',
+  CLI_AGENT_TUI_SUBMIT_PROMPT: 'cli-agent:tui-submit-prompt',
+  CLI_AGENT_TUI_CLEAR_PROMPT: 'cli-agent:tui-clear-prompt',
+  CLI_AGENT_TUI_OPEN_HELP: 'cli-agent:tui-open-help',
+  CLI_AGENT_TUI_OPEN_SESSIONS: 'cli-agent:tui-open-sessions',
+  CLI_AGENT_TUI_OPEN_THEMES: 'cli-agent:tui-open-themes',
+  CLI_AGENT_TUI_OPEN_MODELS: 'cli-agent:tui-open-models',
+  CLI_AGENT_TUI_EXECUTE_COMMAND: 'cli-agent:tui-execute-command',
+  CLI_AGENT_TUI_SHOW_TOAST: 'cli-agent:tui-show-toast',
 
   // ─── Conversation History ────────────────────
   CONVERSATION_LIST: 'conversation:list',
@@ -254,10 +392,9 @@ export const IpcChannels = {
   CONVERSATION_LIST_CHANGED: 'conversation:list-changed',
 } as const
 
-export type ThemeName = 'one-dark' | 'one-light'
+export type ThemeName = ThemeId
 
 export type SettingsScope = 'user' | 'workspace'
-
 
 export interface DirEntry {
   name: string
@@ -318,14 +455,18 @@ export interface WorktreeCreateOpts {
 }
 
 export interface AppSettings {
-  theme: ThemeName
+  activeThemeId: ThemeId
+  defaultDarkThemeId: ThemeId
+  defaultLightThemeId: ThemeId
   sidebarWidth: number
   editorDefaults?: Partial<AideProjectSettings>
   cleanShutdown?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'one-dark',
+  activeThemeId: 'one-dark',
+  defaultDarkThemeId: 'one-dark',
+  defaultLightThemeId: 'one-light',
   sidebarWidth: 220,
 }
 
@@ -399,7 +540,18 @@ export interface AideProjectSettings {
   // Agent / Backend settings
   'agent.backend'?: AgentBackend
   'agent.claudeCodePath'?: string
+  'agent.opencodePath'?: string
   'agent.codexPath'?: string
+
+  // OpenCode-specific defaults (seed values for new opencode sessions).
+  // Per-session overrides happen via the chat pane gear menu and never
+  // mutate these defaults.
+  'agent.opencode.defaultProvider'?: string
+  'agent.opencode.defaultModel'?: string
+  'agent.opencode.defaultAgent'?: string
+  'agent.opencode.defaultMode'?: string
+  'agent.opencode.defaultSystemPrompt'?: string
+  'agent.opencode.defaultToolToggles'?: Record<string, boolean>
 }
 
 // Fully resolved settings (no optional fields)
@@ -429,7 +581,16 @@ export interface ResolvedSettings {
   // Agent / Backend settings
   'agent.backend': AgentBackend
   'agent.claudeCodePath': string
+  'agent.opencodePath': string
   'agent.codexPath': string
+
+  // OpenCode-specific defaults
+  'agent.opencode.defaultProvider': string
+  'agent.opencode.defaultModel': string
+  'agent.opencode.defaultAgent': string
+  'agent.opencode.defaultMode': string
+  'agent.opencode.defaultSystemPrompt': string
+  'agent.opencode.defaultToolToggles': Record<string, boolean>
 }
 
 /**
@@ -443,9 +604,18 @@ export const SENSITIVE_AGENT_KEYS: ReadonlySet<string> = new Set([
   'agent.baseUrl',
   'agent.backend',
   'agent.claudeCodePath',
+  'agent.opencodePath',
   'agent.codexPath',
   'agent.permissionTier',
   'agent.autoApprove',
+  // OpenCode defaults are user preferences (model choice, system prompt) that
+  // shouldn't be silently overridden by a checked-in workspace settings file.
+  'agent.opencode.defaultProvider',
+  'agent.opencode.defaultModel',
+  'agent.opencode.defaultAgent',
+  'agent.opencode.defaultMode',
+  'agent.opencode.defaultSystemPrompt',
+  'agent.opencode.defaultToolToggles',
 ])
 
 // .aide/local/workspace.json
@@ -496,18 +666,9 @@ export interface AppWorkspaceRegistry {
   lastSessionWorkspaces: string[]
 }
 
-export type WorkspaceRuntimeState =
-  | 'foreground'
-  | 'backgrounded'
-  | 'asleep'
-  | 'blocked'
+export type WorkspaceRuntimeState = 'foreground' | 'backgrounded' | 'asleep' | 'blocked'
 
-export type WorkspaceRuntimeStatus =
-  | 'starting'
-  | 'running'
-  | 'stopping'
-  | 'stopped'
-  | 'error'
+export type WorkspaceRuntimeStatus = 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
 
 export interface WorkspaceRuntimeWorkloadFlags {
   agentsRunning: boolean
@@ -789,9 +950,14 @@ export interface WindowApi {
   closeWindow: () => void
 
   // Theme
-  getTheme: () => Promise<ThemeName>
-  setTheme: (theme: ThemeName) => Promise<void>
-  onThemeChanged: (callback: (theme: ThemeName) => void) => () => void
+  getThemeState: () => Promise<ThemeStateSnapshot>
+  listThemes: () => Promise<import('./themes').ThemeDefinition[]>
+  setTheme: (themeId: ThemeId) => Promise<void>
+  setDefaultDarkTheme: (themeId: ThemeId) => Promise<void>
+  setDefaultLightTheme: (themeId: ThemeId) => Promise<void>
+  reloadThemes: () => Promise<ThemeStateSnapshot>
+  openThemesDirectory: () => Promise<void>
+  onThemeChanged: (callback: (state: ThemeStateSnapshot) => void) => () => void
 
   // Fullscreen
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void
@@ -830,10 +996,19 @@ export interface WindowApi {
   onGitBranchChanged: (callback: (payload: GitBranchChangedPayload) => void) => () => void
 
   // Git diff
-  getGitFileOriginal: (rootPath: string | null, filePath: string) => Promise<{ content: string | null }>
+  getGitFileOriginal: (
+    rootPath: string | null,
+    filePath: string,
+  ) => Promise<{ content: string | null }>
 
   // Terminal
-  ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) => Promise<{ id: string; scrollback: string }>
+  ptyCreate: (opts?: {
+    id?: string
+    workspaceId?: string
+    cwd?: string
+    shell?: string
+    title?: string
+  }) => Promise<{ id: string; scrollback: string }>
   ptyWrite: (id: string, data: string) => void
   ptyResize: (id: string, cols: number, rows: number) => void
   ptyKill: (id: string) => void
@@ -843,8 +1018,14 @@ export interface WindowApi {
 
   // Worktrees
   listWorktrees: (workspaceId: string) => Promise<WorktreeInfo[]>
-  createWorktree: (workspaceId: string, opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
-  removeWorktree: (workspaceId: string, worktreePath: string) => Promise<{ success: true } | { error: string }>
+  createWorktree: (
+    workspaceId: string,
+    opts: WorktreeCreateOpts,
+  ) => Promise<{ path: string } | { error: string }>
+  removeWorktree: (
+    workspaceId: string,
+    worktreePath: string,
+  ) => Promise<{ success: true } | { error: string }>
   setActiveWorktree: (workspaceId: string, worktreePath: string | null) => Promise<void>
   getActiveWorktree: (workspaceId: string) => Promise<string | null>
   onWorktreeListChanged: (callback: (payload: WorktreeListChangedPayload) => void) => () => void
@@ -858,7 +1039,9 @@ export interface WindowApi {
   onSearchResults: (callback: (payload: SearchResultsPayload) => void) => () => void
   onSearchComplete: (callback: (payload: SearchCompletePayload) => void) => () => void
   searchCancel: () => void
-  searchReplace: (opts: ReplaceOpts) => Promise<{ success: true; skipped: number } | { error: string }>
+  searchReplace: (
+    opts: ReplaceOpts,
+  ) => Promise<{ success: true; skipped: number } | { error: string }>
 
   // .aide project folder
   aideInit: (workspaceId?: string | null) => Promise<AideInitResult | { error: string }>
@@ -869,14 +1052,20 @@ export interface WindowApi {
   getUserSettings: () => Promise<Partial<AideProjectSettings>>
   setUserSetting: (key: string, value: unknown | undefined) => Promise<void>
   getWorkspaceSettings: (workspaceId?: string | null) => Promise<AideProjectSettings>
-  setWorkspaceSetting: (key: string, value: unknown | undefined, workspaceId?: string | null) => Promise<void>
+  setWorkspaceSetting: (
+    key: string,
+    value: unknown | undefined,
+    workspaceId?: string | null,
+  ) => Promise<void>
   getBuiltInDefaults: () => Promise<ResolvedSettings>
   onSettingsChanged: (callback: (resolved: ResolvedSettings) => void) => () => void
 
   // Keybinding overrides
   getKeybindingOverrides: () => Promise<import('./commands').KeybindingRule[]>
   setKeybindingOverrides: (rules: import('./commands').KeybindingRule[]) => Promise<void>
-  onKeybindingsChanged: (callback: (rules: import('./commands').KeybindingRule[]) => void) => () => void
+  onKeybindingsChanged: (
+    callback: (rules: import('./commands').KeybindingRule[]) => void,
+  ) => () => void
 
   // Gitignore security audit
   auditGitignore: (workspaceId?: string | null) => Promise<GitignoreAuditResult>
@@ -887,7 +1076,11 @@ export interface WindowApi {
   // Task system
   listTasks: (workspaceId: string) => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
   listRunningTasks: (workspaceId: string) => Promise<TaskExecution[]>
-  runTask: (workspaceId: string, taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
+  runTask: (
+    workspaceId: string,
+    taskId: string,
+    context?: TaskRunContext,
+  ) => Promise<{ executionId: string } | { error: string }>
   killTask: (workspaceId: string, executionId: string) => void
   reloadTasks: (workspaceId: string) => Promise<void>
   generateTasks: (workspaceId: string) => Promise<{ success: true } | { error: string }>
@@ -906,13 +1099,18 @@ export interface WindowApi {
   removeWorkspace: (id: string) => Promise<void>
   closeWorkspace: (id: string) => Promise<void>
   switchWorkspace: (id: string) => Promise<void>
-  updateWorkspace: (id: string, patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>) => Promise<void>
+  updateWorkspace: (
+    id: string,
+    patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>,
+  ) => Promise<void>
   reorderWorkspaces: (ids: string[]) => Promise<void>
   setWorkspaceRoot: (id: string, rootPath: string) => Promise<void>
   getActiveWorkspaceId: () => Promise<string | null>
   onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => () => void
   getWorkspaceRuntimeSnapshots: () => Promise<WorkspaceRuntimeSnapshot[]>
-  onWorkspaceRuntimeSnapshotsChanged: (callback: (snapshots: WorkspaceRuntimeSnapshot[]) => void) => () => void
+  onWorkspaceRuntimeSnapshotsChanged: (
+    callback: (snapshots: WorkspaceRuntimeSnapshot[]) => void,
+  ) => () => void
 
   // State persistence
   saveWorkspaceState: (rootPath: string, state: AideLocalState) => Promise<void>
@@ -921,10 +1119,17 @@ export interface WindowApi {
   loadTerminalState: (rootPath: string) => Promise<AideLocalTerminals | null>
 
   // Browser panes
-  browserCreate: (paneId: string, workspaceId: string, sessionMode: BrowserSessionMode) => Promise<{ success: true } | { error: string }>
+  browserCreate: (
+    paneId: string,
+    workspaceId: string,
+    sessionMode: BrowserSessionMode,
+  ) => Promise<{ success: true } | { error: string }>
   browserDestroy: (paneId: string) => void
   browserDestroyWorkspace: (workspaceId: string) => void
-  browserNavigate: (paneId: string, url: string) => Promise<{ success: true; url: string } | { error: string }>
+  browserNavigate: (
+    paneId: string,
+    url: string,
+  ) => Promise<{ success: true; url: string } | { error: string }>
   browserGoBack: (paneId: string) => void
   browserGoForward: (paneId: string) => void
   browserReload: (paneId: string) => void
@@ -934,7 +1139,9 @@ export interface WindowApi {
   onBrowserDidNavigate: (callback: (payload: BrowserDidNavigatePayload) => void) => () => void
   onBrowserTitleUpdated: (callback: (payload: BrowserPageTitlePayload) => void) => () => void
   onBrowserLoadingChanged: (callback: (payload: BrowserLoadingPayload) => void) => () => void
-  onBrowserCanNavigateChanged: (callback: (payload: BrowserCanNavigatePayload) => void) => () => void
+  onBrowserCanNavigateChanged: (
+    callback: (payload: BrowserCanNavigatePayload) => void,
+  ) => () => void
   onBrowserFocusChanged: (callback: (payload: BrowserFocusPayload) => void) => () => void
 
   // App lifecycle
@@ -943,7 +1150,10 @@ export interface WindowApi {
   onCrashDetected: (callback: () => void) => () => void
 
   // ─── Agent Chat ───────────────────────────────
-  chatSendMessage: (sessionId: string, content: string) => Promise<{ messageId: string } | { error: string }>
+  chatSendMessage: (
+    sessionId: string,
+    payload: ChatComposerSubmission,
+  ) => Promise<{ messageId: string } | { error: string }>
   chatGetHistory: (workspaceId: string, conversationId?: string) => Promise<ChatSession | null>
   chatSetMode: (sessionId: string, mode: ChatMode) => Promise<void>
   chatSetWorkingSet: (sessionId: string, paths: string[]) => Promise<void>
@@ -962,15 +1172,139 @@ export interface WindowApi {
   onMcpServerStatus: (callback: (status: McpServerStatus) => void) => () => void
 
   // ─── CLI Agent ───────────────────────────────
-  cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) => Promise<{ sessionId: string } | { error: string }>
+  cliAgentStart: (
+    workspaceId: string,
+    backend: AgentBackend,
+    conversationId?: string,
+    worktreePath?: string,
+  ) => Promise<{ sessionId: string } | { error: string }>
+  cliAgentSwitchBackend: (
+    sessionId: string,
+    backend: AgentBackend,
+  ) => Promise<{ success: true } | { error: string }>
   cliAgentStop: (sessionId: string) => void
-  cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
+  cliAgentSend: (
+    sessionId: string,
+    payload: ChatComposerSubmission,
+  ) => Promise<{ success: true } | { error: string }>
   cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
   cliAgentLoadMessages: (workspaceId: string, conversationId: string) => Promise<CliAgentMessage[]>
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
   onCliAgentMessage: (callback: (msg: CliAgentMessagePayload) => void) => () => void
   onCliAgentStatus: (callback: (status: CliAgentStatusPayload) => void) => () => void
   onCliAgentResult: (callback: (result: CliAgentResultPayload) => void) => () => void
+  onCliAgentWorkspaceCost: (callback: (summary: unknown) => void) => () => void
+
+  // ─── CLI Agent: per-session config + listings ──
+  cliAgentUpdateSessionConfig: (
+    sessionId: string,
+    patch: Record<string, unknown>,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentListProviders: (sessionId: string) => Promise<unknown>
+  cliAgentListAgents: (sessionId: string) => Promise<unknown>
+  cliAgentListModes: (sessionId: string) => Promise<unknown>
+  cliAgentListTools: (sessionId: string, providerID: string, modelID: string) => Promise<unknown>
+
+  // ─── CLI Agent: session ops ────────────────────
+  cliAgentSessionShare: (sessionId: string) => Promise<{ url?: string; error?: string }>
+  cliAgentSessionUnshare: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionSummarize: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionRevert: (
+    sessionId: string,
+    messageId: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionUnrevert: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionFork: (
+    sessionId: string,
+    messageId: string,
+  ) => Promise<{ newSessionId?: string; error?: string }>
+  cliAgentSessionAbort: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionDiff: (sessionId: string) => Promise<{ diff?: unknown; error?: string }>
+  cliAgentSessionTodo: (sessionId: string) => Promise<{ todos?: unknown; error?: string }>
+  cliAgentSessionInit: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentSessionDeleteRemote: (sessionId: string) => Promise<{ success?: true; error?: string }>
+
+  // ─── CLI Agent: workspace ops ──────────────────
+  cliAgentFileList: (
+    sessionId: string,
+    path: string,
+  ) => Promise<{ entries?: unknown; error?: string }>
+  cliAgentFileRead: (
+    sessionId: string,
+    path: string,
+  ) => Promise<{ content?: string; error?: string }>
+  cliAgentFileStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
+  cliAgentFindText: (
+    sessionId: string,
+    query: string,
+  ) => Promise<{ results?: unknown; error?: string }>
+  cliAgentFindFiles: (
+    sessionId: string,
+    pattern: string,
+  ) => Promise<{ paths?: unknown; error?: string }>
+  cliAgentFindSymbols: (
+    sessionId: string,
+    query: string,
+  ) => Promise<{ symbols?: unknown; error?: string }>
+  cliAgentShellRun: (
+    sessionId: string,
+    command: string,
+  ) => Promise<{ result?: unknown; error?: string }>
+  cliAgentLspStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
+  cliAgentFormatterStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
+
+  // ─── CLI Agent: config / auth / providers ──────
+  cliAgentConfigGet: (sessionId: string) => Promise<{ config?: unknown; error?: string }>
+  cliAgentConfigUpdate: (
+    sessionId: string,
+    patch: Record<string, unknown>,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentConfigProviders: (sessionId: string) => Promise<{ providers?: unknown; error?: string }>
+  cliAgentAuthSet: (
+    sessionId: string,
+    key: string,
+    value: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentProviderList: (sessionId: string) => Promise<{ providers?: unknown; error?: string }>
+  cliAgentProviderAuth: (
+    sessionId: string,
+    providerId: string,
+  ) => Promise<{ methods?: unknown; error?: string }>
+  cliAgentProviderOauthAuthorize: (
+    sessionId: string,
+    providerId: string,
+  ) => Promise<{ url?: string; error?: string }>
+  cliAgentProviderOauthCallback: (
+    sessionId: string,
+    code: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentPathGet: (sessionId: string) => Promise<{ paths?: unknown; error?: string }>
+  cliAgentLogWrite: (
+    sessionId: string,
+    message: string,
+    level?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentServerInfo: (workspaceId: string) => Promise<unknown>
+
+  // ─── CLI Agent: TUI control ────────────────────
+  cliAgentTuiAppendPrompt: (
+    sessionId: string,
+    text: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiSubmitPrompt: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiClearPrompt: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenHelp: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenSessions: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenThemes: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiOpenModels: (sessionId: string) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiExecuteCommand: (
+    sessionId: string,
+    command: string,
+  ) => Promise<{ success?: true; error?: string }>
+  cliAgentTuiShowToast: (
+    sessionId: string,
+    args: { title?: string; message: string; variant: string },
+  ) => Promise<{ success?: true; error?: string }>
 
   // ─── Conversation History ────────────────────
   conversationList: (workspaceId: string) => Promise<ConversationMeta[]>
@@ -978,7 +1312,9 @@ export interface WindowApi {
   conversationDelete: (workspaceId: string, conversationId: string) => Promise<void>
   conversationRename: (workspaceId: string, conversationId: string, title: string) => Promise<void>
   conversationGet: (workspaceId: string, conversationId: string) => Promise<ConversationMeta | null>
-  onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
+  onConversationListChanged: (
+    callback: (payload: ConversationListChangedPayload) => void,
+  ) => () => void
 
   // VS Code Integration
   openInVSCode: (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getEditorMetrics } from '@renderer/lib/editorTheme'
+import { getEditorMetrics } from '@renderer/lib/editor/editorTheme'
 
 describe('editorTheme metrics', () => {
   it('derives vscode-like editor metrics from font size', () => {

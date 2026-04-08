@@ -12,10 +12,12 @@ files:
   - node_modules/**/*
 
 asarUnpack:
-  - "**/node-pty/**"
-  - "**/@vscode/ripgrep/**"
-  - "**/@anthropic-ai/claude-code/**"
-  - "**/.pnpm/@anthropic-ai+claude-code@*/node_modules/@anthropic-ai/claude-code/**"
+  - '**/node-pty/**'
+  - '**/@vscode/ripgrep/**'
+  - '**/@anthropic-ai/claude-agent-sdk/**'
+  - '**/.pnpm/@anthropic-ai+claude-agent-sdk@*/node_modules/@anthropic-ai/claude-agent-sdk/**'
+  - '**/@anthropic-ai/claude-code/**'
+  - '**/.pnpm/@anthropic-ai+claude-code@*/node_modules/@anthropic-ai/claude-code/**'
 
 extraMetadata:
   main: packages/main/dist/index.js
@@ -35,7 +37,7 @@ mac:
   gatekeeperAssess: false
 
 dmg:
-  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+  artifactName: '${productName}-${version}-${os}-${arch}.${ext}'
 
 linux:
   target:

@@ -49,6 +49,10 @@ export interface CommandContext {
   openCommandPalette: () => void
   openQuickOpen: () => void
   openNewBrowserModal: () => void
+  openThemePicker: (mode: 'active' | 'dark' | 'light') => void
+  toggleTheme: () => void
+  reloadThemes: () => Promise<void>
+  openThemesDirectory: () => Promise<void>
 
   persistWorkspaceRuntime: () => void
 

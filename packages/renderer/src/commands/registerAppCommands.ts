@@ -14,6 +14,7 @@ import { collectEditorCommands } from './domains/editor'
 import { collectPaneCommands } from './domains/panes'
 import { collectTaskCommands } from './domains/tasks'
 import { collectTerminalCommands } from './domains/terminal'
+import { collectThemeCommands } from './domains/theme'
 import { collectViewCommands } from './domains/view'
 import { collectWorkspaceCommands } from './domains/workspace'
 
@@ -33,6 +34,7 @@ export function registerAppCommands(getContext: GetCommandContext): void {
     collectAgentCommands,
     collectTerminalCommands,
     collectTaskCommands,
+    collectThemeCommands,
     collectAideCommands,
   ]
 
