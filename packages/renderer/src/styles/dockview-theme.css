@@ -16,20 +16,34 @@
   --dv-group-view-background-color: var(--bg-base);
 }
 
-/* Tighter tab bar */
+/* Tab bar */
 .dockview-theme-aide .tabs-container {
-  height: 28px !important;
+  height: 32px !important;
+  padding: 4px 6px 0 6px !important;
+  gap: 2px !important;
 }
 
 .dockview-theme-aide .tab {
-  font-size: 10px !important;
-  padding: 0 8px !important;
+  font-size: 11px !important;
+  padding: 0 10px !important;
   min-width: 0 !important;
+  height: 28px !important;
+  border-radius: 8px 8px 0 0 !important;
+  margin-right: 2px !important;
+  transition: background-color 120ms ease;
 }
 
-/* Subtler active tab indicator */
+.dockview-theme-aide .dv-tab:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+/* Active tab merges with editor body via matching background + soft top border */
 .dockview-theme-aide .dv-tab.dv-active-tab {
-  font-weight: 450;
+  font-weight: 500;
+  background-color: var(--bg-base) !important;
+  border-top: 1px solid var(--border-subtle, var(--border-base)) !important;
+  border-left: 1px solid var(--border-subtle, var(--border-base)) !important;
+  border-right: 1px solid var(--border-subtle, var(--border-base)) !important;
 }
 
 /* ─── Close button overrides ───────────────────── */

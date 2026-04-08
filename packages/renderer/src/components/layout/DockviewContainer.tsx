@@ -4,6 +4,7 @@ import { PlaceholderPane } from '../panes/PlaceholderPane'
 import { WelcomePane } from '../panes/WelcomePane'
 import { EditorPane } from '../panes/EditorPane'
 import { EditorTab } from '../panes/EditorTab'
+import { EditorTabActions } from '../panes/EditorTabActions'
 import { AgentTab } from '../panes/AgentTab'
 import { TerminalPane } from '../panes/TerminalPane'
 import { MarkdownPreviewPane } from '../panes/MarkdownPreviewPane'
@@ -61,6 +62,7 @@ export function DockviewContainer({ onApiReady }: Props) {
       onReady={handleReady}
       components={components}
       tabComponents={tabComponents}
+      rightHeaderActionsComponent={EditorTabActions}
     />
   )
 }
