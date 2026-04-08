@@ -29,7 +29,7 @@ const LSP_LABELS: Record<LspStatus, string> = {
   none: 'No LSP',
 }
 
-export function EditorBreadcrumbBar({ filePath, workspaceRoot, lspStatus = 'healthy' }: Props) {
+export function EditorBreadcrumbBar({ filePath, workspaceRoot, lspStatus = 'none' }: Props) {
   const segments = useMemo(
     () => relativeSegments(filePath, workspaceRoot ?? null),
     [filePath, workspaceRoot],
@@ -88,13 +88,15 @@ export function EditorBreadcrumbBar({ filePath, workspaceRoot, lspStatus = 'heal
       </nav>
 
       <div className="editor-breadcrumb__right">
-        <span
-          className={`editor-breadcrumb__lsp editor-breadcrumb__lsp--${lspStatus}`}
-          title={LSP_LABELS[lspStatus]}
-        >
-          <span className="editor-breadcrumb__lsp-dot" />
-          {LSP_LABELS[lspStatus]}
-        </span>
+        {lspStatus !== 'none' && (
+          <span
+            className={`editor-breadcrumb__lsp editor-breadcrumb__lsp--${lspStatus}`}
+            title={LSP_LABELS[lspStatus]}
+          >
+            <span className="editor-breadcrumb__lsp-dot" />
+            {LSP_LABELS[lspStatus]}
+          </span>
+        )}
       </div>
     </div>
   )
