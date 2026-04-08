@@ -1,5 +1,6 @@
 import { useRef, useCallback, useState } from 'react'
 import type { ChatMode, ChatSessionStatus } from '@aide/shared'
+import { Button } from '../ui/Button'
 
 interface ChatInputProps {
   onSend: (content: string) => void
@@ -8,13 +9,7 @@ interface ChatInputProps {
   mode: ChatMode
 }
 
-const PLACEHOLDERS: Record<ChatMode, string> = {
-  ask: 'Ask a question...',
-  edit: 'Describe changes...',
-  agent: 'What should I do?',
-}
-
-export function ChatInput({ onSend, onStop, status, mode }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, status }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [value, setValue] = useState('')
   const isActive = status !== 'idle'
@@ -68,22 +63,23 @@ export function ChatInput({ onSend, onStop, status, mode }: ChatInputProps) {
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        placeholder={PLACEHOLDERS[mode]}
+        placeholder="Ask, edit, or build…"
         rows={1}
         disabled={isActive}
       />
       {isActive ? (
-        <button className="chat-input__btn-stop" onClick={onStop} title="Stop">
-          <div className="chat-input__btn-stop__icon" />
-        </button>
+        <Button variant="danger" size="sm" onClick={onStop} title="Stop">
+          Stop
+        </Button>
       ) : (
-        <button
-          className="chat-input__btn-send"
+        <Button
+          variant="accent"
+          size="sm"
           onClick={handleSend}
           disabled={!value.trim()}
         >
           Send
-        </button>
+        </Button>
       )}
     </div>
   )

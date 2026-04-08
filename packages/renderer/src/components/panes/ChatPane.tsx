@@ -46,11 +46,13 @@ export function ChatPane({ params, api }: IDockviewPanelProps<ChatPanelParams>) 
           <PermissionTierBadge workspaceId={params?.workspaceId} />
         </div>
         {chat.mode === 'edit' && (
-          <WorkingSetPicker
-            workingSet={chat.workingSet}
-            onWorkingSetChange={chat.setWorkingSet}
-            workspaceRoot={params?.worktreePath ?? params?.workspaceRoot}
-          />
+          <div className="chat-pane__header-row">
+            <WorkingSetPicker
+              workingSet={chat.workingSet}
+              onWorkingSetChange={chat.setWorkingSet}
+              workspaceRoot={params?.worktreePath ?? params?.workspaceRoot}
+            />
+          </div>
         )}
       </div>
 

@@ -17,7 +17,8 @@ export function MessageBubble({ message, isStreaming, streamingContent }: Messag
       message.toolResults?.map((r) => r.output).filter(Boolean).join('\n\n') || message.content
     return (
       <div className={`chat-msg chat-msg--tool-result${isError ? ' chat-msg--tool-result-error' : ''}`}>
-        {output}
+        <div className="chat-msg__role">{isError ? 'Tool error' : 'Tool result'}</div>
+        <div className="chat-msg__body">{output}</div>
       </div>
     )
   }
@@ -25,7 +26,7 @@ export function MessageBubble({ message, isStreaming, streamingContent }: Messag
   if (message.role === 'user') {
     return (
       <div className="chat-msg chat-msg--user">
-        <span className="chat-msg__prefix">&gt;</span>
+        <div className="chat-msg__role">You</div>
         <div className="chat-msg__body">{message.content}</div>
       </div>
     )
@@ -43,6 +44,7 @@ function AssistantMessage({ content, isStreaming }: { content: string; isStreami
 
   return (
     <div className="chat-msg chat-msg--assistant">
+      <div className="chat-msg__role">Claude</div>
       <div className="chat-msg__body">
         {/* Safe: HTML is sanitized through DOMPurify in renderMarkdown */}
         <span dangerouslySetInnerHTML={{ __html: html }} />

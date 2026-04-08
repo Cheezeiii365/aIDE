@@ -46,6 +46,7 @@ export function MessageList({
 
   return (
     <div className="chat-messages" ref={scrollRef} onScroll={handleScroll}>
+      <div className="chat-messages__inner">
       {messages.map((msg) => {
         const isStreamingThis = msg.id === streamingMessageId
         return (
@@ -91,6 +92,7 @@ export function MessageList({
       {status === 'awaiting_approval' && (
         <div className="chat-status chat-status--warning">Waiting for approval</div>
       )}
+      </div>
     </div>
   )
 }

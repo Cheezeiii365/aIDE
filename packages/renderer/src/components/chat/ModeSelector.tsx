@@ -1,4 +1,5 @@
 import type { ChatMode } from '@aide/shared'
+import { SegmentedControl } from '../ui/SegmentedControl'
 
 interface ModeSelectorProps {
   mode: ChatMode
@@ -6,25 +7,20 @@ interface ModeSelectorProps {
   disabled: boolean
 }
 
-const MODES: { value: ChatMode; label: string }[] = [
-  { value: 'ask', label: 'ASK' },
-  { value: 'edit', label: 'EDIT' },
-  { value: 'agent', label: 'AGENT' },
+const OPTIONS: { value: ChatMode; label: string }[] = [
+  { value: 'ask', label: 'Ask' },
+  { value: 'edit', label: 'Edit' },
+  { value: 'agent', label: 'Agent' },
 ]
 
 export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps) {
   return (
-    <div className={`chat-mode-selector${disabled ? ' chat-mode-selector--disabled' : ''}`}>
-      {MODES.map((m) => (
-        <button
-          key={m.value}
-          className={`chat-mode-selector__btn${m.value === mode ? ' chat-mode-selector__btn--active' : ''}`}
-          onClick={() => onModeChange(m.value)}
-          disabled={disabled}
-        >
-          {m.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      options={OPTIONS}
+      value={mode}
+      onChange={onModeChange}
+      disabled={disabled}
+      ariaLabel="Chat mode"
+    />
   )
 }
