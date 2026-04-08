@@ -14,6 +14,7 @@ import type { WebContents } from 'electron'
 import {
   IpcChannels,
   deriveTitle,
+  type ChatComposerSubmission,
   type ChatSession,
   type ChatMessage,
   type ChatMode,
@@ -37,6 +38,7 @@ import type { ConversationStore } from './conversationStore'
 import type { TaskVariableContext } from '../tasks/taskVariableResolver'
 import { shouldAutoApprove as evalShouldAutoApprove } from './permissionMatching'
 import type { ToolApprovalOwner } from './approvalRouter'
+import { buildComposerContext } from './chatComposerContext'
 
 // ─── Constants ─────────────────────────────────────────────────────
 
@@ -114,11 +116,14 @@ export class AgentManager implements ToolApprovalOwner {
    */
   async sendMessage(
     sessionId: string,
-    content: string,
+    submission: ChatComposerSubmission,
   ): Promise<{ messageId: string } | { error: string }> {
     const session = this.sessions.get(sessionId)
     if (!session) {
       return { error: `Session not found: ${sessionId}` }
+    }
+    if (!submission.text.trim() && submission.mentionedFiles.length === 0) {
+      return { error: 'Message is empty' }
     }
 
     // Don't allow sending while a loop is running
@@ -126,17 +131,25 @@ export class AgentManager implements ToolApprovalOwner {
       return { error: 'Agent is already processing a message' }
     }
 
+    const composerContext = await buildComposerContext(
+      submission,
+      session.worktreePath ?? this.workspaceRoot,
+    )
+
     // Append user message
     const userMsg: ChatMessage = {
       id: randomUUID(),
       role: 'user',
-      content,
+      content: submission.rawText?.trim() || submission.text.trim(),
+      contextualContent: composerContext.contextualContent,
+      mentionedFiles: composerContext.mentionedFiles,
+      commandId: composerContext.commandId,
       timestamp: Date.now(),
     }
     session.messages.push(userMsg)
 
     // Auto-title on first user message
-    await this.maybeAutoTitle(session, content)
+    await this.maybeAutoTitle(session, submission.text)
 
     // Prepare assistant message id
     const assistantMessageId = randomUUID()
@@ -148,11 +161,9 @@ export class AgentManager implements ToolApprovalOwner {
     this.toolRetryCounters.set(sessionId, new Map())
 
     // Fire-and-forget: the loop streams events to renderer
-    this.runAgentLoop(session, assistantMessageId, controller.signal).catch(
-      (err) => {
-        console.error('[AgentManager] Unhandled error in agent loop:', err)
-      },
-    )
+    this.runAgentLoop(session, assistantMessageId, controller.signal).catch((err) => {
+      console.error('[AgentManager] Unhandled error in agent loop:', err)
+    })
 
     return { messageId: assistantMessageId }
   }
@@ -170,8 +181,8 @@ export class AgentManager implements ToolApprovalOwner {
 
     // Try to load from ConversationStore
     if (this.conversationStore) {
-      const targetId = conversationId
-        ?? (await this.conversationStore.getMostRecent(workspaceId, 'built-in'))?.id
+      const targetId =
+        conversationId ?? (await this.conversationStore.getMostRecent(workspaceId, 'built-in'))?.id
 
       if (targetId) {
         // Check memory
@@ -181,7 +192,7 @@ export class AgentManager implements ToolApprovalOwner {
         // Load worktreePath from conversation metadata
         const meta = await this.conversationStore.get(targetId)
         // Load from disk
-        const loaded = await this.conversationStore.loadMessages(targetId) as ChatSession | null
+        const loaded = (await this.conversationStore.loadMessages(targetId)) as ChatSession | null
         if (loaded) {
           loaded.status = 'idle' // Reset status on load
           if (meta?.worktreePath) loaded.worktreePath = meta.worktreePath
@@ -221,16 +232,18 @@ export class AgentManager implements ToolApprovalOwner {
 
     // Register in store if this is a genuinely new session (no conversationId given)
     if (!conversationId && this.conversationStore) {
-      await this.conversationStore.create({
-        workspaceId,
-        backend: 'built-in',
-      }).then(meta => {
-        // Re-key the session with the store-generated ID
-        this.sessions.delete(session.id)
-        session.id = meta.id
-        if (meta.worktreePath) session.worktreePath = meta.worktreePath
-        this.sessions.set(meta.id, session)
-      })
+      await this.conversationStore
+        .create({
+          workspaceId,
+          backend: 'built-in',
+        })
+        .then((meta) => {
+          // Re-key the session with the store-generated ID
+          this.sessions.delete(session.id)
+          session.id = meta.id
+          if (meta.worktreePath) session.worktreePath = meta.worktreePath
+          this.sessions.set(meta.id, session)
+        })
     }
 
     return session
@@ -305,7 +318,10 @@ export class AgentManager implements ToolApprovalOwner {
     this.llmClient.updateConfig(config)
   }
 
-  updatePermissions(tier: PermissionTier, autoApprove: Record<string, boolean | ToolPermissionConfig>): void {
+  updatePermissions(
+    tier: PermissionTier,
+    autoApprove: Record<string, boolean | ToolPermissionConfig>,
+  ): void {
     this.permissionTier = tier
     this.autoApprove = autoApprove
   }
@@ -326,7 +342,11 @@ export class AgentManager implements ToolApprovalOwner {
   /**
    * Pending built-in tool calls waiting for user approval (for global inbox hydration).
    */
-  listPendingToolApprovals(): Array<{ workspaceId: string; sessionId: string; toolCall: ToolCall }> {
+  listPendingToolApprovals(): Array<{
+    workspaceId: string
+    sessionId: string
+    toolCall: ToolCall
+  }> {
     const out: Array<{ workspaceId: string; sessionId: string; toolCall: ToolCall }> = []
     for (const [toolCallId, pending] of this.pendingApprovals) {
       const session = this.sessions.get(pending.sessionId)
@@ -417,11 +437,7 @@ export class AgentManager implements ToolApprovalOwner {
 
         // Execute tool calls and feed results back
         session.status = 'awaiting_approval'
-        const results = await this.executeToolCalls(
-          session,
-          toolCalls,
-          signal,
-        )
+        const results = await this.executeToolCalls(session, toolCalls, signal)
 
         if (signal.aborted) break
 
@@ -523,10 +539,7 @@ export class AgentManager implements ToolApprovalOwner {
             break
 
           case 'tool_use_delta':
-            toolJsonBuffers.set(
-              event.id,
-              (toolJsonBuffers.get(event.id) ?? '') + event.partialJson,
-            )
+            toolJsonBuffers.set(event.id, (toolJsonBuffers.get(event.id) ?? '') + event.partialJson)
             break
 
           case 'tool_use_end': {
@@ -591,8 +604,7 @@ export class AgentManager implements ToolApprovalOwner {
     signal: AbortSignal,
   ): Promise<ToolResult[]> {
     const results: ToolResult[] = []
-    const retryCounters =
-      this.toolRetryCounters.get(session.id) ?? new Map<string, number>()
+    const retryCounters = this.toolRetryCounters.get(session.id) ?? new Map<string, number>()
 
     for (const tc of toolCalls) {
       if (signal.aborted) {
@@ -690,7 +702,7 @@ export class AgentManager implements ToolApprovalOwner {
         case 'user': {
           result.push({
             role: 'user',
-            content: [{ type: 'text', text: msg.content }],
+            content: [{ type: 'text', text: msg.contextualContent ?? msg.content }],
           })
           break
         }
@@ -751,9 +763,7 @@ export class AgentManager implements ToolApprovalOwner {
         )
         break
       case 'edit':
-        lines.push(
-          'You are in EDIT mode. You can read and write files within the working set.',
-        )
+        lines.push('You are in EDIT mode. You can read and write files within the working set.')
         if (session.workingSet.length > 0) {
           lines.push(
             'You may only modify files in the working set:',
@@ -790,11 +800,11 @@ export class AgentManager implements ToolApprovalOwner {
       // Save messages to the conversation store
       await this.conversationStore.saveMessages(session.id, session)
       // Update metadata
-      const userMsgCount = session.messages.filter(m => m.role === 'user').length
+      const userMsgCount = session.messages.filter((m) => m.role === 'user').length
       await this.conversationStore.updateMeta(session.id, {
         updatedAt: Date.now(),
         messageCount: session.messages.length,
-        firstMessage: session.messages.find(m => m.role === 'user')?.content.slice(0, 100),
+        firstMessage: session.messages.find((m) => m.role === 'user')?.content.slice(0, 100),
       })
     } else {
       // Legacy: write to single file
@@ -825,7 +835,7 @@ export class AgentManager implements ToolApprovalOwner {
   private async maybeAutoTitle(session: ChatSession, content: string): Promise<void> {
     if (!this.conversationStore) return
 
-    const userMessages = session.messages.filter(m => m.role === 'user')
+    const userMessages = session.messages.filter((m) => m.role === 'user')
     if (userMessages.length !== 1) return // Only auto-title on the very first user message
 
     const meta = await this.conversationStore.get(session.id)

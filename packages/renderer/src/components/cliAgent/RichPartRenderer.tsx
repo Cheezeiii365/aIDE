@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { CliAgentMessage } from '@aide/shared'
 import { renderMarkdown } from '../../lib/markdownRenderer'
 import { CostTokenBadge } from './CostTokenBadge'
@@ -41,26 +41,17 @@ export function RichPartRenderer({
 }
 
 function ReasoningBubble({ message }: { message: CliAgentMessage }) {
-  const [open, setOpen] = useState(!message.reasoningCollapsed)
   const html = useMemo(() => renderMarkdown(message.content || ''), [message.content])
   return (
-    <details
-      open={open}
-      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    <aside
       className="cli-agent-msg cli-agent-msg--reasoning"
-      style={{
-        margin: '4px 0',
-        padding: '4px 8px',
-        borderLeft: '2px solid var(--color-accent-muted, #888)',
-        opacity: 0.85,
-        fontSize: 12,
-      }}
+      aria-label="Model reasoning"
     >
-      <summary style={{ cursor: 'pointer', userSelect: 'none' }}>
-        <em>Reasoning</em>
-      </summary>
-      <div style={{ marginTop: 4 }} dangerouslySetInnerHTML={{ __html: html }} />
-    </details>
+      <div
+        className="cli-agent-msg--reasoning__body cli-agent-msg__markdown"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </aside>
   )
 }
 

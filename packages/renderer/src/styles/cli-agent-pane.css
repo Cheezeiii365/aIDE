@@ -195,7 +195,55 @@
   line-height: 1.5;
 }
 
-.cli-agent-msg--assistant code {
+.cli-agent-msg--assistant .cli-agent-msg__body {
+  white-space: normal;
+}
+
+.cli-agent-msg__markdown p {
+  margin: 0 0 var(--space-3) 0;
+}
+
+.cli-agent-msg__markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.cli-agent-msg__markdown h1,
+.cli-agent-msg__markdown h2,
+.cli-agent-msg__markdown h3,
+.cli-agent-msg__markdown h4,
+.cli-agent-msg__markdown h5,
+.cli-agent-msg__markdown h6 {
+  margin: var(--space-4) 0 var(--space-2);
+  line-height: 1.25;
+}
+
+.cli-agent-msg__markdown ul,
+.cli-agent-msg__markdown ol {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-5);
+}
+
+.cli-agent-msg__markdown li + li {
+  margin-top: 2px;
+}
+
+.cli-agent-msg__markdown blockquote {
+  margin: var(--space-3) 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.cli-agent-msg__markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.cli-agent-msg__markdown a:hover {
+  text-decoration: underline;
+}
+
+.cli-agent-msg__markdown code {
   background: var(--bg-sunken);
   padding: 1px 4px;
   border-radius: var(--radius-sm);
@@ -203,7 +251,7 @@
   font-family: var(--font-mono);
 }
 
-.cli-agent-msg--assistant pre {
+.cli-agent-msg__markdown pre {
   background: var(--bg-sunken);
   border: 1px solid var(--border-subtle);
   padding: var(--space-3);
@@ -211,6 +259,12 @@
   overflow-x: auto;
   margin: var(--space-2) 0;
   font-family: var(--font-mono);
+}
+
+.cli-agent-msg__markdown :not(pre) > code {
+  background: var(--bg-sunken);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
 .cli-agent-msg__cursor {
@@ -305,4 +359,35 @@
 .cli-agent-msg__backend-badge--codex {
   color: var(--text-warning);
   background: color-mix(in srgb, var(--text-warning) 14%, transparent);
+}
+
+/* --- Reasoning (editorial whisper) ------------------------------- */
+/* Always visible. Smaller, italic, muted — sits beside the assistant
+   stream like a marginal annotation rather than a card. */
+.cli-agent-msg--reasoning {
+  display: block;
+  margin: 2px 0 6px;
+  padding: 2px 0 2px 14px;
+  border-left: 1px solid color-mix(in srgb, var(--text-secondary) 35%, transparent);
+  font-family: ui-serif, 'New York', 'Charter', 'Source Serif Pro', 'Hoefler Text', serif;
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
+  letter-spacing: 0.005em;
+}
+
+.cli-agent-msg--reasoning__body > :first-child { margin-top: 0; }
+.cli-agent-msg--reasoning__body > :last-child  { margin-bottom: 0; }
+
+.cli-agent-msg--reasoning__body p {
+  margin: 0 0 4px;
+}
+
+.cli-agent-msg--reasoning__body code {
+  font-style: normal;
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
 }

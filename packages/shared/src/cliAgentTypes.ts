@@ -97,6 +97,10 @@ export interface CliAgentMessage {
   id: string
   type: CliAgentMessageType
   content: string
+  /** Prompt text after aIDE expands slash commands or file mentions. */
+  contextualContent?: string
+  mentionedFiles?: string[]
+  commandId?: string
   timestamp: number
   /** Which backend produced this message (set on external-agent messages). */
   backend?: ExternalCliBackend

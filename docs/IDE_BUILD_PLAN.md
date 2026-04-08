@@ -98,7 +98,7 @@ A desktop IDE built specifically for the workflow of running multiple AI coding 
 
 ### Nice-to-have (v2+)
 
-- [x] Agent chat panel UI — Dockview `chatPane` with Ask/Edit/Agent modes, streaming message display, tool call approval cards, working set picker, markdown rendering with syntax highlighting
+- [x] Agent chat panel UI — Dockview `chatPane` with Ask/Edit/Agent modes, streaming message display, tool call approval cards, working set picker, markdown rendering with syntax highlighting, shared `@file` context mentions, and slash-command autocomplete
 - [ ] Cursor-style agent panel UI (structured diffs, progress, pause/resume)
 - [x] Claude Agent SDK integration (replacing raw Claude Code CLI subprocess spawning with `@anthropic-ai/claude-agent-sdk` `query()` async generator)
 - [ ] Tailwind CSS IntelliSense (via tailwindcss-language-server)

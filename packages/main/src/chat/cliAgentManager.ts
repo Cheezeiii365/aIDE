@@ -21,6 +21,7 @@ import { app, type WebContents } from 'electron'
 import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
   AgentBackend,
+  ChatComposerSubmission,
   CliAgentBackendState,
   CliAgentBackendStateMap,
   CliAgentMessage,
@@ -57,6 +58,7 @@ import type { CliBackendAdapter, CliBackendEvent, CliBackendRun } from './cliAda
 import { OpenCodeServerHost } from './openCodeServerHost'
 import type { ToolApprovalOwner } from './approvalRouter'
 import type { ChatToolCallPayload, ToolCall } from '@aide/shared'
+import { buildComposerContext } from './chatComposerContext'
 
 interface PersistedCliConversation {
   messages?: CliAgentMessage[]
@@ -277,9 +279,9 @@ export class CliAgentManager implements ToolApprovalOwner {
       if (existing.activeRun) {
         return { error: 'Agent is already processing a request. Stop it first or wait.' }
       }
-      existing.backend = backend
-      existing.model = existing.backendStates[backend]?.model
-      existing.sessionToolNames = undefined
+      // Do NOT overwrite existing.backend — switchBackend() owns that transition.
+      // Re-running start() must not silently revert a user-selected backend or
+      // throw away its per-session state (model / providerID / sessionId / etc.).
       existing.worktreePath = worktreePath ?? existing.worktreePath
       await this.persistSession(existing)
       await this.broadcastConversationList(existing.workspaceId)
@@ -369,25 +371,39 @@ export class CliAgentManager implements ToolApprovalOwner {
     return seed
   }
 
-  async send(sessionId: string, content: string): Promise<{ success: true } | { error: string }> {
+  async send(
+    sessionId: string,
+    submission: ChatComposerSubmission,
+  ): Promise<{ success: true } | { error: string }> {
     const session = this.sessions.get(sessionId)
     if (!session) return { error: 'Session not found' }
     if (session.activeRun) {
       return { error: 'Agent is already processing a request. Stop it first or wait.' }
     }
+    if (!submission.text.trim() && submission.mentionedFiles.length === 0) {
+      return { error: 'Message is empty' }
+    }
+
+    const composerContext = await buildComposerContext(
+      submission,
+      session.worktreePath ?? this.workspaceRoot,
+    )
 
     const userMsg: CliAgentMessage = {
       id: randomUUID(),
       type: 'user',
-      content,
+      content: submission.rawText?.trim() || submission.text.trim(),
+      contextualContent: composerContext.contextualContent,
+      mentionedFiles: composerContext.mentionedFiles,
+      commandId: composerContext.commandId,
       timestamp: Date.now(),
     }
     session.messages.push(userMsg)
     this.emitMessage(session, userMsg)
-    await this.maybeAutoTitle(session, content)
+    await this.maybeAutoTitle(session, submission.text)
 
     session.lastError = undefined
-    const prompt = this.buildTurnPrompt(session, content)
+    const prompt = this.buildTurnPrompt(session, userMsg)
 
     let adapter: CliBackendAdapter
     try {
@@ -659,9 +675,9 @@ export class CliAgentManager implements ToolApprovalOwner {
 
   async listOpenCodeAgents(sessionId: string): Promise<OpenCodeAgentSummary[]> {
     const client = await this.getOpenCodeClient(sessionId)
-    const result = await callSdk<
-      Array<{ name?: string; description?: string; mode?: string }>
-    >(() => (client as any).app.agents())
+    const result = await callSdk<Array<{ name?: string; description?: string; mode?: string }>>(
+      () => (client as any).app.agents(),
+    )
     if (!Array.isArray(result)) return []
     return result.map((a) => ({
       name: a.name ?? '',
@@ -806,9 +822,7 @@ export class CliAgentManager implements ToolApprovalOwner {
     }
   }
 
-  async sessionDiff(
-    sessionId: string,
-  ): Promise<{ diff?: unknown; error?: string }> {
+  async sessionDiff(sessionId: string): Promise<{ diff?: unknown; error?: string }> {
     try {
       const client = await this.getOpenCodeClient(sessionId)
       const remoteId = this.requireRemoteId(sessionId)
@@ -821,9 +835,7 @@ export class CliAgentManager implements ToolApprovalOwner {
     }
   }
 
-  async sessionTodo(
-    sessionId: string,
-  ): Promise<{ todos?: OpenCodeTodoItem[]; error?: string }> {
+  async sessionTodo(sessionId: string): Promise<{ todos?: OpenCodeTodoItem[]; error?: string }> {
     try {
       const client = await this.getOpenCodeClient(sessionId)
       const remoteId = this.requireRemoteId(sessionId)
@@ -899,10 +911,7 @@ export class CliAgentManager implements ToolApprovalOwner {
     }
   }
 
-  async fileRead(
-    sessionId: string,
-    path: string,
-  ): Promise<{ content?: string; error?: string }> {
+  async fileRead(sessionId: string, path: string): Promise<{ content?: string; error?: string }> {
     try {
       const client = await this.getOpenCodeClient(sessionId)
       const result = await callSdk<{ content?: string } | string>(() =>
@@ -1108,9 +1117,9 @@ export class CliAgentManager implements ToolApprovalOwner {
   ): Promise<{ methods?: OpenCodeAuthMethod[]; error?: string }> {
     try {
       const client = await this.getOpenCodeClient(sessionId)
-      const result = await callSdk<
-        Array<{ id?: string; label?: string; type?: string }>
-      >(() => (client as any).provider.auth({ query: { providerID: providerId } }))
+      const result = await callSdk<Array<{ id?: string; label?: string; type?: string }>>(() =>
+        (client as any).provider.auth({ query: { providerID: providerId } }),
+      )
       const methods = (Array.isArray(result) ? result : []).map((m) => ({
         id: m.id ?? '',
         label: m.label,
@@ -1169,9 +1178,7 @@ export class CliAgentManager implements ToolApprovalOwner {
   ): Promise<{ success?: true; error?: string }> {
     try {
       const client = await this.getOpenCodeClient(sessionId)
-      await callSdk(() =>
-        (client as any).app.log({ body: { message, level: level ?? 'INFO' } }),
-      )
+      await callSdk(() => (client as any).app.log({ body: { message, level: level ?? 'INFO' } }))
       return { success: true }
     } catch (error) {
       return { error: errMsg(error) }
@@ -1517,10 +1524,10 @@ export class CliAgentManager implements ToolApprovalOwner {
     this.notifyWorkloadChanged()
   }
 
-  private buildTurnPrompt(session: CliAgentSessionInternal, content: string): string {
+  private buildTurnPrompt(session: CliAgentSessionInternal, userMessage: CliAgentMessage): string {
     const backendState = session.backendStates[session.backend]
     if (backendState?.sessionId) {
-      return content
+      return userMessage.contextualContent ?? userMessage.content
     }
 
     const priorMessages = session.messages
@@ -1534,14 +1541,16 @@ export class CliAgentManager implements ToolApprovalOwner {
       )
 
     if (priorMessages.length === 0) {
-      return content
+      return userMessage.contextualContent ?? userMessage.content
     }
 
     const transcript = priorMessages
       .slice(-40)
       .map((message) => {
         const source = message.backend ? ` ${message.backend}` : ''
-        return `[${message.type}${source}]\n${message.content}`
+        const content =
+          message.type === 'user' ? (message.contextualContent ?? message.content) : message.content
+        return `[${message.type}${source}]\n${content}`
       })
       .join('\n\n')
 
@@ -1553,7 +1562,7 @@ export class CliAgentManager implements ToolApprovalOwner {
       transcript,
       '',
       'Latest user request:',
-      content,
+      userMessage.contextualContent ?? userMessage.content,
     ].join('\n')
   }
 

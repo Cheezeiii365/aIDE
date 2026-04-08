@@ -17,6 +17,7 @@ export type {
   ToolCallStatus,
   ToolCall,
   ToolResult,
+  ChatComposerSubmission,
   ChatMessage,
   ChatSession,
   ChatStreamChunk,
@@ -89,6 +90,7 @@ export type {
 } from './llmTypes'
 import type {
   ChatMode,
+  ChatComposerSubmission,
   ChatSession,
   ChatStreamChunk,
   ChatStreamEnd,
@@ -1150,7 +1152,7 @@ export interface WindowApi {
   // ─── Agent Chat ───────────────────────────────
   chatSendMessage: (
     sessionId: string,
-    content: string,
+    payload: ChatComposerSubmission,
   ) => Promise<{ messageId: string } | { error: string }>
   chatGetHistory: (workspaceId: string, conversationId?: string) => Promise<ChatSession | null>
   chatSetMode: (sessionId: string, mode: ChatMode) => Promise<void>
@@ -1183,7 +1185,7 @@ export interface WindowApi {
   cliAgentStop: (sessionId: string) => void
   cliAgentSend: (
     sessionId: string,
-    content: string,
+    payload: ChatComposerSubmission,
   ) => Promise<{ success: true } | { error: string }>
   cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
   cliAgentLoadMessages: (workspaceId: string, conversationId: string) => Promise<CliAgentMessage[]>
@@ -1201,11 +1203,7 @@ export interface WindowApi {
   cliAgentListProviders: (sessionId: string) => Promise<unknown>
   cliAgentListAgents: (sessionId: string) => Promise<unknown>
   cliAgentListModes: (sessionId: string) => Promise<unknown>
-  cliAgentListTools: (
-    sessionId: string,
-    providerID: string,
-    modelID: string,
-  ) => Promise<unknown>
+  cliAgentListTools: (sessionId: string, providerID: string, modelID: string) => Promise<unknown>
 
   // ─── CLI Agent: session ops ────────────────────
   cliAgentSessionShare: (sessionId: string) => Promise<{ url?: string; error?: string }>
@@ -1227,13 +1225,31 @@ export interface WindowApi {
   cliAgentSessionDeleteRemote: (sessionId: string) => Promise<{ success?: true; error?: string }>
 
   // ─── CLI Agent: workspace ops ──────────────────
-  cliAgentFileList: (sessionId: string, path: string) => Promise<{ entries?: unknown; error?: string }>
-  cliAgentFileRead: (sessionId: string, path: string) => Promise<{ content?: string; error?: string }>
+  cliAgentFileList: (
+    sessionId: string,
+    path: string,
+  ) => Promise<{ entries?: unknown; error?: string }>
+  cliAgentFileRead: (
+    sessionId: string,
+    path: string,
+  ) => Promise<{ content?: string; error?: string }>
   cliAgentFileStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
-  cliAgentFindText: (sessionId: string, query: string) => Promise<{ results?: unknown; error?: string }>
-  cliAgentFindFiles: (sessionId: string, pattern: string) => Promise<{ paths?: unknown; error?: string }>
-  cliAgentFindSymbols: (sessionId: string, query: string) => Promise<{ symbols?: unknown; error?: string }>
-  cliAgentShellRun: (sessionId: string, command: string) => Promise<{ result?: unknown; error?: string }>
+  cliAgentFindText: (
+    sessionId: string,
+    query: string,
+  ) => Promise<{ results?: unknown; error?: string }>
+  cliAgentFindFiles: (
+    sessionId: string,
+    pattern: string,
+  ) => Promise<{ paths?: unknown; error?: string }>
+  cliAgentFindSymbols: (
+    sessionId: string,
+    query: string,
+  ) => Promise<{ symbols?: unknown; error?: string }>
+  cliAgentShellRun: (
+    sessionId: string,
+    command: string,
+  ) => Promise<{ result?: unknown; error?: string }>
   cliAgentLspStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
   cliAgentFormatterStatus: (sessionId: string) => Promise<{ status?: unknown; error?: string }>
 

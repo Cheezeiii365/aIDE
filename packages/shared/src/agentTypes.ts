@@ -27,10 +27,21 @@ export interface ToolResult {
   isError: boolean
 }
 
+export interface ChatComposerSubmission {
+  text: string
+  rawText?: string
+  mentionedFiles: string[]
+  commandId?: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'tool_result'
   content: string
+  /** Prompt text after aIDE expands slash commands or file mentions. */
+  contextualContent?: string
+  mentionedFiles?: string[]
+  commandId?: string
   timestamp: number
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]

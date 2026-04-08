@@ -443,8 +443,8 @@ const api: WindowApi = {
   },
 
   // ─── Agent Chat ───────────────────────────────
-  chatSendMessage: (sessionId: string, content: string) =>
-    ipcRenderer.invoke(IpcChannels.CHAT_SEND_MESSAGE, sessionId, content),
+  chatSendMessage: (sessionId: string, payload: import('@aide/shared').ChatComposerSubmission) =>
+    ipcRenderer.invoke(IpcChannels.CHAT_SEND_MESSAGE, sessionId, payload),
   chatGetHistory: (workspaceId: string, conversationId?: string): Promise<ChatSession | null> =>
     ipcRenderer.invoke(IpcChannels.CHAT_GET_HISTORY, workspaceId, conversationId),
   chatSetMode: (sessionId: string, mode: ChatMode): Promise<void> =>
@@ -504,8 +504,8 @@ const api: WindowApi = {
   cliAgentSwitchBackend: (sessionId: string, backend: AgentBackend) =>
     ipcRenderer.invoke(IpcChannels.CLI_AGENT_SWITCH_BACKEND, sessionId, backend),
   cliAgentStop: (sessionId: string) => ipcRenderer.send(IpcChannels.CLI_AGENT_STOP, sessionId),
-  cliAgentSend: (sessionId: string, content: string) =>
-    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SEND, sessionId, content),
+  cliAgentSend: (sessionId: string, payload: import('@aide/shared').ChatComposerSubmission) =>
+    ipcRenderer.invoke(IpcChannels.CLI_AGENT_SEND, sessionId, payload),
   cliAgentGetSession: (workspaceId: string, sessionId?: string): Promise<CliAgentSession | null> =>
     ipcRenderer.invoke(IpcChannels.CLI_AGENT_GET_SESSION, workspaceId, sessionId),
   cliAgentLoadMessages: (workspaceId: string, conversationId: string): Promise<CliAgentMessage[]> =>

@@ -24,7 +24,14 @@ interface CliAgentPanelParams {
 }
 
 export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelParams>) {
-  const { workspaceId, workspaceRoot, backend: backendParam, conversationId, worktreePath, zoomFactor } = params ?? {}
+  const {
+    workspaceId,
+    workspaceRoot,
+    backend: backendParam,
+    conversationId,
+    worktreePath,
+    zoomFactor,
+  } = params ?? {}
   const backend = backendParam ?? 'claude-code'
   const agent = useCliAgent({ workspaceId, backend, conversationId, worktreePath })
   const listRef = useRef<HTMLDivElement>(null)
@@ -53,7 +60,7 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
       (conversationId || agent.messages.length === 0)
     ) {
       hasAutoStartedRef.current = true
-      void agent.start(backend)
+      void agent.start(agent.activeBackend ?? backend)
     }
   }, [
     workspaceId,
@@ -81,7 +88,10 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
     isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
   }
 
-  const isActive = agent.processStatus === 'running' || agent.processStatus === 'starting' || agent.processStatus === 'rate_limited'
+  const isActive =
+    agent.processStatus === 'running' ||
+    agent.processStatus === 'starting' ||
+    agent.processStatus === 'rate_limited'
   const headerBackend: AgentBackend = agent.activeBackend ?? backend
 
   // Detect mixed-backend transcripts so we only render per-message badges when
@@ -120,6 +130,24 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
     [agent.sessionId, showToast],
   )
 
+  // Global toggle: hide/show tool call + tool result bubbles in the transcript.
+  const [showTools, setShowTools] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('aide.cliAgent.showTools') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const toggleShowTools = useCallback(() => {
+    setShowTools((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('aide.cliAgent.showTools', next ? '1' : '0')
+      } catch {}
+      return next
+    })
+  }, [])
+
   const isOpenCode = headerBackend === 'opencode'
   // Mirror the live per-backend state from the hook so the popover pickers
   // reflect any overrides the user has applied (and so dependent dropdowns
@@ -137,24 +165,24 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
           className={`cli-agent-pane__backend-switcher cli-agent-pane__backend-switcher--${headerBackend}`}
           title={isActive ? 'Stop the active turn before switching backends' : 'Switch backend'}
         >
-          <span className="cli-agent-pane__backend-label">
-            {backendLabel(headerBackend)}
-          </span>
+          <span className="cli-agent-pane__backend-label">{backendLabel(headerBackend)}</span>
           <span className="cli-agent-pane__backend-caret">{'\u25BE'}</span>
           <select
             className="cli-agent-pane__backend-select"
             value={headerBackend}
             disabled={isActive}
-            onChange={(e) => { void handleBackendChange(e.target.value as AgentBackend) }}
+            onChange={(e) => {
+              void handleBackendChange(e.target.value as AgentBackend)
+            }}
           >
             {CLI_BACKENDS.map((b) => (
-              <option key={b} value={b}>{backendLabel(b)}</option>
+              <option key={b} value={b}>
+                {backendLabel(b)}
+              </option>
             ))}
           </select>
         </label>
-        {agent.model && (
-          <span className="cli-agent-pane__model">{agent.model}</span>
-        )}
+        {agent.model && <span className="cli-agent-pane__model">{agent.model}</span>}
         <CostTokenBadge
           costUsd={agent.totalCostUsd}
           tokens={agent.totalTokens}
@@ -162,6 +190,13 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
           hideCost={headerBackend === 'claude-code'}
         />
         <div className="cli-agent-pane__header-spacer" />
+        <button
+          className="cli-agent-pane__btn"
+          onClick={toggleShowTools}
+          title={showTools ? 'Hide tool calls and results' : 'Show tool calls and results'}
+        >
+          {showTools ? 'Hide tools' : 'Show tools'}
+        </button>
         {isOpenCode && agent.sessionId && currentBackendState && (
           <SessionSettingsPopover
             sessionId={agent.sessionId}
@@ -184,7 +219,7 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
         ) : (
           <button
             className="cli-agent-pane__btn cli-agent-pane__btn--start"
-            onClick={() => agent.start(backend)}
+            onClick={() => agent.start(headerBackend)}
           >
             {agent.processStatus === 'error' ? 'Restart' : 'Start'}
           </button>
@@ -197,9 +232,7 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
             margin: '4px 8px',
             padding: '4px 8px',
             background:
-              toast.variant === 'error'
-                ? 'rgba(255,80,80,0.15)'
-                : 'rgba(80,200,120,0.15)',
+              toast.variant === 'error' ? 'rgba(255,80,80,0.15)' : 'rgba(80,200,120,0.15)',
             color: toast.variant === 'error' ? 'tomato' : undefined,
             borderRadius: 4,
             fontSize: 11,
@@ -221,24 +254,27 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
       <div className="cli-agent-pane__messages" ref={listRef} onScroll={handleScroll}>
         {agent.messages.length === 0 && !agent.streamingContent && (
           <div className="cli-agent-pane__empty">
-            {isActive
-              ? 'Waiting for response...'
-              : 'Send a message to start the agent'}
+            {isActive ? 'Waiting for response...' : 'Send a message to start the agent'}
           </div>
         )}
 
-        {agent.messages.map((msg) => (
-          <CliAgentMessageBubble
-            key={msg.id}
-            message={msg}
-            showBackendBadge={showBackendBadges}
-            onRevertMessage={isOpenCode ? handleRevertMessage : undefined}
-          />
-        ))}
+        {agent.messages.map((msg) => {
+          if (!showTools && (msg.type === 'tool_use' || msg.type === 'tool_result')) return null
+          return (
+            <CliAgentMessageBubble
+              key={msg.id}
+              message={msg}
+              showBackendBadge={showBackendBadges}
+              onRevertMessage={isOpenCode ? handleRevertMessage : undefined}
+            />
+          )
+        })}
 
         {agent.streamingContent && (
           <div className="cli-agent-msg cli-agent-msg--assistant">
-            <CliAgentMarkdown content={agent.streamingContent} />
+            <div className="cli-agent-msg__body">
+              <CliAgentMarkdown content={agent.streamingContent} />
+            </div>
             <span className="cli-agent-msg__cursor">{'\u2588'}</span>
           </div>
         )}
@@ -251,6 +287,7 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
           onStop={agent.stop}
           status={isActive ? 'thinking' : 'idle'}
           mode="agent"
+          workspaceRoot={worktreePath ?? workspaceRoot}
         />
       </div>
     </div>
@@ -344,7 +381,9 @@ function CliAgentMessageBubble({
   // Assistant
   return (
     <div className="cli-agent-msg cli-agent-msg--assistant">
-      <CliAgentMarkdown content={message.content} />
+      <div className="cli-agent-msg__body">
+        <CliAgentMarkdown content={message.content} />
+      </div>
       {badge}
     </div>
   )
@@ -356,5 +395,5 @@ function CliAgentMarkdown({ content }: { content: string }) {
     return renderMarkdown(content)
   }, [content])
 
-  return <span dangerouslySetInnerHTML={{ __html: html }} />
+  return <div className="cli-agent-msg__markdown" dangerouslySetInnerHTML={{ __html: html }} />
 }

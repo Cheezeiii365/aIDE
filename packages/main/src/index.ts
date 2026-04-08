@@ -7,6 +7,7 @@ import Store from 'electron-store'
 import { IpcChannels, DEFAULT_SETTINGS, SENSITIVE_AGENT_KEYS } from '@aide/shared'
 import type {
   AppSettings,
+  ChatComposerSubmission,
   ThemeId,
   DirEntry,
   SearchOpts,
@@ -753,11 +754,11 @@ ipcMain.handle(IpcChannels.WORKSPACE_RUNTIME_SNAPSHOTS_GET, () => {
 
 ipcMain.handle(
   IpcChannels.CHAT_SEND_MESSAGE,
-  async (_event, sessionId: string, content: string) => {
+  async (_event, sessionId: string, payload: ChatComposerSubmission) => {
     const runtime = findRuntimeWithBuiltInSession(sessionId)
     const agentManager = getAgentManager(runtime)
     if (!agentManager) return { error: 'No workspace open' }
-    const result = await agentManager.sendMessage(sessionId, content)
+    const result = await agentManager.sendMessage(sessionId, payload)
     runtime?.refreshWorkload()
     return result
   },
@@ -863,14 +864,17 @@ ipcMain.handle(
   },
 )
 
-ipcMain.handle(IpcChannels.CLI_AGENT_SEND, async (_event, sessionId: string, content: string) => {
-  const runtime = findRuntimeWithCliSession(sessionId)
-  const cliAgentManager = getCliAgentManager(runtime)
-  if (!cliAgentManager) return { error: 'No workspace open' }
-  const result = await cliAgentManager.send(sessionId, content)
-  runtime?.refreshWorkload()
-  return result
-})
+ipcMain.handle(
+  IpcChannels.CLI_AGENT_SEND,
+  async (_event, sessionId: string, payload: ChatComposerSubmission) => {
+    const runtime = findRuntimeWithCliSession(sessionId)
+    const cliAgentManager = getCliAgentManager(runtime)
+    if (!cliAgentManager) return { error: 'No workspace open' }
+    const result = await cliAgentManager.send(sessionId, payload)
+    runtime?.refreshWorkload()
+    return result
+  },
+)
 
 ipcMain.handle(
   IpcChannels.CLI_AGENT_GET_SESSION,
@@ -957,9 +961,7 @@ ipcMain.handle(IpcChannels.CLI_AGENT_LIST_MODES, async (_event, sessionId: strin
 ipcMain.handle(
   IpcChannels.CLI_AGENT_LIST_TOOLS,
   async (_event, sessionId: string, providerID: string, modelID: string) => {
-    return withCliManager(sessionId, (mgr) =>
-      mgr.listOpenCodeTools(sessionId, providerID, modelID),
-    )
+    return withCliManager(sessionId, (mgr) => mgr.listOpenCodeTools(sessionId, providerID, modelID))
   },
 )
 
@@ -1017,19 +1019,13 @@ ipcMain.handle(IpcChannels.CLI_AGENT_SESSION_DELETE_REMOTE, async (_event, sessi
 
 // ─── CLI Agent: workspace ops ───────────────────────────────────────────
 
-ipcMain.handle(
-  IpcChannels.CLI_AGENT_FILE_LIST,
-  async (_event, sessionId: string, path: string) => {
-    return withCliManager(sessionId, (mgr) => mgr.fileList(sessionId, path))
-  },
-)
+ipcMain.handle(IpcChannels.CLI_AGENT_FILE_LIST, async (_event, sessionId: string, path: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.fileList(sessionId, path))
+})
 
-ipcMain.handle(
-  IpcChannels.CLI_AGENT_FILE_READ,
-  async (_event, sessionId: string, path: string) => {
-    return withCliManager(sessionId, (mgr) => mgr.fileRead(sessionId, path))
-  },
-)
+ipcMain.handle(IpcChannels.CLI_AGENT_FILE_READ, async (_event, sessionId: string, path: string) => {
+  return withCliManager(sessionId, (mgr) => mgr.fileRead(sessionId, path))
+})
 
 ipcMain.handle(IpcChannels.CLI_AGENT_FILE_STATUS, async (_event, sessionId: string) => {
   return withCliManager(sessionId, (mgr) => mgr.fileStatus(sessionId))

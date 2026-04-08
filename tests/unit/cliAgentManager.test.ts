@@ -156,7 +156,11 @@ describe('CliAgentManager', () => {
     const started = await manager.start('ws-1', 'claude-code')
     if ('error' in started) throw new Error(started.error)
 
-    await manager.send(started.sessionId, 'hello from test')
+    await manager.send(started.sessionId, {
+      text: 'hello from test',
+      rawText: 'hello from test',
+      mentionedFiles: [],
+    })
 
     expect(queryMock).toHaveBeenCalledWith(
       expect.objectContaining({

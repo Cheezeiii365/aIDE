@@ -28,8 +28,8 @@ vi.mock('@main/toolRegistry', () => ({
   })),
 }))
 
-import { AgentManager } from '@main/agentManager'
-import type { ChatSession, ChatMessage, LlmProviderConfig } from '@shared/agentTypes'
+import { AgentManager } from '@main/chat/agentManager'
+import type { ChatSession, ChatMessage, LlmProviderConfig } from '@aide/shared'
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -68,8 +68,22 @@ describe('AgentManager.buildLlmMessages', () => {
     })
 
     const result = manager.buildLlmMessages(session)
+    expect(result).toEqual([{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }])
+  })
+
+  it('prefers contextualContent for user messages', async () => {
+    const session = await manager.getHistory('ws1')
+    session.messages.push({
+      id: 'msg1',
+      role: 'user',
+      content: '/plan fix the bug',
+      contextualContent: 'Requested mode: /plan\n\nFix the bug.',
+      timestamp: Date.now(),
+    })
+
+    const result = manager.buildLlmMessages(session)
     expect(result).toEqual([
-      { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
+      { role: 'user', content: [{ type: 'text', text: 'Requested mode: /plan\n\nFix the bug.' }] },
     ])
   })
 
@@ -83,9 +97,7 @@ describe('AgentManager.buildLlmMessages', () => {
     })
 
     const result = manager.buildLlmMessages(session)
-    expect(result).toEqual([
-      { role: 'assistant', content: [{ type: 'text', text: 'Hi there' }] },
-    ])
+    expect(result).toEqual([{ role: 'assistant', content: [{ type: 'text', text: 'Hi there' }] }])
   })
 
   it('converts an assistant message with tool calls', async () => {
@@ -120,9 +132,7 @@ describe('AgentManager.buildLlmMessages', () => {
       role: 'tool_result',
       content: '',
       timestamp: Date.now(),
-      toolResults: [
-        { toolCallId: 'tc1', output: 'file contents here', isError: false },
-      ],
+      toolResults: [{ toolCallId: 'tc1', output: 'file contents here', isError: false }],
     })
 
     const result = manager.buildLlmMessages(session)
@@ -138,11 +148,19 @@ describe('AgentManager.buildLlmMessages', () => {
     session.messages.push(
       { id: '1', role: 'user', content: 'Read test.ts', timestamp: 1 },
       {
-        id: '2', role: 'assistant', content: '', timestamp: 2,
-        toolCalls: [{ id: 'tc1', name: 'file_read', input: { path: 'test.ts' }, status: 'completed' }],
+        id: '2',
+        role: 'assistant',
+        content: '',
+        timestamp: 2,
+        toolCalls: [
+          { id: 'tc1', name: 'file_read', input: { path: 'test.ts' }, status: 'completed' },
+        ],
       },
       {
-        id: '3', role: 'tool_result', content: '', timestamp: 3,
+        id: '3',
+        role: 'tool_result',
+        content: '',
+        timestamp: 3,
         toolResults: [{ toolCallId: 'tc1', output: 'console.log("hi")', isError: false }],
       },
       { id: '4', role: 'assistant', content: 'The file logs "hi".', timestamp: 4 },
@@ -286,7 +304,12 @@ describe('AgentManager approval gate', () => {
 
     // Access private method via type cast for testing
     const mgr = manager as any
-    const approvalPromise = mgr.waitForApproval({ id: 'tc1', name: 'file_read', input: {}, status: 'pending' })
+    const approvalPromise = mgr.waitForApproval({
+      id: 'tc1',
+      name: 'file_read',
+      input: {},
+      status: 'pending',
+    })
 
     // Approve it
     manager.approveToolCall(session.id, 'tc1')
@@ -299,7 +322,12 @@ describe('AgentManager approval gate', () => {
     const session = await manager.getHistory('ws1')
 
     const mgr = manager as any
-    const approvalPromise = mgr.waitForApproval({ id: 'tc2', name: 'file_write', input: {}, status: 'pending' })
+    const approvalPromise = mgr.waitForApproval({
+      id: 'tc2',
+      name: 'file_write',
+      input: {},
+      status: 'pending',
+    })
 
     manager.rejectToolCall(session.id, 'tc2')
 

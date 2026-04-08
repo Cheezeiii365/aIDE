@@ -35,7 +35,10 @@ export function ChatPane({ params, api }: IDockviewPanelProps<ChatPanelParams>) 
   }, [api, chat.conversationTitle])
 
   return (
-    <div className="chat-pane" style={{ ['--panel-zoom' as string]: String(params?.zoomFactor ?? 1) }}>
+    <div
+      className="chat-pane"
+      style={{ ['--panel-zoom' as string]: String(params?.zoomFactor ?? 1) }}
+    >
       <div className="chat-pane__header">
         <div className="chat-pane__header-row">
           <ModeSelector
@@ -71,6 +74,7 @@ export function ChatPane({ params, api }: IDockviewPanelProps<ChatPanelParams>) 
           onStop={chat.stop}
           status={chat.status}
           mode={chat.mode}
+          workspaceRoot={params?.worktreePath ?? params?.workspaceRoot}
         />
       </div>
     </div>
