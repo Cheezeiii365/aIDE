@@ -5,6 +5,13 @@
 
 export type { CommandDefinition, KeybindingRule } from './commands'
 export type {
+  ThemeAppearance,
+  ThemeDefinition,
+  ThemeId,
+  ThemeManifest,
+  ThemeStateSnapshot,
+} from './themes'
+export type {
   ChatMode,
   ChatSessionStatus,
   ToolCallStatus,
@@ -106,6 +113,7 @@ import type {
   ConversationCreateOpts,
   ConversationListChangedPayload,
 } from './conversationTypes'
+import type { ThemeId, ThemeStateSnapshot } from './themes'
 export {
   adjustZoomFactor,
   clampZoomFactor,
@@ -129,6 +137,11 @@ export const IpcChannels = {
   THEME_GET: 'theme:get',
   THEME_SET: 'theme:set',
   THEME_CHANGED: 'theme:changed',
+  THEME_LIST: 'theme:list',
+  THEME_SET_DEFAULT_DARK: 'theme:set-default-dark',
+  THEME_SET_DEFAULT_LIGHT: 'theme:set-default-light',
+  THEME_RELOAD: 'theme:reload',
+  THEME_OPEN_DIRECTORY: 'theme:open-directory',
 
   // Fullscreen
   FULLSCREEN_CHANGED: 'fullscreen:changed',
@@ -377,7 +390,7 @@ export const IpcChannels = {
   CONVERSATION_LIST_CHANGED: 'conversation:list-changed',
 } as const
 
-export type ThemeName = 'one-dark' | 'one-light'
+export type ThemeName = ThemeId
 
 export type SettingsScope = 'user' | 'workspace'
 
@@ -440,14 +453,18 @@ export interface WorktreeCreateOpts {
 }
 
 export interface AppSettings {
-  theme: ThemeName
+  activeThemeId: ThemeId
+  defaultDarkThemeId: ThemeId
+  defaultLightThemeId: ThemeId
   sidebarWidth: number
   editorDefaults?: Partial<AideProjectSettings>
   cleanShutdown?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'one-dark',
+  activeThemeId: 'one-dark',
+  defaultDarkThemeId: 'one-dark',
+  defaultLightThemeId: 'one-light',
   sidebarWidth: 220,
 }
 
@@ -931,9 +948,14 @@ export interface WindowApi {
   closeWindow: () => void
 
   // Theme
-  getTheme: () => Promise<ThemeName>
-  setTheme: (theme: ThemeName) => Promise<void>
-  onThemeChanged: (callback: (theme: ThemeName) => void) => () => void
+  getThemeState: () => Promise<ThemeStateSnapshot>
+  listThemes: () => Promise<import('./themes').ThemeDefinition[]>
+  setTheme: (themeId: ThemeId) => Promise<void>
+  setDefaultDarkTheme: (themeId: ThemeId) => Promise<void>
+  setDefaultLightTheme: (themeId: ThemeId) => Promise<void>
+  reloadThemes: () => Promise<ThemeStateSnapshot>
+  openThemesDirectory: () => Promise<void>
+  onThemeChanged: (callback: (state: ThemeStateSnapshot) => void) => () => void
 
   // Fullscreen
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void

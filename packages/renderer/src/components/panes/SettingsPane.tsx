@@ -14,7 +14,18 @@ interface SettingsPaneParams {
 export function SettingsPane({ params }: IDockviewPanelProps<SettingsPaneParams>) {
   const [settingsWorkspaceId, setSettingsWorkspaceId] = useState<string | null>(null)
   const settings = useSettings(settingsWorkspaceId)
-  const { theme } = useTheme()
+  const {
+    themes,
+    theme,
+    activeThemeId,
+    defaultDarkThemeId,
+    defaultLightThemeId,
+    setTheme,
+    setDefaultDarkTheme,
+    setDefaultLightTheme,
+    reloadThemes,
+    openThemesDirectory,
+  } = useTheme()
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('textEditor.font')
   const [workspaceAvailable, setWorkspaceAvailable] = useState(false)
@@ -39,10 +50,6 @@ export function SettingsPane({ params }: IDockviewPanelProps<SettingsPaneParams>
   }, [settingsWorkspaceId])
 
   const categoriesWithSettings = getCategoriesWithSettings()
-
-  const handleThemeChange = (newTheme: 'one-dark' | 'one-light') => {
-    window.api.setTheme(newTheme)
-  }
 
   if (settings.loading) {
     return (
@@ -74,8 +81,16 @@ export function SettingsPane({ params }: IDockviewPanelProps<SettingsPaneParams>
           settings={settings}
           activeCategory={activeCategory}
           searchQuery={searchQuery}
+          themes={themes}
           theme={theme}
-          onThemeChange={handleThemeChange}
+          activeThemeId={activeThemeId}
+          defaultDarkThemeId={defaultDarkThemeId}
+          defaultLightThemeId={defaultLightThemeId}
+          onThemeChange={(themeId) => void setTheme(themeId)}
+          onDefaultDarkThemeChange={(themeId) => void setDefaultDarkTheme(themeId)}
+          onDefaultLightThemeChange={(themeId) => void setDefaultLightTheme(themeId)}
+          onReloadThemes={() => void reloadThemes()}
+          onOpenThemesDirectory={() => void openThemesDirectory()}
         />
       </div>
     </div>

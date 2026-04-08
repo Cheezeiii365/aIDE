@@ -3,8 +3,7 @@ import type { Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
-import { oneDark } from '@codemirror/theme-one-dark'
-import type { ThemeName } from '@aide/shared'
+import type { ThemeDefinition } from '@aide/shared'
 
 export const themeCompartment = new Compartment()
 export const editorMetricsCompartment = new Compartment()
@@ -18,6 +17,10 @@ const baseTheme = EditorView.theme({
     overflow: 'auto',
   },
 })
+
+function token(theme: ThemeDefinition, key: string, fallback: string): string {
+  return theme.tokens[key] ?? fallback
+}
 
 /**
  * Produce editor typography metrics derived from a base font size.
@@ -63,72 +66,143 @@ export function getEditorMetricsExtension(fontSize: number): Extension {
   })
 }
 
-/* ─── Atom One Light — CodeMirror theme ────────────────────── */
-const oneLightTheme = EditorView.theme(
-  {
-    '&': {
-      color: '#383a42',
-      backgroundColor: '#fafafa',
+function createHighlighting(theme: ThemeDefinition): HighlightStyle {
+  return HighlightStyle.define([
+    { tag: tags.keyword, color: token(theme, '--syntax-keyword', '#c678dd') },
+    {
+      tag: [tags.name, tags.deleted, tags.character, tags.propertyName, tags.macroName],
+      color: token(theme, '--syntax-tag', '#e06c75'),
     },
-    '.cm-content': { caretColor: '#526fff' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#526fff' },
-    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
-      { backgroundColor: 'rgba(56, 113, 220, 0.12)' },
-    '.cm-searchMatch': { backgroundColor: '#e2e8f0', outline: '1px solid #cbd5e1' },
-    '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: '#bfdbfe' },
-    '.cm-activeLine': { backgroundColor: 'rgba(0, 0, 0, 0.03)' },
-    '.cm-selectionMatch': { backgroundColor: 'rgba(56, 113, 220, 0.08)' },
-    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
-      backgroundColor: 'rgba(56, 113, 220, 0.15)',
+    {
+      tag: [tags.function(tags.variableName), tags.labelName],
+      color: token(theme, '--syntax-fn', '#61afef'),
     },
-    '.cm-gutters': {
-      backgroundColor: '#f0f0f1',
-      color: '#a0a1a7',
-      border: 'none',
+    {
+      tag: [tags.color, tags.constant(tags.name), tags.standard(tags.name)],
+      color: token(theme, '--syntax-number', '#d19a66'),
     },
-    '.cm-activeLineGutter': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
-    '.cm-foldPlaceholder': {
-      backgroundColor: 'transparent',
-      border: 'none',
-      color: '#a0a1a7',
+    {
+      tag: [tags.definition(tags.name), tags.separator],
+      color: token(theme, '--text-primary', '#abb2bf'),
     },
-    '.cm-tooltip': {
-      border: '1px solid #d4d4d5',
-      backgroundColor: '#f0f0f1',
+    {
+      tag: [
+        tags.typeName,
+        tags.className,
+        tags.number,
+        tags.changed,
+        tags.annotation,
+        tags.modifier,
+        tags.self,
+        tags.namespace,
+      ],
+      color: token(theme, '--syntax-number', '#d19a66'),
     },
-    '.cm-tooltip .cm-tooltip-arrow:before': { borderTopColor: '#d4d4d5', borderBottomColor: '#d4d4d5' },
-    '.cm-tooltip .cm-tooltip-arrow:after': { borderTopColor: '#f0f0f1', borderBottomColor: '#f0f0f1' },
-    '.cm-tooltip-autocomplete': {
-      '& > ul > li[aria-selected]': { backgroundColor: 'rgba(56, 113, 220, 0.12)', color: '#383a42' },
+    {
+      tag: [
+        tags.operator,
+        tags.operatorKeyword,
+        tags.url,
+        tags.escape,
+        tags.regexp,
+        tags.link,
+        tags.special(tags.string),
+      ],
+      color: token(theme, '--syntax-attr', '#528bff'),
     },
-  },
-  { dark: false },
-)
+    { tag: [tags.meta, tags.comment], color: token(theme, '--syntax-comment', '#5c6370') },
+    { tag: tags.strong, fontWeight: 'bold' },
+    { tag: tags.emphasis, fontStyle: 'italic' },
+    { tag: tags.strikethrough, textDecoration: 'line-through' },
+    {
+      tag: tags.link,
+      color: token(theme, '--syntax-attr', '#528bff'),
+      textDecoration: 'underline',
+    },
+    { tag: tags.heading, fontWeight: 'bold', color: token(theme, '--syntax-tag', '#e06c75') },
+    {
+      tag: [tags.atom, tags.bool, tags.special(tags.variableName)],
+      color: token(theme, '--syntax-number', '#d19a66'),
+    },
+    {
+      tag: [tags.processingInstruction, tags.string, tags.inserted],
+      color: token(theme, '--syntax-string', '#98c379'),
+    },
+    { tag: tags.invalid, color: token(theme, '--text-error', '#ff6b6b') },
+  ])
+}
 
-const oneLightHighlighting = HighlightStyle.define([
-  { tag: tags.keyword, color: '#a626a4' },
-  { tag: [tags.name, tags.deleted, tags.character, tags.propertyName, tags.macroName], color: '#e45649' },
-  { tag: [tags.function(tags.variableName), tags.labelName], color: '#4078f2' },
-  { tag: [tags.color, tags.constant(tags.name), tags.standard(tags.name)], color: '#986801' },
-  { tag: [tags.definition(tags.name), tags.separator], color: '#383a42' },
-  { tag: [tags.typeName, tags.className, tags.number, tags.changed, tags.annotation, tags.modifier, tags.self, tags.namespace], color: '#986801' },
-  { tag: [tags.operator, tags.operatorKeyword, tags.url, tags.escape, tags.regexp, tags.link, tags.special(tags.string)], color: '#0184bc' },
-  { tag: [tags.meta, tags.comment], color: '#a0a1a7' },
-  { tag: tags.strong, fontWeight: 'bold' },
-  { tag: tags.emphasis, fontStyle: 'italic' },
-  { tag: tags.strikethrough, textDecoration: 'line-through' },
-  { tag: tags.link, color: '#0184bc', textDecoration: 'underline' },
-  { tag: tags.heading, fontWeight: 'bold', color: '#e45649' },
-  { tag: [tags.atom, tags.bool, tags.special(tags.variableName)], color: '#986801' },
-  { tag: [tags.processingInstruction, tags.string, tags.inserted], color: '#50a14f' },
-  { tag: tags.invalid, color: '#986801' },
-])
+function createEditorViewTheme(theme: ThemeDefinition): Extension {
+  const accent = token(theme, '--accent', '#528bff')
+  const selection = token(theme, '--bg-selection', 'rgba(82, 139, 255, 0.15)')
+  const elevated = token(theme, '--bg-elevated', '#21252b')
+  const hover = token(theme, '--bg-hover', 'rgba(255, 255, 255, 0.04)')
+  const border = token(theme, '--border-base', '#181a1f')
+  const tooltipBorder = token(theme, '--border-subtle', '#2e333b')
 
-const oneLight: Extension = [oneLightTheme, syntaxHighlighting(oneLightHighlighting)]
+  return EditorView.theme(
+    {
+      '&': {
+        color: token(theme, '--text-primary', '#abb2bf'),
+        backgroundColor: token(theme, '--bg-base', '#282c34'),
+      },
+      '.cm-content': { caretColor: accent },
+      '.cm-cursor, .cm-dropCursor': { borderLeftColor: accent },
+      '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+        {
+          backgroundColor: selection,
+        },
+      '.cm-searchMatch': {
+        backgroundColor: token(theme, '--bg-info', selection),
+        outline: `1px solid ${accent}`,
+      },
+      '.cm-searchMatch.cm-searchMatch-selected': {
+        backgroundColor: token(theme, '--bg-info-hover', hover),
+      },
+      '.cm-activeLine': { backgroundColor: hover },
+      '.cm-selectionMatch': { backgroundColor: selection },
+      '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
+        backgroundColor: selection,
+      },
+      '.cm-gutters': {
+        backgroundColor: elevated,
+        color: token(theme, '--text-muted', '#565c68'),
+        border: 'none',
+      },
+      '.cm-activeLineGutter': { backgroundColor: hover },
+      '.cm-foldPlaceholder': {
+        backgroundColor: 'transparent',
+        border: 'none',
+        color: token(theme, '--text-muted', '#565c68'),
+      },
+      '.cm-tooltip': {
+        border: `1px solid ${tooltipBorder}`,
+        backgroundColor: elevated,
+      },
+      '.cm-panels': {
+        backgroundColor: elevated,
+        color: token(theme, '--text-primary', '#abb2bf'),
+        borderBottom: `1px solid ${border}`,
+      },
+      '.cm-tooltip .cm-tooltip-arrow:before': {
+        borderTopColor: tooltipBorder,
+        borderBottomColor: tooltipBorder,
+      },
+      '.cm-tooltip .cm-tooltip-arrow:after': {
+        borderTopColor: elevated,
+        borderBottomColor: elevated,
+      },
+      '.cm-tooltip-autocomplete': {
+        '& > ul > li[aria-selected]': {
+          backgroundColor: selection,
+          color: token(theme, '--text-primary', '#abb2bf'),
+        },
+      },
+    },
+    { dark: theme.appearance === 'dark' },
+  )
+}
 
-export function getThemeExtension(themeName: ThemeName): Extension {
-  if (themeName === 'one-dark') {
-    return [baseTheme, oneDark]
-  }
-  return [baseTheme, oneLight]
+export function getThemeExtension(theme: ThemeDefinition): Extension {
+  return [baseTheme, createEditorViewTheme(theme), syntaxHighlighting(createHighlighting(theme))]
 }

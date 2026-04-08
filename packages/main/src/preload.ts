@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '@aide/shared'
 import type {
-  ThemeName,
+  ThemeDefinition,
+  ThemeId,
+  ThemeStateSnapshot,
   FsWatchEvent,
   GitStatusResult,
   GitignoreAuditResult,
@@ -68,10 +70,19 @@ const api: WindowApi = {
   closeWindow: () => ipcRenderer.send(IpcChannels.WINDOW_CLOSE),
 
   // Theme
-  getTheme: (): Promise<ThemeName> => ipcRenderer.invoke(IpcChannels.THEME_GET),
-  setTheme: (theme: ThemeName): Promise<void> => ipcRenderer.invoke(IpcChannels.THEME_SET, theme),
-  onThemeChanged: (callback: (theme: ThemeName) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, theme: ThemeName) => callback(theme)
+  getThemeState: (): Promise<ThemeStateSnapshot> => ipcRenderer.invoke(IpcChannels.THEME_GET),
+  listThemes: (): Promise<ThemeDefinition[]> => ipcRenderer.invoke(IpcChannels.THEME_LIST),
+  setTheme: (themeId: ThemeId): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.THEME_SET, themeId).then(() => undefined),
+  setDefaultDarkTheme: (themeId: ThemeId): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.THEME_SET_DEFAULT_DARK, themeId).then(() => undefined),
+  setDefaultLightTheme: (themeId: ThemeId): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.THEME_SET_DEFAULT_LIGHT, themeId).then(() => undefined),
+  reloadThemes: (): Promise<ThemeStateSnapshot> => ipcRenderer.invoke(IpcChannels.THEME_RELOAD),
+  openThemesDirectory: (): Promise<void> => ipcRenderer.invoke(IpcChannels.THEME_OPEN_DIRECTORY),
+  onThemeChanged: (callback: (state: ThemeStateSnapshot) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: ThemeStateSnapshot) =>
+      callback(state)
     ipcRenderer.on(IpcChannels.THEME_CHANGED, handler)
     return () => ipcRenderer.removeListener(IpcChannels.THEME_CHANGED, handler)
   },
