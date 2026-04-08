@@ -39,7 +39,7 @@ export function EditorBreadcrumbBar({ filePath, workspaceRoot, lspStatus = 'none
     <div className="editor-breadcrumb">
       <div className="editor-breadcrumb__tools">
         {/* Stub: outline / symbol list */}
-        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Outline" title="Outline">
+        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Outline" title="Outline" disabled>
           <svg width="14" height="14" viewBox="0 0 14 14">
             <circle cx="2" cy="3" r="1" fill="currentColor" />
             <circle cx="2" cy="7" r="1" fill="currentColor" />
@@ -48,19 +48,19 @@ export function EditorBreadcrumbBar({ filePath, workspaceRoot, lspStatus = 'none
           </svg>
         </button>
         {/* Stub: in-file search */}
-        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Search in file" title="Search in file">
+        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Search in file" title="Search in file" disabled>
           <svg width="14" height="14" viewBox="0 0 14 14">
             <circle cx="6" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.2" fill="none" />
             <path d="M9 9l3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
         </button>
         {/* Stub: back / forward navigation */}
-        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Back" title="Back">
+        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Back" title="Back" disabled>
           <svg width="14" height="14" viewBox="0 0 14 14">
             <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>
         </button>
-        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Forward" title="Forward">
+        <button type="button" className="editor-breadcrumb__icon-btn" aria-label="Forward" title="Forward" disabled>
           <svg width="14" height="14" viewBox="0 0 14 14">
             <path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>
@@ -78,6 +78,7 @@ export function EditorBreadcrumbBar({ filePath, workspaceRoot, lspStatus = 'none
                   'editor-breadcrumb__segment' +
                   (isLast ? ' editor-breadcrumb__segment--last' : '')
                 }
+                disabled
               >
                 {seg}
               </button>
