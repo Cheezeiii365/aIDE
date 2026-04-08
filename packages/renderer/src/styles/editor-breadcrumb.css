@@ -111,8 +111,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 6px currentColor;
+  background: currentcolor;
+  box-shadow: 0 0 6px currentcolor;
 }
 
 .editor-breadcrumb__lsp--healthy {
