@@ -12,8 +12,12 @@ interface Props {
 function relativeSegments(filePath: string, root?: string | null): string[] {
   if (!filePath) return []
   let rel = filePath
-  if (root && filePath.startsWith(root)) {
-    rel = filePath.slice(root.length)
+  const normalizedRoot = root?.replace(/\/+$/, '')
+  if (
+    normalizedRoot
+    && (filePath === normalizedRoot || filePath.startsWith(`${normalizedRoot}/`))
+  ) {
+    rel = filePath.slice(normalizedRoot.length)
   }
   return rel.split('/').filter(Boolean)
 }
