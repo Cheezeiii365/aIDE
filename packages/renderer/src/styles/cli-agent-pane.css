@@ -23,12 +23,60 @@
   background: var(--bg-elevated);
 }
 
+.cli-agent-pane__backend-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 100ms, border-color 100ms;
+}
+
+.cli-agent-pane__backend-switcher:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+}
+
+.cli-agent-pane__backend-switcher:has(select:disabled) {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.cli-agent-pane__backend-switcher--claude-code .cli-agent-pane__backend-label {
+  color: var(--text-success);
+}
+.cli-agent-pane__backend-switcher--opencode .cli-agent-pane__backend-label {
+  color: var(--text-info);
+}
+.cli-agent-pane__backend-switcher--codex .cli-agent-pane__backend-label {
+  color: var(--text-warning);
+}
+
 .cli-agent-pane__backend-label {
   font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-secondary);
+}
+
+.cli-agent-pane__backend-caret {
+  font-size: 8px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.cli-agent-pane__backend-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+  font: inherit;
 }
 
 .cli-agent-pane__model {
@@ -229,4 +277,32 @@
   font-size: 12px;
   color: var(--text-error);
   padding: 3px 0;
+}
+
+/* --- Per-message backend badge (mixed-backend transcripts) -------- */
+
+.cli-agent-msg__backend-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 2px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.cli-agent-msg__backend-badge--claude-code {
+  color: var(--text-success);
+  background: color-mix(in srgb, var(--text-success) 14%, transparent);
+}
+.cli-agent-msg__backend-badge--opencode {
+  color: var(--text-info);
+  background: color-mix(in srgb, var(--text-info) 14%, transparent);
+}
+.cli-agent-msg__backend-badge--codex {
+  color: var(--text-warning);
+  background: color-mix(in srgb, var(--text-warning) 14%, transparent);
 }

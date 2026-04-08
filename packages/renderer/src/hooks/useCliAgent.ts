@@ -20,9 +20,13 @@ export interface UseCliAgentReturn {
   model: string | null
   lastError: string | null
   conversationTitle: string
+  /** Currently active external backend for this session (source of truth for the pane header). */
+  activeBackend: AgentBackend | null
   start: (backend: AgentBackend) => Promise<void>
   send: (content: string) => Promise<void>
   stop: () => void
+  /** Hot-swap the underlying CLI backend for this conversation. Returns true on success. */
+  switchBackend: (backend: AgentBackend) => Promise<boolean>
 }
 
 export interface UseCliAgentOptions {
@@ -34,6 +38,7 @@ export interface UseCliAgentOptions {
 
 export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
   const { workspaceId, conversationId, worktreePath } = options
+  const [activeBackend, setActiveBackend] = useState<AgentBackend | null>(options.backend ?? null)
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<CliAgentMessage[]>([])
   const [renderTick, setRenderTick] = useState(0)
@@ -82,6 +87,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
         setProcessStatus(session.processStatus)
         setModel(session.model ?? null)
         setLastError(session.lastError ?? null)
+        setActiveBackend(session.activeBackend ?? session.backend ?? options.backend ?? null)
         setHistoryHydrated(true)
         tick()
         return
@@ -216,6 +222,7 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
       setProcessStatus('error')
     } else {
       sessionIdRef.current = result.sessionId
+      setActiveBackend(backend)
       const session = await window.api.cliAgentGetSession(workspaceId, result.sessionId)
       if (session) {
         // Main starts native / external sessions with [] until first send; keep hydrated history.
@@ -225,10 +232,36 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
         setProcessStatus(session.processStatus)
         setModel(session.model ?? null)
         setLastError(session.lastError ?? null)
+        setActiveBackend(session.activeBackend ?? session.backend ?? backend)
       }
       tick()
     }
   }, [workspaceId, conversationId, worktreePath, tick])
+
+  const switchBackend = useCallback(async (backend: AgentBackend): Promise<boolean> => {
+    const sid = sessionIdRef.current
+    if (!sid) return false
+    // The hot-swap IPC ships with the backend rework. Until then, gracefully no-op
+    // and let the caller fall back to the start() path.
+    const api = window.api as typeof window.api & {
+      cliAgentSwitchBackend?: (
+        sessionId: string,
+        backend: AgentBackend,
+      ) => Promise<{ success: true } | { error: string }>
+    }
+    if (typeof api.cliAgentSwitchBackend !== 'function') {
+      setLastError('Backend hot-swap is not available in this build yet.')
+      return false
+    }
+    const result = await api.cliAgentSwitchBackend(sid, backend)
+    if ('error' in result) {
+      setLastError(result.error)
+      return false
+    }
+    setActiveBackend(backend)
+    setLastError(null)
+    return true
+  }, [])
 
   const send = useCallback(async (content: string) => {
     const sid = sessionIdRef.current
@@ -264,8 +297,10 @@ export function useCliAgent(options: UseCliAgentOptions): UseCliAgentReturn {
     model,
     lastError,
     conversationTitle,
+    activeBackend,
     start,
     send,
     stop,
+    switchBackend,
   }
 }

@@ -5,6 +5,7 @@ import { useCliAgent } from '../../hooks/useCliAgent'
 import { AgentStatusDot } from '../chat/AgentStatusDot'
 import { ChatInput } from '../chat/ChatInput'
 import { renderMarkdown } from '../../lib/markdownRenderer'
+import { CLI_BACKENDS, backendBadgeLabel, backendLabel } from '../../lib/agentBackend'
 import '../../styles/cli-agent-pane.css'
 
 interface CliAgentPanelParams {
@@ -76,15 +77,51 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
   }
 
   const isActive = agent.processStatus === 'running' || agent.processStatus === 'starting' || agent.processStatus === 'rate_limited'
+  const headerBackend: AgentBackend = agent.activeBackend ?? backend
+
+  // Detect mixed-backend transcripts so we only render per-message badges when
+  // the conversation actually contains output from more than one external CLI.
+  const backendsSeen = useMemo(() => {
+    const set = new Set<AgentBackend>()
+    for (const m of agent.messages) {
+      if (m.backend) set.add(m.backend)
+    }
+    return set
+  }, [agent.messages])
+  const showBackendBadges = backendsSeen.size > 1
+
+  const handleBackendChange = async (next: AgentBackend) => {
+    if (next === headerBackend) return
+    if (isActive) return
+    const ok = await agent.switchBackend(next)
+    // Fall back to a fresh start() if the hot-swap IPC isn't wired in this build.
+    if (!ok) await agent.start(next)
+  }
 
   return (
     <div className="cli-agent-pane" style={{ ['--panel-zoom' as string]: String(zoomFactor ?? 1) }}>
       {/* Header */}
       <div className="cli-agent-pane__header">
         <AgentStatusDot status={agent.processStatus} />
-        <span className="cli-agent-pane__backend-label">
-          {backend === 'claude-code' ? 'Claude Code' : 'Codex'}
-        </span>
+        <label
+          className={`cli-agent-pane__backend-switcher cli-agent-pane__backend-switcher--${headerBackend}`}
+          title={isActive ? 'Stop the active turn before switching backends' : 'Switch backend'}
+        >
+          <span className="cli-agent-pane__backend-label">
+            {backendLabel(headerBackend)}
+          </span>
+          <span className="cli-agent-pane__backend-caret">{'\u25BE'}</span>
+          <select
+            className="cli-agent-pane__backend-select"
+            value={headerBackend}
+            disabled={isActive}
+            onChange={(e) => { void handleBackendChange(e.target.value as AgentBackend) }}
+          >
+            {CLI_BACKENDS.map((b) => (
+              <option key={b} value={b}>{backendLabel(b)}</option>
+            ))}
+          </select>
+        </label>
         {agent.model && (
           <span className="cli-agent-pane__model">{agent.model}</span>
         )}
@@ -122,7 +159,11 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
         )}
 
         {agent.messages.map((msg) => (
-          <CliAgentMessageBubble key={msg.id} message={msg} />
+          <CliAgentMessageBubble
+            key={msg.id}
+            message={msg}
+            showBackendBadge={showBackendBadges}
+          />
         ))}
 
         {agent.streamingContent && (
@@ -150,7 +191,23 @@ export function CliAgentPane({ params, api }: IDockviewPanelProps<CliAgentPanelP
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function CliAgentMessageBubble({ message }: { message: CliAgentMessage }) {
+function CliAgentMessageBubble({
+  message,
+  showBackendBadge,
+}: {
+  message: CliAgentMessage
+  showBackendBadge: boolean
+}) {
+  const badge =
+    showBackendBadge && message.backend && message.type !== 'user' ? (
+      <span
+        className={`cli-agent-msg__backend-badge cli-agent-msg__backend-badge--${message.backend}`}
+        title={`From ${backendLabel(message.backend)}`}
+      >
+        {backendBadgeLabel(message.backend)}
+      </span>
+    ) : null
+
   if (message.type === 'user') {
     return (
       <div className="cli-agent-msg cli-agent-msg--user">
@@ -166,6 +223,7 @@ function CliAgentMessageBubble({ message }: { message: CliAgentMessage }) {
         <span className="cli-agent-msg__tool-icon">&#x25B6;</span>
         <span className="cli-agent-msg__tool-name">{message.toolName ?? 'tool'}</span>
         <span className="cli-agent-msg__tool-text">{message.content}</span>
+        {badge}
       </div>
     )
   }
@@ -174,6 +232,7 @@ function CliAgentMessageBubble({ message }: { message: CliAgentMessage }) {
     return (
       <div className="cli-agent-msg cli-agent-msg--tool-result">
         {message.content}
+        {badge}
       </div>
     )
   }
@@ -182,6 +241,7 @@ function CliAgentMessageBubble({ message }: { message: CliAgentMessage }) {
     return (
       <div className="cli-agent-msg cli-agent-msg--system">
         {message.content}
+        {badge}
       </div>
     )
   }
@@ -190,6 +250,7 @@ function CliAgentMessageBubble({ message }: { message: CliAgentMessage }) {
     return (
       <div className="cli-agent-msg cli-agent-msg--result">
         {message.content}
+        {badge}
       </div>
     )
   }
@@ -198,6 +259,7 @@ function CliAgentMessageBubble({ message }: { message: CliAgentMessage }) {
     return (
       <div className="cli-agent-msg cli-agent-msg--error">
         {message.content}
+        {badge}
       </div>
     )
   }
@@ -206,6 +268,7 @@ function CliAgentMessageBubble({ message }: { message: CliAgentMessage }) {
   return (
     <div className="cli-agent-msg cli-agent-msg--assistant">
       <CliAgentMarkdown content={message.content} />
+      {badge}
     </div>
   )
 }

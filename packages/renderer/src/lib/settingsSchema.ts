@@ -129,11 +129,12 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
   {
     key: 'agent.backend',
     label: 'Agent Backend',
-    description: 'Which agent backend to use. Built-in uses the integrated LLM agent. Claude Code and Codex wrap external CLI tools.',
+    description: 'Default agent backend for new chats. Built-in uses the integrated LLM agent. Claude Code, OpenCode, and Codex wrap external CLI tools — these can be hot-swapped per conversation from the agent pane.',
     type: 'enum',
     enumValues: [
       { value: 'built-in', label: 'Built-in' },
       { value: 'claude-code', label: 'Claude Code' },
+      { value: 'opencode', label: 'OpenCode' },
       { value: 'codex', label: 'Codex' },
     ],
     category: 'agent.backend',
@@ -143,6 +144,14 @@ export const SETTINGS_DESCRIPTORS: SettingDescriptor[] = [
     key: 'agent.claudeCodePath',
     label: 'Claude Code Path',
     description: 'Path to the Claude Code CLI binary. Leave empty to auto-detect from node_modules or PATH.',
+    type: 'string',
+    category: 'agent.backend',
+    scope: 'user',
+  },
+  {
+    key: 'agent.opencodePath',
+    label: 'OpenCode Path',
+    description: 'Path to the OpenCode CLI binary, or leave empty to use the bundled @opencode-ai/sdk and let aIDE manage the OpenCode server process.',
     type: 'string',
     category: 'agent.backend',
     scope: 'user',

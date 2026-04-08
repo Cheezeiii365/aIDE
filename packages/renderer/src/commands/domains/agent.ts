@@ -4,10 +4,11 @@
  * Backend choice comes from resolved settings (`agent.backend`). Built-in chat creates a conversation via IPC first when possible.
  */
 
-import type { ConversationMeta } from '@aide/shared'
+import type { ConversationMeta, ExternalCliBackend } from '@aide/shared'
 import type { DockviewApi, IDockviewPanel } from 'dockview-react'
 import type { CommandContext, GetCommandContext } from '../context'
 import type { CommandSpec } from './types'
+import { backendLabel, isCliBackend } from '../../lib/agentBackend'
 
 /**
  * Creates a `chatPane` with a server-issued `conversationId`, or falls back to a panel without id if create fails.
@@ -61,7 +62,7 @@ function addCliAgentPanel(
   workspaceId: string,
   workspaceRoot: string | undefined,
   editorPanel: IDockviewPanel | undefined,
-  backend: Extract<ConversationMeta['backend'], 'claude-code' | 'codex'>,
+  backend: ExternalCliBackend,
 ): void {
   void window.api.conversationCreate({
     workspaceId,
@@ -71,7 +72,7 @@ function addCliAgentPanel(
       id: `agent-${Date.now()}`,
       component: 'cliAgentPane',
       tabComponent: 'agentTab',
-      title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+      title: backendLabel(backend),
       params: {
         workspaceId,
         workspaceRoot,
@@ -89,7 +90,7 @@ function addCliAgentPanel(
       id: `agent-${Date.now()}`,
       component: 'cliAgentPane',
       tabComponent: 'agentTab',
-      title: backend === 'claude-code' ? 'Claude Code' : 'Codex',
+      title: backendLabel(backend),
       params: {
         workspaceId,
         workspaceRoot,
@@ -124,7 +125,7 @@ export function collectAgentCommands(getCtx: GetCommandContext): CommandSpec[] {
 
         void window.api.getResolvedSettings(workspaceId).then((resolved) => {
           const backend = resolved['agent.backend'] ?? 'built-in'
-          if (backend === 'claude-code' || backend === 'codex') {
+          if (isCliBackend(backend)) {
             addCliAgentPanel(ctx, api, workspaceId, workspaceRoot, editorPanel, backend)
           } else {
             addBuiltInAgentPanel(ctx, api, workspaceId, workspaceRoot, editorPanel)
@@ -148,7 +149,7 @@ export function collectAgentCommands(getCtx: GetCommandContext): CommandSpec[] {
           api.addPanel({
             id: `agent-${Date.now()}`,
             component:
-              conv.source === 'claude-native' || conv.backend === 'claude-code' || conv.backend === 'codex'
+              conv.source === 'claude-native' || isCliBackend(conv.backend)
                 ? 'cliAgentPane'
                 : 'chatPane',
             tabComponent: 'agentTab',

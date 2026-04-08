@@ -14,7 +14,7 @@ export type {
   LlmProviderConfig,
 } from './agentTypes'
 export type {
-  AgentBackend, CliAgentProcessStatus,
+  AgentBackend, ExternalCliBackend, CliAgentProcessStatus,
   CliAgentMessage, CliAgentStreamDelta, CliAgentSession,
   CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
 } from './cliAgentTypes'
@@ -399,6 +399,7 @@ export interface AideProjectSettings {
   // Agent / Backend settings
   'agent.backend'?: AgentBackend
   'agent.claudeCodePath'?: string
+  'agent.opencodePath'?: string
   'agent.codexPath'?: string
 }
 
@@ -429,6 +430,7 @@ export interface ResolvedSettings {
   // Agent / Backend settings
   'agent.backend': AgentBackend
   'agent.claudeCodePath': string
+  'agent.opencodePath': string
   'agent.codexPath': string
 }
 
@@ -443,6 +445,7 @@ export const SENSITIVE_AGENT_KEYS: ReadonlySet<string> = new Set([
   'agent.baseUrl',
   'agent.backend',
   'agent.claudeCodePath',
+  'agent.opencodePath',
   'agent.codexPath',
   'agent.permissionTier',
   'agent.autoApprove',

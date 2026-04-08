@@ -9,7 +9,10 @@
 // Agent backend selection
 // ---------------------------------------------------------------------------
 
-export type AgentBackend = 'built-in' | 'claude-code' | 'codex'
+export type AgentBackend = 'built-in' | 'claude-code' | 'opencode' | 'codex'
+
+/** External (non-built-in) CLI agent backends. */
+export type ExternalCliBackend = Exclude<AgentBackend, 'built-in'>
 
 // ---------------------------------------------------------------------------
 // Process lifecycle
@@ -44,6 +47,9 @@ export interface CliAgentMessage {
   durationMs?: number
   totalCostUsd?: number
   isSuccess?: boolean
+
+  /** Which backend produced this message (set on external-agent messages). */
+  backend?: AgentBackend
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +72,9 @@ export interface CliAgentSession {
   id: string
   workspaceId: string
   backend: AgentBackend
+  /** Currently active backend for this session. Source of truth for the pane header
+   *  once hot-swap is wired up; falls back to `backend` for legacy sessions. */
+  activeBackend?: AgentBackend
   processStatus: CliAgentProcessStatus
   messages: CliAgentMessage[]
   model?: string
