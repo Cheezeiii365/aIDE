@@ -3,15 +3,19 @@ import type { CliAgentMessage } from '@aide/shared'
 
 const mocks = vi.hoisted(() => ({
   execFileSync: vi.fn(),
+  spawn: vi.fn(),
   existsSync: vi.fn(),
   query: vi.fn(),
+  createOpencodeClient: vi.fn(),
 }))
 
 vi.mock('child_process', () => ({
   default: {
     execFileSync: mocks.execFileSync,
+    spawn: mocks.spawn,
   },
   execFileSync: mocks.execFileSync,
+  spawn: mocks.spawn,
 }))
 
 vi.mock('fs', () => ({
@@ -30,6 +34,10 @@ vi.mock('electron', () => ({
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: mocks.query,
+}))
+
+vi.mock('@opencode-ai/sdk/client', () => ({
+  createOpencodeClient: mocks.createOpencodeClient,
 }))
 
 import { app } from 'electron'
@@ -157,6 +165,31 @@ describe('CliAgentManager', () => {
           pathToClaudeCodeExecutable: expectedCliPath,
         }),
       }),
+    )
+  })
+
+  it('switches backend and persists the active backend', async () => {
+    const store = makeStore()
+    const manager = new CliAgentManager({
+      workspaceRoot: '/workspace',
+      getWebContents: () => null,
+      conversationStore: store as never,
+    })
+
+    const started = await manager.start('ws-1', 'claude-code', 'conv-switch')
+    if ('error' in started) throw new Error(started.error)
+
+    const result = await manager.switchBackend(started.sessionId, 'codex')
+
+    expect(result).toEqual({ success: true })
+    expect(manager.getSessionById(started.sessionId)?.backend).toBe('codex')
+    expect(store.saveMessages).toHaveBeenCalledWith(
+      'conv-switch',
+      expect.objectContaining({ activeBackend: 'codex' }),
+    )
+    expect(store.updateMeta).toHaveBeenCalledWith(
+      'conv-switch',
+      expect.objectContaining({ backend: 'codex' }),
     )
   })
 })

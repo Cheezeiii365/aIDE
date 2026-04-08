@@ -1,19 +1,9 @@
 /**
  * CLI Agent Manager — manages external CLI agent sessions.
  *
- * Uses the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) for the
- * `claude-code` backend. The SDK spawns a Claude Code subprocess and
- * provides a typed async generator of messages. Codex remains a stub.
- *
- * Architecture: Each `send()` calls `query()` which returns an
- * `AsyncGenerator<SDKMessage>`. The generator is consumed in a background
- * loop that normalizes SDK messages into CliAgentMessage and emits them
- * via IPC. Session continuity uses the SDK's `resume` option.
- *
- * The SDK ships its own `cli.js`, but packaged Electron apps need that file
- * unpacked onto the real filesystem so a child Node process can execute it.
- * Resolution order: explicit setting -> bundled Agent SDK in app -> legacy
- * bundled Claude Code package -> workspace node_modules -> global `claude`.
+ * Unlike the original Claude-only implementation, this manager now owns the
+ * generic session lifecycle for all external backends and delegates transport
+ * details to backend adapters.
  */
 
 import { randomUUID } from 'crypto'
@@ -21,52 +11,53 @@ import { execFileSync } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { app, type WebContents } from 'electron'
-import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import { IpcChannels, deriveTitle } from '@aide/shared'
 import type {
   AgentBackend,
-  CliAgentProcessStatus,
+  CliAgentBackendStateMap,
   CliAgentMessage,
-  CliAgentSession,
-  CliAgentStreamDelta,
-  CliAgentStatusPayload,
-  CliAgentResultPayload,
   CliAgentMessagePayload,
+  CliAgentProcessStatus,
+  CliAgentResultPayload,
+  CliAgentSession,
+  CliAgentStatusPayload,
+  CliAgentStreamDelta,
   ConversationListChangedPayload,
+  ExternalCliBackend,
 } from '@aide/shared'
 import type { ConversationStore } from './conversationStore'
+import { createClaudeCodeAdapter } from './cliAdapters/claudeCodeAdapter'
+import { createCodexAdapter } from './cliAdapters/codexAdapter'
+import { createOpenCodeAdapter } from './cliAdapters/openCodeAdapter'
+import type { CliBackendAdapter, CliBackendEvent, CliBackendRun } from './cliAdapters/types'
 
-// ---------------------------------------------------------------------------
-// Internal session state
-// ---------------------------------------------------------------------------
+interface PersistedCliConversation {
+  messages?: CliAgentMessage[]
+  activeBackend?: ExternalCliBackend
+  backendStates?: CliAgentBackendStateMap
+  claudeSessionId?: string
+}
 
 interface CliAgentSessionInternal {
   id: string
   workspaceId: string
-  backend: AgentBackend
-  queryInstance: Query | null
-  abortController: AbortController | null
+  backend: ExternalCliBackend
+  activeRun: CliBackendRun | null
   processStatus: CliAgentProcessStatus
   messages: CliAgentMessage[]
   model?: string
   sessionToolNames?: string[]
   lastError?: string
   totalCostUsd: number
-  /** Claude Code session ID for resume across sends */
-  claudeSessionId?: string
-  /** Worktree path this session operates in (if any). */
   worktreePath?: string
+  backendStates: CliAgentBackendStateMap
 }
-
-// ---------------------------------------------------------------------------
-// Options
-// ---------------------------------------------------------------------------
 
 export interface CliAgentManagerOpts {
   workspaceRoot: string
   getWebContents: () => WebContents | null
   claudeCodePath?: string
+  opencodePath?: string
   codexPath?: string
   conversationStore?: ConversationStore
   loadClaudeHistory?: (claudeSessionId: string) => Promise<CliAgentMessage[]>
@@ -82,81 +73,87 @@ function comparableHistoryCount(messages: CliAgentMessage[]): number {
   ).length
 }
 
-// ---------------------------------------------------------------------------
-// Manager
-// ---------------------------------------------------------------------------
+function isExternalBackend(backend: AgentBackend): backend is ExternalCliBackend {
+  return backend === 'claude-code' || backend === 'opencode' || backend === 'codex'
+}
+
+function parsePersistedConversation(raw: unknown): PersistedCliConversation {
+  if (!raw || typeof raw !== 'object') return {}
+  const persisted = raw as PersistedCliConversation
+  const backendStates: CliAgentBackendStateMap = { ...(persisted.backendStates ?? {}) }
+  if (!backendStates['claude-code']?.sessionId && typeof persisted.claudeSessionId === 'string') {
+    backendStates['claude-code'] = {
+      ...(backendStates['claude-code'] ?? {}),
+      sessionId: persisted.claudeSessionId,
+    }
+  }
+  return {
+    messages: Array.isArray(persisted.messages) ? persisted.messages : [],
+    activeBackend: persisted.activeBackend,
+    backendStates,
+    claudeSessionId: persisted.claudeSessionId,
+  }
+}
 
 export class CliAgentManager {
   private sessions = new Map<string, CliAgentSessionInternal>()
-  private workspaceRoot: string
-  private getWebContents: () => WebContents | null
+  private readonly workspaceRoot: string
+  private readonly getWebContents: () => WebContents | null
   private claudeCodePath: string
+  private opencodePath: string
   private codexPath: string
-  private conversationStore: ConversationStore | null
-  private loadClaudeHistory: ((claudeSessionId: string) => Promise<CliAgentMessage[]>) | null
-  /** Resolved path to the Claude Code CLI, cached after first lookup */
+  private readonly conversationStore: ConversationStore | null
+  private readonly loadClaudeHistory:
+    | ((claudeSessionId: string) => Promise<CliAgentMessage[]>)
+    | null
   private resolvedClaudeCodePath: string | null = null
+  private resolvedOpenCodePath: string | null = null
+  private resolvedCodexPath: string | null = null
 
   constructor(opts: CliAgentManagerOpts) {
     this.workspaceRoot = opts.workspaceRoot
     this.getWebContents = opts.getWebContents
     this.claudeCodePath = opts.claudeCodePath ?? ''
+    this.opencodePath = opts.opencodePath ?? ''
     this.codexPath = opts.codexPath ?? ''
     this.conversationStore = opts.conversationStore ?? null
     this.loadClaudeHistory = opts.loadClaudeHistory ?? null
   }
 
-  // ─── Public API ──────────────────────────────
-
-  /**
-   * Initialize a CLI agent session. Does not start a query yet — that
-   * happens on the first `send()`.
-   *
-   * If `conversationId` is provided, resumes an existing conversation
-   * (loads claudeSessionId from the store for SDK resume).
-   */
   async start(
     workspaceId: string,
     backend: AgentBackend,
     conversationId?: string,
     worktreePath?: string,
   ): Promise<{ sessionId: string } | { error: string }> {
-    if (backend === 'codex') {
-      return { error: 'Codex integration coming soon.' }
-    }
-
     if (backend === 'built-in') {
       return { error: 'Use the built-in agent chat panel instead.' }
     }
 
-    // If resuming an existing conversation, load from store
-    let existingMessages: CliAgentMessage[] = []
-    let existingClaudeSessionId: string | undefined
-
-    if (conversationId && this.conversationStore) {
-      const meta = await this.conversationStore.get(conversationId)
-      if (meta?.claudeSessionId) {
-        existingClaudeSessionId = meta.claudeSessionId
-      }
-      const saved = (await this.conversationStore.loadMessages(conversationId)) as {
-        messages?: CliAgentMessage[]
-        claudeSessionId?: string
-      } | null
-      if (saved?.messages) {
-        existingMessages = saved.messages
-      }
-      if (saved?.claudeSessionId) {
-        existingClaudeSessionId = saved.claudeSessionId
-      }
+    if (conversationId?.startsWith('claude-native:') && backend !== 'claude-code') {
+      return { error: 'Native Claude conversations cannot switch to a different backend.' }
     }
 
-    if (!existingClaudeSessionId && conversationId?.startsWith('claude-native:')) {
+    const sessionId = conversationId ?? randomUUID()
+    const persisted =
+      conversationId && this.conversationStore
+        ? parsePersistedConversation(await this.conversationStore.loadMessages(conversationId))
+        : parsePersistedConversation(null)
+
+    let existingMessages = persisted.messages ?? []
+    const backendStates = persisted.backendStates ?? {}
+
+    if (!backendStates['claude-code']?.sessionId && conversationId?.startsWith('claude-native:')) {
       const raw = conversationId.slice('claude-native:'.length)
       if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
-        existingClaudeSessionId = raw
+        backendStates['claude-code'] = {
+          ...(backendStates['claude-code'] ?? {}),
+          sessionId: raw,
+        }
       }
     }
 
+    const existingClaudeSessionId = backendStates['claude-code']?.sessionId
     if (existingClaudeSessionId && this.loadClaudeHistory) {
       try {
         const nativeMessages = await this.loadClaudeHistory(existingClaudeSessionId)
@@ -167,11 +164,9 @@ export class CliAgentManager {
           existingMessages = nativeMessages
         }
       } catch {
-        // Fall back to persisted shadow copy when native Claude history is unavailable.
+        // Fall back to the shadow copy when native Claude history is unavailable.
       }
     }
-
-    const sessionId = conversationId ?? randomUUID()
 
     if (this.conversationStore && !sessionId.startsWith('claude-native:')) {
       await this.conversationStore.ensure(sessionId, {
@@ -181,8 +176,18 @@ export class CliAgentManager {
       })
     }
 
-    // If session already in memory, return it
-    if (this.sessions.has(sessionId)) {
+    const existing = this.sessions.get(sessionId)
+    if (existing) {
+      if (existing.activeRun) {
+        return { error: 'Agent is already processing a request. Stop it first or wait.' }
+      }
+      existing.backend = backend
+      existing.model = existing.backendStates[backend]?.model
+      existing.sessionToolNames = undefined
+      existing.worktreePath = worktreePath ?? existing.worktreePath
+      await this.persistSession(existing)
+      await this.broadcastConversationList(existing.workspaceId)
+      this.emitStatus(existing)
       return { sessionId }
     }
 
@@ -190,35 +195,54 @@ export class CliAgentManager {
       id: sessionId,
       workspaceId,
       backend,
-      queryInstance: null,
-      abortController: null,
+      activeRun: null,
       processStatus: 'stopped',
       messages: existingMessages,
       totalCostUsd: 0,
-      claudeSessionId: existingClaudeSessionId,
+      model: backendStates[backend]?.model,
       worktreePath,
+      backendStates,
     }
 
     this.sessions.set(sessionId, session)
     this.emitStatus(session)
-
     return { sessionId }
   }
 
-  /**
-   * Send a prompt to the CLI agent. Starts an SDK query that streams
-   * messages back via IPC. Uses `resume` for conversation continuity.
-   */
+  async switchBackend(
+    sessionId: string,
+    backend: AgentBackend,
+  ): Promise<{ success: true } | { error: string }> {
+    if (!isExternalBackend(backend)) {
+      return { error: 'Only external CLI backends can be selected here.' }
+    }
+
+    const session = this.sessions.get(sessionId)
+    if (!session) return { error: 'Session not found' }
+    if (session.activeRun) {
+      return { error: 'Stop the active run before switching backends.' }
+    }
+    if (session.id.startsWith('claude-native:') && backend !== 'claude-code') {
+      return { error: 'Native Claude conversations cannot switch to a different backend.' }
+    }
+
+    session.backend = backend
+    session.model = session.backendStates[backend]?.model
+    session.sessionToolNames = undefined
+    session.lastError = undefined
+    await this.persistSession(session)
+    await this.broadcastConversationList(session.workspaceId)
+    this.emitStatus(session)
+    return { success: true }
+  }
+
   async send(sessionId: string, content: string): Promise<{ success: true } | { error: string }> {
     const session = this.sessions.get(sessionId)
     if (!session) return { error: 'Session not found' }
-
-    // If a query is already running, reject (one at a time)
-    if (session.queryInstance) {
+    if (session.activeRun) {
       return { error: 'Agent is already processing a request. Stop it first or wait.' }
     }
 
-    // Add user message to history
     const userMsg: CliAgentMessage = {
       id: randomUUID(),
       type: 'user',
@@ -227,53 +251,69 @@ export class CliAgentManager {
     }
     session.messages.push(userMsg)
     this.emitMessage(session, userMsg)
-
-    // Auto-title on first user message
     await this.maybeAutoTitle(session, content)
 
-    // Reset error state
     session.lastError = undefined
+    const prompt = this.buildTurnPrompt(session, content)
 
-    // Fire and forget the consumption loop
-    this.consumeQuery(session, content).catch((err) => {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      console.error(
-        `[CliAgentManager] Unhandled consumeQuery error for session ${session.id}:`,
-        errMsg,
-      )
-      if (err instanceof Error && err.stack) console.error(`[CliAgentManager] Stack:`, err.stack)
-      session.lastError = errMsg
-      this.setStatus(session, 'error')
-    })
+    let adapter: CliBackendAdapter
+    try {
+      adapter = this.createAdapter(session.backend)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.handleRunError(session, message)
+      return { error: message }
+    }
+
+    const run = adapter.startTurn(
+      {
+        conversationId: session.id,
+        cwd: session.worktreePath ?? this.workspaceRoot,
+        prompt,
+        backendState: { ...(session.backendStates[session.backend] ?? {}) },
+      },
+      (event) => this.applyBackendEvent(session, event),
+    )
+
+    session.activeRun = run
+    this.setStatus(session, 'running')
+
+    run.completed
+      .catch((error) => {
+        if (session.processStatus === 'stopping') return
+        const message = error instanceof Error ? error.message : String(error)
+        this.handleRunError(session, message)
+      })
+      .finally(async () => {
+        if (session.activeRun === run) {
+          session.activeRun = null
+        }
+        if (session.processStatus === 'stopping' || session.processStatus === 'running') {
+          this.setStatus(session, 'stopped')
+        }
+        await this.persistSession(session)
+      })
 
     return { success: true }
   }
 
   stop(sessionId: string): void {
     const session = this.sessions.get(sessionId)
-    if (!session) return
-
-    if (session.queryInstance || session.abortController) {
-      this.setStatus(session, 'stopping')
-      session.abortController?.abort()
-      session.queryInstance?.close()
-    }
+    if (!session || !session.activeRun) return
+    this.setStatus(session, 'stopping')
+    session.activeRun.close()
   }
 
   getSession(workspaceId: string): CliAgentSession | null {
-    // Find the most recent session for this workspace
     for (const session of this.sessions.values()) {
-      if (session.workspaceId === workspaceId) {
-        return this.toPublicSession(session)
-      }
+      if (session.workspaceId === workspaceId) return this.toPublicSession(session)
     }
     return null
   }
 
-  /** Check if any active (running/starting) session uses the given worktree path. */
   hasActiveSessionsForWorktree(worktreePath: string): boolean {
     for (const session of this.sessions.values()) {
-      if (session.worktreePath === worktreePath && session.queryInstance) {
+      if (session.worktreePath === worktreePath && session.activeRun) {
         return true
       }
     }
@@ -282,12 +322,36 @@ export class CliAgentManager {
 
   getSessionById(sessionId: string): CliAgentSession | null {
     const session = this.sessions.get(sessionId)
-    if (!session) return null
-    return this.toPublicSession(session)
+    return session ? this.toPublicSession(session) : null
   }
 
   ownsSession(sessionId: string): boolean {
     return this.sessions.has(sessionId)
+  }
+
+  updatePaths(claudeCodePath: string, opencodePath: string, codexPath: string): void {
+    this.claudeCodePath = claudeCodePath
+    this.opencodePath = opencodePath
+    this.codexPath = codexPath
+    this.resolvedClaudeCodePath = null
+    this.resolvedOpenCodePath = null
+    this.resolvedCodexPath = null
+  }
+
+  getRunningSessionCount(): number {
+    let count = 0
+    for (const session of this.sessions.values()) {
+      if (session.activeRun) count += 1
+    }
+    return count
+  }
+
+  async destroy(): Promise<void> {
+    for (const session of this.sessions.values()) {
+      session.activeRun?.close()
+      await this.persistSession(session).catch(() => {})
+    }
+    this.sessions.clear()
   }
 
   private toPublicSession(session: CliAgentSessionInternal): CliAgentSession {
@@ -305,48 +369,54 @@ export class CliAgentManager {
     }
   }
 
-  updatePaths(claudeCodePath: string, codexPath: string): void {
-    this.claudeCodePath = claudeCodePath
-    this.codexPath = codexPath
-    // Invalidate cache so next query re-resolves
-    this.resolvedClaudeCodePath = null
-  }
-
-  getRunningSessionCount(): number {
-    let count = 0
-    for (const session of this.sessions.values()) {
-      if (session.queryInstance) count += 1
+  private createAdapter(backend: ExternalCliBackend): CliBackendAdapter {
+    if (backend === 'claude-code') {
+      const executablePath = this.resolveClaudeCodeExecutable()
+      if (!executablePath) {
+        throw new Error(
+          'Claude Code CLI not found. Install @anthropic-ai/claude-code globally or set agent.claudeCodePath in settings.',
+        )
+      }
+      return createClaudeCodeAdapter({ executablePath })
     }
-    return count
-  }
 
-  async destroy(): Promise<void> {
-    for (const session of this.sessions.values()) {
-      session.abortController?.abort()
-      session.queryInstance?.close()
-      await this.persistSession(session).catch(() => {})
+    if (backend === 'opencode') {
+      const executablePath = this.resolveGenericExecutable(
+        'opencode',
+        this.opencodePath,
+        this.resolvedOpenCodePath,
+      )
+      if (!executablePath) {
+        throw new Error(
+          'OpenCode CLI not found. Install opencode or set agent.opencodePath in settings.',
+        )
+      }
+      this.resolvedOpenCodePath = executablePath
+      return createOpenCodeAdapter({ executablePath })
     }
-    this.sessions.clear()
+
+    const executablePath = this.resolveGenericExecutable(
+      'codex',
+      this.codexPath,
+      this.resolvedCodexPath,
+    )
+    if (!executablePath) {
+      throw new Error(
+        'Codex CLI not found. Install @openai/codex or set agent.codexPath in settings.',
+      )
+    }
+    this.resolvedCodexPath = executablePath
+    return createCodexAdapter({ executablePath })
   }
 
-  // ─── Claude Code CLI Resolution ─────────────
-
-  /**
-   * Resolve the path to the Claude Code CLI executable.
-   * The SDK spawns Claude Code as a subprocess, so we need to tell it
-   * where the actual binary lives via `pathToClaudeCodeExecutable`.
-   */
   private resolveClaudeCodeExecutable(): string | null {
     if (this.resolvedClaudeCodePath) return this.resolvedClaudeCodePath
 
-    // 1. Explicit path from settings
     if (this.claudeCodePath && existsSync(this.claudeCodePath)) {
-      console.log(`[CliAgentManager] Using explicit Claude Code path: ${this.claudeCodePath}`)
       this.resolvedClaudeCodePath = this.claudeCodePath
       return this.claudeCodePath
     }
 
-    // 2. Bundled in Electron app
     const bundledCandidates: string[] = []
     if (app.isPackaged) {
       bundledCandidates.push(
@@ -371,402 +441,174 @@ export class CliAgentManager {
     bundledCandidates.push(
       join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'),
       join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-    )
-    for (const candidate of bundledCandidates) {
-      if (existsSync(candidate)) {
-        console.log(`[CliAgentManager] Using bundled Claude Code: ${candidate}`)
-        this.resolvedClaudeCodePath = candidate
-        return candidate
-      }
-    }
-
-    // 3. Workspace-local installation
-    const workspaceCandidates = [
       join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'),
       join(this.workspaceRoot, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-    ]
-    for (const candidate of workspaceCandidates) {
+    )
+
+    for (const candidate of bundledCandidates) {
       if (existsSync(candidate)) {
-        console.log(`[CliAgentManager] Using workspace Claude Code: ${candidate}`)
         this.resolvedClaudeCodePath = candidate
         return candidate
       }
     }
 
-    // 4. Global `claude` in PATH
     try {
       const result = execFileSync('which', ['claude'], { encoding: 'utf-8' }).trim()
       if (result) {
-        console.log(`[CliAgentManager] Using global Claude Code: ${result}`)
         this.resolvedClaudeCodePath = result
         return result
       }
     } catch {
-      // Not found in PATH
+      // Not found in PATH.
     }
 
-    console.warn('[CliAgentManager] Claude Code CLI not found in any location')
     return null
   }
 
-  // ─── SDK Query Consumption ──────────────────
+  private resolveGenericExecutable(
+    command: string,
+    explicitPath: string,
+    cachedPath: string | null,
+  ): string | null {
+    if (cachedPath) return cachedPath
+    if (explicitPath && existsSync(explicitPath)) return explicitPath
 
-  private async consumeQuery(session: CliAgentSessionInternal, prompt: string): Promise<void> {
-    const abortController = new AbortController()
-    session.abortController = abortController
-
-    const cwd = session.worktreePath ?? this.workspaceRoot
-    console.log(`[CliAgentManager] Starting SDK query for session ${session.id}`)
-    console.log(`[CliAgentManager]   cwd: ${cwd}`)
-    console.log(`[CliAgentManager]   resume: ${session.claudeSessionId ?? '(new session)'}`)
-    console.log(
-      `[CliAgentManager]   prompt: ${prompt.slice(0, 200)}${prompt.length > 200 ? '...' : ''}`,
+    const candidates: string[] = []
+    if (app.isPackaged) {
+      candidates.push(
+        join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '.bin', command),
+      )
+    }
+    candidates.push(
+      join(app.getAppPath(), 'node_modules', '.bin', command),
+      join(this.workspaceRoot, 'node_modules', '.bin', command),
     )
 
-    // Collect stderr output for diagnostics
-    const stderrChunks: string[] = []
-
-    // Resolve the Claude Code executable path for the SDK
-    const executablePath = this.resolveClaudeCodeExecutable()
-    if (!executablePath) {
-      session.lastError =
-        'Claude Code CLI not found. Install @anthropic-ai/claude-code globally or set agent.claudeCodePath in settings.'
-      const errorMsg: CliAgentMessage = {
-        id: randomUUID(),
-        type: 'error',
-        content: session.lastError,
-        timestamp: Date.now(),
-      }
-      session.messages.push(errorMsg)
-      this.emitMessage(session, errorMsg)
-      this.setStatus(session, 'error')
-      return
-    }
-    console.log(`[CliAgentManager]   executable: ${executablePath}`)
-
-    const options: Record<string, unknown> = {
-      cwd,
-      abortController,
-      pathToClaudeCodeExecutable: executablePath,
-      includePartialMessages: true,
-      permissionMode: 'default' as const,
-      settingSources: ['user', 'project', 'local'],
-      systemPrompt: { type: 'preset', preset: 'claude_code' },
-      stderr: (data: string) => {
-        stderrChunks.push(data)
-        console.warn(`[CliAgentManager] stderr: ${data.trimEnd()}`)
-      },
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate
     }
 
-    if (session.claudeSessionId) {
-      options.resume = session.claudeSessionId
-    }
-
-    let queryInstance: ReturnType<typeof query>
     try {
-      queryInstance = query({ prompt, options: options as Parameters<typeof query>[0]['options'] })
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      const errStack = err instanceof Error ? err.stack : undefined
-      console.error(`[CliAgentManager] Failed to create query:`, errMsg)
-      if (errStack) console.error(`[CliAgentManager] Stack:`, errStack)
-      session.lastError = `Failed to start agent: ${errMsg}`
-      this.setStatus(session, 'error')
-
-      // Surface the error in the chat as a message
-      const errorMsg: CliAgentMessage = {
-        id: randomUUID(),
-        type: 'error',
-        content: `Failed to start agent: ${errMsg}${stderrChunks.length ? '\n\nstderr:\n' + stderrChunks.join('') : ''}`,
-        timestamp: Date.now(),
-      }
-      session.messages.push(errorMsg)
-      this.emitMessage(session, errorMsg)
-      return
+      const result = execFileSync('which', [command], { encoding: 'utf-8' }).trim()
+      if (result) return result
+    } catch {
+      // Not found in PATH.
     }
 
-    session.queryInstance = queryInstance
-    this.setStatus(session, 'running')
-
-    let messageCount = 0
-    try {
-      for await (const message of queryInstance) {
-        if (abortController.signal.aborted) break
-        messageCount++
-        this.handleSDKMessage(session, message)
-      }
-      console.log(
-        `[CliAgentManager] Query completed for session ${session.id} — ${messageCount} messages received`,
-      )
-    } catch (err) {
-      if (!abortController.signal.aborted) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        const errStack = err instanceof Error ? err.stack : undefined
-        console.error(`[CliAgentManager] Query error for session ${session.id}:`, errMsg)
-        if (errStack) console.error(`[CliAgentManager] Stack:`, errStack)
-        if (stderrChunks.length) {
-          console.error(`[CliAgentManager] Captured stderr:\n${stderrChunks.join('')}`)
-        }
-        console.error(`[CliAgentManager] Messages received before error: ${messageCount}`)
-
-        // Build a detailed error message for the UI
-        const stderrText = stderrChunks.join('').trim()
-        const detailedError = stderrText
-          ? `${errMsg}\n\nstderr output:\n${stderrText.slice(-2000)}`
-          : errMsg
-        session.lastError = detailedError
-
-        // Surface the error in the chat
-        const errorMsg: CliAgentMessage = {
-          id: randomUUID(),
-          type: 'error',
-          content: detailedError,
-          timestamp: Date.now(),
-        }
-        session.messages.push(errorMsg)
-        this.emitMessage(session, errorMsg)
-
-        this.setStatus(session, 'error')
-      }
-    } finally {
-      session.queryInstance = null
-      session.abortController = null
-      if (session.processStatus === 'stopping') {
-        this.setStatus(session, 'stopped')
-      } else if (session.processStatus !== 'error') {
-        this.setStatus(session, 'stopped')
-      }
-      await this.persistSession(session).catch(() => {})
-    }
+    return null
   }
 
-  // ─── SDK Message Handling ───────────────────
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleSDKMessage(session: CliAgentSessionInternal, message: any): void {
-    const type = message.type as string
-    const subtype = message.subtype as string | undefined
-
-    // Log all non-streaming messages (stream_event is too noisy)
-    if (type !== 'stream_event') {
-      console.log(
-        `[CliAgentManager] SDK message: type=${type}${subtype ? ` subtype=${subtype}` : ''} session=${session.id.slice(0, 8)}`,
-      )
+  private applyBackendEvent(session: CliAgentSessionInternal, event: CliBackendEvent): void {
+    if (event.type === 'stream-delta') {
+      const payload: CliAgentStreamDelta = {
+        workspaceId: session.workspaceId,
+        sessionId: session.id,
+        messageId: event.messageId,
+        delta: event.delta,
+      }
+      this.getWebContents()?.send(IpcChannels.CLI_AGENT_STREAM_DELTA, payload)
+      return
     }
 
-    if (type === 'system') {
-      this.handleSystemMessage(session, message)
-    } else if (type === 'assistant') {
-      this.handleAssistantMessage(session, message)
-    } else if (type === 'stream_event') {
-      this.handleStreamEvent(session, message)
-    } else if (type === 'tool_progress') {
-      this.handleToolProgress(session, message)
-    } else if (type === 'tool_use_summary') {
-      this.handleToolUseSummary(session, message)
-    } else if (type === 'result') {
-      this.handleResultMessage(session, message)
-    } else if (type === 'rate_limit_event') {
-      console.warn(`[CliAgentManager] Rate limited — session ${session.id.slice(0, 8)}`)
+    if (event.type === 'backend-state') {
+      const current = session.backendStates[session.backend] ?? {}
+      session.backendStates[session.backend] = { ...current, ...event.patch }
+      if (event.patch.model) session.model = event.patch.model
+      return
+    }
+
+    if (event.type === 'session-meta') {
+      if (event.model) {
+        session.model = event.model
+        session.backendStates[session.backend] = {
+          ...(session.backendStates[session.backend] ?? {}),
+          model: event.model,
+        }
+      }
+      if (event.tools) session.sessionToolNames = event.tools
+      return
+    }
+
+    if (event.type === 'result') {
+      session.totalCostUsd += event.totalCostUsd
+      const payload: CliAgentResultPayload = {
+        workspaceId: session.workspaceId,
+        sessionId: session.id,
+        durationMs: event.durationMs,
+        totalCostUsd: session.totalCostUsd,
+        isSuccess: event.isSuccess,
+      }
+      this.getWebContents()?.send(IpcChannels.CLI_AGENT_RESULT, payload)
+      return
+    }
+
+    const message: CliAgentMessage = {
+      ...event.message,
+      backend: event.message.type === 'user' ? undefined : session.backend,
+    }
+    session.messages.push(message)
+    this.emitMessage(session, message)
+
+    if (message.type === 'status' && message.content.toLowerCase().includes('rate limited')) {
       this.setStatus(session, 'rate_limited')
-    } else {
-      // Log unknown message types so we can add handling later
-      console.log(
-        `[CliAgentManager] Unhandled SDK message type: ${type}`,
-        JSON.stringify(message).slice(0, 500),
-      )
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleSystemMessage(session: CliAgentSessionInternal, message: any): void {
-    const subtype = message.subtype as string | undefined
-
-    if (subtype === 'init') {
-      // Capture session ID for resume
-      const sdkSessionId = message.session_id as string | undefined
-      if (sdkSessionId) {
-        session.claudeSessionId = sdkSessionId
-        this.conversationStore
-          ?.updateMeta(session.id, { claudeSessionId: sdkSessionId })
-          .catch(() => {})
-      }
-
-      session.model = (message.model as string) ?? undefined
-      const tools = message.tools as string[] | undefined
-      session.sessionToolNames = tools
-
+    } else if (session.processStatus === 'rate_limited' && message.type !== 'status') {
       this.setStatus(session, 'running')
-
-      const msg: CliAgentMessage = {
-        id: (message.uuid as string) ?? randomUUID(),
-        type: 'system',
-        content: `Session initialized — model: ${session.model ?? 'unknown'}`,
-        timestamp: Date.now(),
-        raw: message,
-      }
-      session.messages.push(msg)
-      this.emitMessage(session, msg)
-    } else if (subtype === 'status') {
-      const msg: CliAgentMessage = {
-        id: (message.uuid as string) ?? randomUUID(),
-        type: 'status',
-        content: String(message.status ?? message.message ?? 'status update'),
-        timestamp: Date.now(),
-      }
-      session.messages.push(msg)
-      this.emitMessage(session, msg)
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleAssistantMessage(session: CliAgentSessionInternal, message: any): void {
-    const betaMessage = message.message
-    if (!betaMessage || !Array.isArray(betaMessage.content)) return
-
-    let text = ''
-    for (const block of betaMessage.content) {
-      if (block.type === 'text') {
-        text += block.text ?? ''
-      } else if (block.type === 'tool_use') {
-        // Emit tool use as separate message
-        const toolMsg: CliAgentMessage = {
-          id: (block.id as string) ?? randomUUID(),
-          type: 'tool_use',
-          content: `Running ${block.name ?? 'tool'}...`,
-          timestamp: Date.now(),
-          toolName: block.name as string,
-          toolUseId: block.id as string,
-        }
-        session.messages.push(toolMsg)
-        this.emitMessage(session, toolMsg)
-      }
+  private buildTurnPrompt(session: CliAgentSessionInternal, content: string): string {
+    const backendState = session.backendStates[session.backend]
+    if (backendState?.sessionId) {
+      return content
     }
 
-    if (text) {
-      const msg: CliAgentMessage = {
-        id: (message.uuid as string) ?? randomUUID(),
-        type: 'assistant',
-        content: text,
-        timestamp: Date.now(),
-        raw: message,
-      }
-      session.messages.push(msg)
-      this.emitMessage(session, msg)
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleStreamEvent(session: CliAgentSessionInternal, message: any): void {
-    const event = message.event
-    if (!event) return
-
-    const eventType = event.type as string | undefined
-
-    if (eventType === 'content_block_delta') {
-      const delta = event.delta
-      if (delta?.type === 'text_delta') {
-        const text = (delta.text as string) ?? ''
-        if (text) {
-          const streamDelta: CliAgentStreamDelta = {
-            workspaceId: session.workspaceId,
-            sessionId: session.id,
-            messageId: (message.uuid as string) ?? session.id,
-            delta: text,
-          }
-          this.getWebContents()?.send(IpcChannels.CLI_AGENT_STREAM_DELTA, streamDelta)
-        }
-      }
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleToolProgress(session: CliAgentSessionInternal, message: any): void {
-    const msg: CliAgentMessage = {
-      id: (message.uuid as string) ?? randomUUID(),
-      type: 'tool_use',
-      content: `Running ${message.tool_name ?? 'tool'}...`,
-      timestamp: Date.now(),
-      toolName: (message.tool_name as string) ?? undefined,
-      toolUseId: (message.tool_use_id as string) ?? undefined,
-    }
-    session.messages.push(msg)
-    this.emitMessage(session, msg)
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleToolUseSummary(session: CliAgentSessionInternal, message: any): void {
-    const msg: CliAgentMessage = {
-      id: (message.uuid as string) ?? randomUUID(),
-      type: 'tool_result',
-      content: (message.summary as string) ?? 'Tool completed',
-      timestamp: Date.now(),
-    }
-    session.messages.push(msg)
-    this.emitMessage(session, msg)
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleResultMessage(session: CliAgentSessionInternal, message: any): void {
-    const subtype = message.subtype as string | undefined
-    const isSuccess = subtype === 'success'
-    const durationMs = (message.duration_ms as number) ?? 0
-    const totalCostUsd = (message.total_cost_usd as number) ?? 0
-
-    session.totalCostUsd += totalCostUsd
-
-    // Capture session ID from result as well
-    const resultSessionId = message.session_id as string | undefined
-    if (resultSessionId && !session.claudeSessionId) {
-      session.claudeSessionId = resultSessionId
-      this.conversationStore
-        ?.updateMeta(session.id, { claudeSessionId: resultSessionId })
-        .catch(() => {})
-    }
-
-    // Build detailed error content for non-success results
-    let errorDetail = ''
-    if (!isSuccess) {
-      const errors = message.errors as string[] | undefined
-      if (errors?.length) {
-        errorDetail = errors.join('\n')
-      }
-      console.error(
-        `[CliAgentManager] Result error for session ${session.id.slice(0, 8)}: subtype=${subtype}`,
+    const priorMessages = session.messages
+      .slice(0, -1)
+      .filter(
+        (message) =>
+          message.type === 'user' ||
+          message.type === 'assistant' ||
+          message.type === 'tool_use' ||
+          message.type === 'tool_result',
       )
-      if (errorDetail) console.error(`[CliAgentManager] Error details:\n${errorDetail}`)
-      console.error(
-        `[CliAgentManager] Full result message:`,
-        JSON.stringify(message).slice(0, 2000),
-      )
+
+    if (priorMessages.length === 0) {
+      return content
     }
 
-    const msg: CliAgentMessage = {
-      id: (message.uuid as string) ?? randomUUID(),
-      type: isSuccess ? 'result' : 'error',
-      content: isSuccess
-        ? `Completed in ${(durationMs / 1000).toFixed(1)}s`
-        : `Failed: ${subtype ?? 'unknown error'}${errorDetail ? '\n\n' + errorDetail : ''}`,
-      timestamp: Date.now(),
-      durationMs,
-      totalCostUsd,
-      isSuccess,
-      raw: message,
-    }
-    session.messages.push(msg)
-    this.emitMessage(session, msg)
+    const transcript = priorMessages
+      .slice(-40)
+      .map((message) => {
+        const source = message.backend ? ` ${message.backend}` : ''
+        return `[${message.type}${source}]\n${message.content}`
+      })
+      .join('\n\n')
 
-    const resultPayload: CliAgentResultPayload = {
-      workspaceId: session.workspaceId,
-      sessionId: session.id,
-      durationMs,
-      totalCostUsd: session.totalCostUsd,
-      isSuccess,
-    }
-    this.getWebContents()?.send(IpcChannels.CLI_AGENT_RESULT, resultPayload)
+    return [
+      `You are taking over an existing IDE agent conversation using the ${session.backend} backend.`,
+      'Continue from the prior transcript below and answer the latest user request directly.',
+      '',
+      'Conversation transcript:',
+      transcript,
+      '',
+      'Latest user request:',
+      content,
+    ].join('\n')
   }
 
-  // ─── IPC Emission Helpers ────────────────────
+  private handleRunError(session: CliAgentSessionInternal, error: string): void {
+    session.lastError = error
+    const message: CliAgentMessage = {
+      id: randomUUID(),
+      type: 'error',
+      content: error,
+      timestamp: Date.now(),
+      backend: session.backend,
+    }
+    session.messages.push(message)
+    this.emitMessage(session, message)
+    this.setStatus(session, 'error')
+  }
 
   private setStatus(session: CliAgentSessionInternal, status: CliAgentProcessStatus): void {
     session.processStatus = status
@@ -783,51 +625,60 @@ export class CliAgentManager {
     this.getWebContents()?.send(IpcChannels.CLI_AGENT_STATUS, payload)
   }
 
-  private emitMessage(session: CliAgentSessionInternal, msg: CliAgentMessage): void {
-    const ipcMsg: CliAgentMessagePayload = {
-      ...msg,
+  private emitMessage(session: CliAgentSessionInternal, message: CliAgentMessage): void {
+    const payload: CliAgentMessagePayload = {
+      ...message,
       workspaceId: session.workspaceId,
       sessionId: session.id,
     }
-    this.getWebContents()?.send(IpcChannels.CLI_AGENT_MESSAGE, ipcMsg)
-
-    if (session.processStatus === 'rate_limited' && msg.type !== 'status') {
-      this.setStatus(session, 'running')
-    }
+    this.getWebContents()?.send(IpcChannels.CLI_AGENT_MESSAGE, payload)
   }
 
-  // ─── Persistence Helpers ─────────────────────
-
   private async persistSession(session: CliAgentSessionInternal): Promise<void> {
-    if (!this.conversationStore) return
+    if (!this.conversationStore || session.id.startsWith('claude-native:')) return
+
+    const claudeSessionId = session.backendStates['claude-code']?.sessionId
     await this.conversationStore.saveMessages(session.id, {
       messages: session.messages,
-      claudeSessionId: session.claudeSessionId,
-    })
+      activeBackend: session.backend,
+      backendStates: session.backendStates,
+      claudeSessionId,
+    } satisfies PersistedCliConversation)
+
     await this.conversationStore.updateMeta(session.id, {
+      backend: session.backend,
       updatedAt: Date.now(),
       messageCount: session.messages.length,
-      firstMessage: session.messages.find((m) => m.type === 'user')?.content.slice(0, 100),
-      claudeSessionId: session.claudeSessionId,
+      firstMessage: session.messages
+        .find((message) => message.type === 'user')
+        ?.content.slice(0, 100),
+      claudeSessionId,
       worktreePath: session.worktreePath,
     })
   }
 
   private async maybeAutoTitle(session: CliAgentSessionInternal, content: string): Promise<void> {
-    if (!this.conversationStore) return
+    if (!this.conversationStore || session.id.startsWith('claude-native:')) return
 
-    const userMessages = session.messages.filter((m) => m.type === 'user')
+    const userMessages = session.messages.filter((message) => message.type === 'user')
     if (userMessages.length !== 1) return
 
     const meta = await this.conversationStore.get(session.id)
     if (!meta || !meta.autoTitled) return
 
-    const title = deriveTitle(content)
-    await this.conversationStore.updateMeta(session.id, { title, updatedAt: Date.now() })
+    await this.conversationStore.updateMeta(session.id, {
+      title: deriveTitle(content),
+      updatedAt: Date.now(),
+    })
 
+    await this.broadcastConversationList(session.workspaceId)
+  }
+
+  private async broadcastConversationList(workspaceId: string): Promise<void> {
+    if (!this.conversationStore) return
     const index = await this.conversationStore.loadIndex()
     this.getWebContents()?.send(IpcChannels.CONVERSATION_LIST_CHANGED, {
-      workspaceId: session.workspaceId,
+      workspaceId,
       conversations: index,
     } satisfies ConversationListChangedPayload)
   }

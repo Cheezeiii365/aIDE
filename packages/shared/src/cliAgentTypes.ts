@@ -1,7 +1,7 @@
 /**
  * CLI Agent Wrappers — shared types.
  *
- * Types for wrapping external CLI agents (Claude Code, Codex) as monitored
+ * Types for wrapping external CLI agents (Claude Code, OpenCode, Codex) as monitored
  * sessions inside the IDE. These are consumed by both main and renderer.
  */
 
@@ -9,19 +9,27 @@
 // Agent backend selection
 // ---------------------------------------------------------------------------
 
-export type AgentBackend = 'built-in' | 'claude-code' | 'codex'
+export type AgentBackend = 'built-in' | 'claude-code' | 'opencode' | 'codex'
+export type ExternalCliBackend = Exclude<AgentBackend, 'built-in'>
+
+export interface CliAgentBackendState {
+  sessionId?: string
+  model?: string
+}
+
+export type CliAgentBackendStateMap = Partial<Record<ExternalCliBackend, CliAgentBackendState>>
 
 // ---------------------------------------------------------------------------
 // Process lifecycle
 // ---------------------------------------------------------------------------
 
 export type CliAgentProcessStatus =
-  | 'stopped'       // not running
-  | 'starting'      // spawn called, waiting for init event
-  | 'running'       // active and responsive
-  | 'rate_limited'  // temporarily throttled
-  | 'error'         // crashed or errored
-  | 'stopping'      // SIGTERM sent, waiting for exit
+  | 'stopped' // not running
+  | 'starting' // spawn called, waiting for init event
+  | 'running' // active and responsive
+  | 'rate_limited' // temporarily throttled
+  | 'error' // crashed or errored
+  | 'stopping' // SIGTERM sent, waiting for exit
 
 // ---------------------------------------------------------------------------
 // Normalized messages
@@ -33,6 +41,7 @@ export interface CliAgentMessage {
   type: 'system' | 'assistant' | 'user' | 'tool_use' | 'tool_result' | 'status' | 'error' | 'result'
   content: string
   timestamp: number
+  backend?: ExternalCliBackend
   /** Original SDK event for debugging */
   raw?: unknown
 

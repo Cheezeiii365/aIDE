@@ -5,40 +5,91 @@
 
 export type { CommandDefinition, KeybindingRule } from './commands'
 export type {
-  ChatMode, ChatSessionStatus, ToolCallStatus,
-  ToolCall, ToolResult, ChatMessage, ChatSession,
-  ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
+  ChatMode,
+  ChatSessionStatus,
+  ToolCallStatus,
+  ToolCall,
+  ToolResult,
+  ChatMessage,
+  ChatSession,
+  ChatStreamChunk,
+  ChatStreamEnd,
+  ChatToolCallPayload,
+  PendingToolApprovalInfo,
   ToolDefinition,
-  McpServerConfig, McpServerConnectionStatus, McpServerStatus,
-  PermissionTier, ToolPermissionConfig, AgentPermissionSettings,
+  McpServerConfig,
+  McpServerConnectionStatus,
+  McpServerStatus,
+  PermissionTier,
+  ToolPermissionConfig,
+  AgentPermissionSettings,
   LlmProviderConfig,
 } from './agentTypes'
 export type {
-  AgentBackend, CliAgentProcessStatus,
-  CliAgentMessage, CliAgentStreamDelta, CliAgentSession,
-  CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
+  AgentBackend,
+  ExternalCliBackend,
+  CliAgentBackendState,
+  CliAgentBackendStateMap,
+  CliAgentProcessStatus,
+  CliAgentMessage,
+  CliAgentStreamDelta,
+  CliAgentSession,
+  CliAgentStatusPayload,
+  CliAgentResultPayload,
+  CliAgentMessagePayload,
 } from './cliAgentTypes'
 export type {
-  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+  ConversationMeta,
+  ConversationCreateOpts,
+  ConversationListChangedPayload,
 } from './conversationTypes'
 export { deriveTitle } from './conversationTypes'
 export type {
-  LlmMessage, LlmContentBlock, LlmToolDefinition, LlmUsage,
-  LlmStreamEvent, StreamParams, LlmProvider, SseEvent,
-  AnthropicRequest, AnthropicMessage, AnthropicContentBlock, AnthropicTool, AnthropicStreamEvent,
-  OpenAiRequest, OpenAiMessage, OpenAiToolCall, OpenAiTool, OpenAiStreamChunk, OpenAiStreamToolCall,
+  LlmMessage,
+  LlmContentBlock,
+  LlmToolDefinition,
+  LlmUsage,
+  LlmStreamEvent,
+  StreamParams,
+  LlmProvider,
+  SseEvent,
+  AnthropicRequest,
+  AnthropicMessage,
+  AnthropicContentBlock,
+  AnthropicTool,
+  AnthropicStreamEvent,
+  OpenAiRequest,
+  OpenAiMessage,
+  OpenAiToolCall,
+  OpenAiTool,
+  OpenAiStreamChunk,
+  OpenAiStreamToolCall,
 } from './llmTypes'
 import type {
-  ChatMode, ChatSession, ChatStreamChunk, ChatStreamEnd, ChatToolCallPayload, PendingToolApprovalInfo,
-  McpServerStatus, ToolDefinition,
-  PermissionTier, ToolPermissionConfig,
+  ChatMode,
+  ChatSession,
+  ChatStreamChunk,
+  ChatStreamEnd,
+  ChatToolCallPayload,
+  PendingToolApprovalInfo,
+  McpServerStatus,
+  ToolDefinition,
+  PermissionTier,
+  ToolPermissionConfig,
 } from './agentTypes'
 import type {
-  AgentBackend, CliAgentStreamDelta, CliAgentMessage,
-  CliAgentSession, CliAgentStatusPayload, CliAgentResultPayload, CliAgentMessagePayload,
+  AgentBackend,
+  CliAgentStreamDelta,
+  CliAgentMessage,
+  CliAgentSession,
+  CliAgentStatusPayload,
+  CliAgentResultPayload,
+  CliAgentMessagePayload,
 } from './cliAgentTypes'
 import type {
-  ConversationMeta, ConversationCreateOpts, ConversationListChangedPayload,
+  ConversationMeta,
+  ConversationCreateOpts,
+  ConversationListChangedPayload,
 } from './conversationTypes'
 export {
   adjustZoomFactor,
@@ -236,6 +287,7 @@ export const IpcChannels = {
 
   // ─── CLI Agent ───────────────────────────────
   CLI_AGENT_START: 'cli-agent:start',
+  CLI_AGENT_SWITCH_BACKEND: 'cli-agent:switch-backend',
   CLI_AGENT_STOP: 'cli-agent:stop',
   CLI_AGENT_SEND: 'cli-agent:send',
   CLI_AGENT_GET_SESSION: 'cli-agent:get-session',
@@ -257,7 +309,6 @@ export const IpcChannels = {
 export type ThemeName = 'one-dark' | 'one-light'
 
 export type SettingsScope = 'user' | 'workspace'
-
 
 export interface DirEntry {
   name: string
@@ -399,6 +450,7 @@ export interface AideProjectSettings {
   // Agent / Backend settings
   'agent.backend'?: AgentBackend
   'agent.claudeCodePath'?: string
+  'agent.opencodePath'?: string
   'agent.codexPath'?: string
 }
 
@@ -429,6 +481,7 @@ export interface ResolvedSettings {
   // Agent / Backend settings
   'agent.backend': AgentBackend
   'agent.claudeCodePath': string
+  'agent.opencodePath': string
   'agent.codexPath': string
 }
 
@@ -443,6 +496,7 @@ export const SENSITIVE_AGENT_KEYS: ReadonlySet<string> = new Set([
   'agent.baseUrl',
   'agent.backend',
   'agent.claudeCodePath',
+  'agent.opencodePath',
   'agent.codexPath',
   'agent.permissionTier',
   'agent.autoApprove',
@@ -496,18 +550,9 @@ export interface AppWorkspaceRegistry {
   lastSessionWorkspaces: string[]
 }
 
-export type WorkspaceRuntimeState =
-  | 'foreground'
-  | 'backgrounded'
-  | 'asleep'
-  | 'blocked'
+export type WorkspaceRuntimeState = 'foreground' | 'backgrounded' | 'asleep' | 'blocked'
 
-export type WorkspaceRuntimeStatus =
-  | 'starting'
-  | 'running'
-  | 'stopping'
-  | 'stopped'
-  | 'error'
+export type WorkspaceRuntimeStatus = 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
 
 export interface WorkspaceRuntimeWorkloadFlags {
   agentsRunning: boolean
@@ -830,10 +875,19 @@ export interface WindowApi {
   onGitBranchChanged: (callback: (payload: GitBranchChangedPayload) => void) => () => void
 
   // Git diff
-  getGitFileOriginal: (rootPath: string | null, filePath: string) => Promise<{ content: string | null }>
+  getGitFileOriginal: (
+    rootPath: string | null,
+    filePath: string,
+  ) => Promise<{ content: string | null }>
 
   // Terminal
-  ptyCreate: (opts?: { id?: string; workspaceId?: string; cwd?: string; shell?: string; title?: string }) => Promise<{ id: string; scrollback: string }>
+  ptyCreate: (opts?: {
+    id?: string
+    workspaceId?: string
+    cwd?: string
+    shell?: string
+    title?: string
+  }) => Promise<{ id: string; scrollback: string }>
   ptyWrite: (id: string, data: string) => void
   ptyResize: (id: string, cols: number, rows: number) => void
   ptyKill: (id: string) => void
@@ -843,8 +897,14 @@ export interface WindowApi {
 
   // Worktrees
   listWorktrees: (workspaceId: string) => Promise<WorktreeInfo[]>
-  createWorktree: (workspaceId: string, opts: WorktreeCreateOpts) => Promise<{ path: string } | { error: string }>
-  removeWorktree: (workspaceId: string, worktreePath: string) => Promise<{ success: true } | { error: string }>
+  createWorktree: (
+    workspaceId: string,
+    opts: WorktreeCreateOpts,
+  ) => Promise<{ path: string } | { error: string }>
+  removeWorktree: (
+    workspaceId: string,
+    worktreePath: string,
+  ) => Promise<{ success: true } | { error: string }>
   setActiveWorktree: (workspaceId: string, worktreePath: string | null) => Promise<void>
   getActiveWorktree: (workspaceId: string) => Promise<string | null>
   onWorktreeListChanged: (callback: (payload: WorktreeListChangedPayload) => void) => () => void
@@ -858,7 +918,9 @@ export interface WindowApi {
   onSearchResults: (callback: (payload: SearchResultsPayload) => void) => () => void
   onSearchComplete: (callback: (payload: SearchCompletePayload) => void) => () => void
   searchCancel: () => void
-  searchReplace: (opts: ReplaceOpts) => Promise<{ success: true; skipped: number } | { error: string }>
+  searchReplace: (
+    opts: ReplaceOpts,
+  ) => Promise<{ success: true; skipped: number } | { error: string }>
 
   // .aide project folder
   aideInit: (workspaceId?: string | null) => Promise<AideInitResult | { error: string }>
@@ -869,14 +931,20 @@ export interface WindowApi {
   getUserSettings: () => Promise<Partial<AideProjectSettings>>
   setUserSetting: (key: string, value: unknown | undefined) => Promise<void>
   getWorkspaceSettings: (workspaceId?: string | null) => Promise<AideProjectSettings>
-  setWorkspaceSetting: (key: string, value: unknown | undefined, workspaceId?: string | null) => Promise<void>
+  setWorkspaceSetting: (
+    key: string,
+    value: unknown | undefined,
+    workspaceId?: string | null,
+  ) => Promise<void>
   getBuiltInDefaults: () => Promise<ResolvedSettings>
   onSettingsChanged: (callback: (resolved: ResolvedSettings) => void) => () => void
 
   // Keybinding overrides
   getKeybindingOverrides: () => Promise<import('./commands').KeybindingRule[]>
   setKeybindingOverrides: (rules: import('./commands').KeybindingRule[]) => Promise<void>
-  onKeybindingsChanged: (callback: (rules: import('./commands').KeybindingRule[]) => void) => () => void
+  onKeybindingsChanged: (
+    callback: (rules: import('./commands').KeybindingRule[]) => void,
+  ) => () => void
 
   // Gitignore security audit
   auditGitignore: (workspaceId?: string | null) => Promise<GitignoreAuditResult>
@@ -887,7 +955,11 @@ export interface WindowApi {
   // Task system
   listTasks: (workspaceId: string) => Promise<{ tasks: AideTask[]; compounds: CompoundTask[] }>
   listRunningTasks: (workspaceId: string) => Promise<TaskExecution[]>
-  runTask: (workspaceId: string, taskId: string, context?: TaskRunContext) => Promise<{ executionId: string } | { error: string }>
+  runTask: (
+    workspaceId: string,
+    taskId: string,
+    context?: TaskRunContext,
+  ) => Promise<{ executionId: string } | { error: string }>
   killTask: (workspaceId: string, executionId: string) => void
   reloadTasks: (workspaceId: string) => Promise<void>
   generateTasks: (workspaceId: string) => Promise<{ success: true } | { error: string }>
@@ -906,13 +978,18 @@ export interface WindowApi {
   removeWorkspace: (id: string) => Promise<void>
   closeWorkspace: (id: string) => Promise<void>
   switchWorkspace: (id: string) => Promise<void>
-  updateWorkspace: (id: string, patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>) => Promise<void>
+  updateWorkspace: (
+    id: string,
+    patch: Partial<Pick<WorkspaceEntry, 'name' | 'icon' | 'color'>>,
+  ) => Promise<void>
   reorderWorkspaces: (ids: string[]) => Promise<void>
   setWorkspaceRoot: (id: string, rootPath: string) => Promise<void>
   getActiveWorkspaceId: () => Promise<string | null>
   onWorkspaceRegistryChanged: (callback: (workspaces: WorkspaceEntry[]) => void) => () => void
   getWorkspaceRuntimeSnapshots: () => Promise<WorkspaceRuntimeSnapshot[]>
-  onWorkspaceRuntimeSnapshotsChanged: (callback: (snapshots: WorkspaceRuntimeSnapshot[]) => void) => () => void
+  onWorkspaceRuntimeSnapshotsChanged: (
+    callback: (snapshots: WorkspaceRuntimeSnapshot[]) => void,
+  ) => () => void
 
   // State persistence
   saveWorkspaceState: (rootPath: string, state: AideLocalState) => Promise<void>
@@ -921,10 +998,17 @@ export interface WindowApi {
   loadTerminalState: (rootPath: string) => Promise<AideLocalTerminals | null>
 
   // Browser panes
-  browserCreate: (paneId: string, workspaceId: string, sessionMode: BrowserSessionMode) => Promise<{ success: true } | { error: string }>
+  browserCreate: (
+    paneId: string,
+    workspaceId: string,
+    sessionMode: BrowserSessionMode,
+  ) => Promise<{ success: true } | { error: string }>
   browserDestroy: (paneId: string) => void
   browserDestroyWorkspace: (workspaceId: string) => void
-  browserNavigate: (paneId: string, url: string) => Promise<{ success: true; url: string } | { error: string }>
+  browserNavigate: (
+    paneId: string,
+    url: string,
+  ) => Promise<{ success: true; url: string } | { error: string }>
   browserGoBack: (paneId: string) => void
   browserGoForward: (paneId: string) => void
   browserReload: (paneId: string) => void
@@ -934,7 +1018,9 @@ export interface WindowApi {
   onBrowserDidNavigate: (callback: (payload: BrowserDidNavigatePayload) => void) => () => void
   onBrowserTitleUpdated: (callback: (payload: BrowserPageTitlePayload) => void) => () => void
   onBrowserLoadingChanged: (callback: (payload: BrowserLoadingPayload) => void) => () => void
-  onBrowserCanNavigateChanged: (callback: (payload: BrowserCanNavigatePayload) => void) => () => void
+  onBrowserCanNavigateChanged: (
+    callback: (payload: BrowserCanNavigatePayload) => void,
+  ) => () => void
   onBrowserFocusChanged: (callback: (payload: BrowserFocusPayload) => void) => () => void
 
   // App lifecycle
@@ -943,7 +1029,10 @@ export interface WindowApi {
   onCrashDetected: (callback: () => void) => () => void
 
   // ─── Agent Chat ───────────────────────────────
-  chatSendMessage: (sessionId: string, content: string) => Promise<{ messageId: string } | { error: string }>
+  chatSendMessage: (
+    sessionId: string,
+    content: string,
+  ) => Promise<{ messageId: string } | { error: string }>
   chatGetHistory: (workspaceId: string, conversationId?: string) => Promise<ChatSession | null>
   chatSetMode: (sessionId: string, mode: ChatMode) => Promise<void>
   chatSetWorkingSet: (sessionId: string, paths: string[]) => Promise<void>
@@ -962,9 +1051,21 @@ export interface WindowApi {
   onMcpServerStatus: (callback: (status: McpServerStatus) => void) => () => void
 
   // ─── CLI Agent ───────────────────────────────
-  cliAgentStart: (workspaceId: string, backend: AgentBackend, conversationId?: string, worktreePath?: string) => Promise<{ sessionId: string } | { error: string }>
+  cliAgentStart: (
+    workspaceId: string,
+    backend: AgentBackend,
+    conversationId?: string,
+    worktreePath?: string,
+  ) => Promise<{ sessionId: string } | { error: string }>
+  cliAgentSwitchBackend: (
+    sessionId: string,
+    backend: AgentBackend,
+  ) => Promise<{ success: true } | { error: string }>
   cliAgentStop: (sessionId: string) => void
-  cliAgentSend: (sessionId: string, content: string) => Promise<{ success: true } | { error: string }>
+  cliAgentSend: (
+    sessionId: string,
+    content: string,
+  ) => Promise<{ success: true } | { error: string }>
   cliAgentGetSession: (workspaceId: string, sessionId?: string) => Promise<CliAgentSession | null>
   cliAgentLoadMessages: (workspaceId: string, conversationId: string) => Promise<CliAgentMessage[]>
   onCliAgentStreamDelta: (callback: (delta: CliAgentStreamDelta) => void) => () => void
@@ -978,7 +1079,9 @@ export interface WindowApi {
   conversationDelete: (workspaceId: string, conversationId: string) => Promise<void>
   conversationRename: (workspaceId: string, conversationId: string, title: string) => Promise<void>
   conversationGet: (workspaceId: string, conversationId: string) => Promise<ConversationMeta | null>
-  onConversationListChanged: (callback: (payload: ConversationListChangedPayload) => void) => () => void
+  onConversationListChanged: (
+    callback: (payload: ConversationListChangedPayload) => void,
+  ) => () => void
 
   // VS Code Integration
   openInVSCode: (
