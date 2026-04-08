@@ -158,12 +158,31 @@
   white-space: nowrap;
 }
 
-.editor-tab__dirty {
+.editor-tab__trailing {
+  position: relative;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.editor-tab__dirty {
+  position: absolute;
+  inset: 0;
+  margin: auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--text-secondary);
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.editor-tab:hover .editor-tab__dirty,
+.dv-active-tab .editor-tab__dirty {
+  opacity: 0;
 }
 
 .editor-tab__close {

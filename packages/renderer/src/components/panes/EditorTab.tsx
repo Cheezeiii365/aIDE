@@ -37,9 +37,8 @@ export function EditorTab(props: IDockviewPanelHeaderProps<EditorTabParams>) {
         <FileTypeIcon name={name} />
       </span>
       <span className="editor-tab__name">{name}</span>
-      {dirty ? (
-        <span className="editor-tab__dirty" aria-label="Unsaved changes" />
-      ) : (
+      <span className={`editor-tab__trailing${dirty ? ' editor-tab__trailing--dirty' : ''}`}>
+        {dirty && <span className="editor-tab__dirty" aria-label="Unsaved changes" />}
         <button
           type="button"
           className="editor-tab__close"
@@ -51,7 +50,7 @@ export function EditorTab(props: IDockviewPanelHeaderProps<EditorTabParams>) {
             <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
         </button>
-      )}
+      </span>
     </div>
   )
 }
